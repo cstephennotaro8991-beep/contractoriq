@@ -420,10 +420,17 @@ function Dashboard({ onJobClick, jobSummaries }) {
             </div>
           </div>
           {barData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={barData} margin={{ top:4,right:4,left:12,bottom:0 }}>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={barData} margin={{ top:4,right:4,left:12,bottom:60 }}>
                 <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false}/>
-                <XAxis dataKey="name" tick={{ fontSize:9,fill:DIM,fontFamily:"DM Mono" }} angle={-40} textAnchor="end" interval={0} height={80}/>
+                <XAxis
+                  dataKey="name"
+                  tick={{ fontSize:9, fill:DIM, fontFamily:"DM Mono" }}
+                  angle={-45}
+                  textAnchor="end"
+                  interval={0}
+                  height={60}
+                />
                 <YAxis tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} tickFormatter={$k} axisLine={false} tickLine={false} width={52}/>
                 <Tooltip content={({ active,payload }) => {
                   if (!active||!payload?.length) return null;
@@ -1067,8 +1074,8 @@ export default function App() {
       <div style={{ borderBottom:`1px solid ${BORDER}`,background:CARD,position:"sticky",top:0,zIndex:100,boxShadow:"0 1px 4px rgba(44,36,22,0.06)" }}>
         <div style={{ padding:"0 36px",display:"flex",alignItems:"center",gap:0 }}>
           <div style={{ marginRight:36,paddingTop:14,paddingBottom:14,borderRight:`1px solid ${BORDER}`,paddingRight:36 }}>
-            <div style={{ fontFamily:"'Lora',serif",fontSize:18,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>Profit<span style={{ color:ACCENT2 }}>IQ</span></div>
-            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginTop:1 }}>Contractor Intelligence</div>
+            <div style={{ fontFamily:"'Lora',serif",fontSize:18,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>Canopy</div>
+            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginTop:1 }}>Business Intelligence</div>
           </div>
           {TABS.map(t => (
             <div key={t.key} className={`nav-tab${tab===t.key?" active":""}`} onClick={()=>setTab(t.key)}>
