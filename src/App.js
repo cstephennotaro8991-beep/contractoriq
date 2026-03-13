@@ -312,16 +312,33 @@ const ChartTip = ({ active, payload, label }) => {
 
 function Dashboard({ onJobClick, jobSummaries }) {
   const [sort, setSort]       = useState("profit");
+  const [sortDir, setSortDir] = useState("desc");
   const [dateRange, setDateRange] = useState("all"); // "all" | "30d" | "90d" | "6m" | "12m" | "ytd"
 
   // Apply date filter to both jobs and trend
   const filteredJobs  = dateRange === "all" ? jobSummaries : filterJobsByDate(jobSummaries, dateRange);
   const filteredTrend = dateRange === "all" ? MONTHLY_TREND : filterTrendByDate(MONTHLY_TREND, dateRange);
 
-  const sorted      = [...filteredJobs].sort((a,b) => {
-    if (sort==="profit") return b.profit - a.profit;
-    if (sort==="margin") return parseFloat(b.marginPct) - parseFloat(a.marginPct);
-    return b.revenue - a.revenue;
+  function handleColSort(col) {
+    if (sort === col) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSort(col); setSortDir("desc"); }
+  }
+
+  function SortIcon({ col }) {
+    if (sort !== col) return <span style={{ opacity:0.25, marginLeft:4 }}>↕</span>;
+    return <span style={{ marginLeft:4, color:ACCENT }}>{sortDir === "asc" ? "↑" : "↓"}</span>;
+  }
+
+  const sorted = [...filteredJobs].sort((a,b) => {
+    let diff = 0;
+    if (sort==="profit")  diff = b.profit - a.profit;
+    else if (sort==="margin")  diff = parseFloat(b.marginPct) - parseFloat(a.marginPct);
+    else if (sort==="revenue") diff = b.revenue - a.revenue;
+    else if (sort==="costs")   diff = b.costs - a.costs;
+    else if (sort==="name")    diff = a.name.localeCompare(b.name);
+    else if (sort==="client")  diff = a.clientName.localeCompare(b.clientName);
+    else if (sort==="status")  diff = a.status.localeCompare(b.status);
+    return sortDir === "asc" ? -diff : diff;
   });
   const totalRev    = filteredJobs.reduce((s,j) => s + j.revenue, 0);
   const totalCost   = filteredJobs.reduce((s,j) => s + j.costs, 0);
@@ -502,7 +519,11 @@ function Dashboard({ onJobClick, jobSummaries }) {
           </div>
         </div>
         <div className="thead" style={{ gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 90px" }}>
-          {["Job Name","Client","Revenue","Costs","Profit / Loss","Status"].map(h => <div key={h} className="th">{h}</div>)}
+          {[["name","Job Name"],["client","Client"],["revenue","Revenue"],["costs","Costs"],["profit","Profit / Loss"],["status","Status"]].map(([col,label]) => (
+            <div key={col} className="th" onClick={() => handleColSort(col)} style={{ cursor:"pointer", userSelect:"none", display:"flex", alignItems:"center" }}>
+              {label}<SortIcon col={col}/>
+            </div>
+          ))}
         </div>
         {sorted.length > 0 ? sorted.map(j => {
           const win = j.profit > 0;
