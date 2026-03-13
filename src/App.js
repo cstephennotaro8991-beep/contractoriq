@@ -110,7 +110,11 @@ const JOB_META = {
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 const $ = n => `$${Math.abs(n).toLocaleString()}`;
-const $k = n => n >= 1000 || n <= -1000 ? `$${(Math.abs(n)/1000).toFixed(1)}k` : `$${Math.abs(n)}`;
+const $k = n => {
+  const sign = n < 0 ? "-" : "";
+  const abs = Math.abs(n);
+  return abs >= 1000 ? `${sign}$${(abs/1000).toFixed(1)}k` : `${sign}$${abs}`;
+};
 
 // Earth-tone palette — warm, professional, non-tech
 const ACCENT = "#7A6B4E";   // warm walnut brown (primary action)
@@ -161,15 +165,72 @@ function buildJobSummaries(extraCostsByJob = {}) {
 }
 
 const MONTHLY_TREND = [
-  { month: "Sep '23", revenue: 38000, costs: 29000 },
-  { month: "Oct '23", revenue: 52000, costs: 44000 },
-  { month: "Nov '23", revenue: 61000, costs: 48000 },
-  { month: "Dec '23", revenue: 29000, costs: 22000 },
-  { month: "Jan '24", revenue: 70500, costs: 51000 },
-  { month: "Feb '24", revenue: 120100, costs: 110400 },
-  { month: "Mar '24", revenue: 98800, costs: 57200 },
-  { month: "Apr '24", revenue: 55000, costs: 57200 },
+  { month: "Sep '23", date: "2023-09-01", revenue: 38000, costs: 29000 },
+  { month: "Oct '23", date: "2023-10-01", revenue: 52000, costs: 44000 },
+  { month: "Nov '23", date: "2023-11-01", revenue: 61000, costs: 48000 },
+  { month: "Dec '23", date: "2023-12-01", revenue: 29000, costs: 22000 },
+  { month: "Jan '24", date: "2024-01-01", revenue: 70500, costs: 51000 },
+  { month: "Feb '24", date: "2024-02-01", revenue: 120100, costs: 110400 },
+  { month: "Mar '24", date: "2024-03-01", revenue: 98800, costs: 57200 },
+  { month: "Apr '24", date: "2024-04-01", revenue: 55000, costs: 57200 },
 ].map(d => ({ ...d, profit: d.revenue - d.costs }));
+
+// Date range options — "All" is handled separately as a standalone button
+const DATE_RANGES = [
+  { key: "30d",  label: "30 days",   months: 1  },
+  { key: "90d",  label: "90 days",   months: 3  },
+  { key: "6m",   label: "6 months",  months: 6  },
+  { key: "12m",  label: "12 months", months: 12 },
+  { key: "ytd",  label: "YTD",       months: null }, // special case
+];
+
+// Reference "today" as end of our mock data period
+const MOCK_TODAY = new Date("2024-04-30");
+
+function getDateCutoff(rangeKey) {
+  if (!rangeKey || rangeKey === "all") return null;
+  if (rangeKey === "ytd") return new Date("2024-01-01");
+  const range = DATE_RANGES.find(r => r.key === rangeKey);
+  if (!range) return null;
+  const cutoff = new Date(MOCK_TODAY);
+  cutoff.setMonth(cutoff.getMonth() - range.months);
+  return cutoff;
+}
+
+function filterJobsByDate(jobs, rangeKey) {
+  const cutoff = getDateCutoff(rangeKey);
+  if (!cutoff) return jobs;
+  return jobs.map(job => {
+    const filteredInvoices = job.invoices.filter(inv => new Date(inv.TxnDate) >= cutoff);
+    const filteredPurchases = job.purchases.filter(p => new Date(p.TxnDate) >= cutoff);
+    const revenue = filteredInvoices.reduce((s,i) => s + i.TotalAmt, 0);
+    const costs   = filteredPurchases.reduce((s,p) =>
+      s + p.Line.filter(l => l.AccountBasedExpenseLineDetail?.CustomerRef?.value === job.id)
+               .reduce((ls,l) => ls + l.Amount, 0), 0);
+    const costByVendor = {};
+    filteredPurchases.forEach(p => {
+      p.Line.filter(l => l.AccountBasedExpenseLineDetail?.CustomerRef?.value === job.id).forEach(l => {
+        costByVendor[p.EntityRef.name] = (costByVendor[p.EntityRef.name] || 0) + l.Amount;
+      });
+    });
+    return {
+      ...job,
+      invoices: filteredInvoices,
+      purchases: filteredPurchases,
+      revenue, costs,
+      profit: revenue - costs,
+      marginPct: revenue > 0 ? (((revenue - costs) / revenue) * 100).toFixed(1) : "0.0",
+      outstanding: filteredInvoices.reduce((s,i) => s + i.Balance, 0),
+      costByVendor,
+    };
+  }).filter(job => job.revenue > 0 || job.costs > 0);
+}
+
+function filterTrendByDate(trend, rangeKey) {
+  const cutoff = getDateCutoff(rangeKey);
+  if (!cutoff) return trend;
+  return trend.filter(d => new Date(d.date) >= cutoff);
+}
 
 const JOB_OPTIONS = QB_CUSTOMERS.filter(c => c.Job).map(j => ({
   value: j.Id,
@@ -250,33 +311,91 @@ const ChartTip = ({ active, payload, label }) => {
 // ─── TAB: DASHBOARD ───────────────────────────────────────────────────────────
 
 function Dashboard({ onJobClick, jobSummaries }) {
-  const [sort, setSort] = useState("profit");
-  const sorted = [...jobSummaries].sort((a,b) => {
+  const [sort, setSort]       = useState("profit");
+  const [dateRange, setDateRange] = useState("all"); // "all" | "30d" | "90d" | "6m" | "12m" | "ytd"
+
+  // Apply date filter to both jobs and trend
+  const filteredJobs  = dateRange === "all" ? jobSummaries : filterJobsByDate(jobSummaries, dateRange);
+  const filteredTrend = dateRange === "all" ? MONTHLY_TREND : filterTrendByDate(MONTHLY_TREND, dateRange);
+
+  const sorted      = [...filteredJobs].sort((a,b) => {
     if (sort==="profit") return b.profit - a.profit;
     if (sort==="margin") return parseFloat(b.marginPct) - parseFloat(a.marginPct);
     return b.revenue - a.revenue;
   });
-  const totalRev    = jobSummaries.reduce((s,j) => s + j.revenue, 0);
-  const totalCost   = jobSummaries.reduce((s,j) => s + j.costs, 0);
+  const totalRev    = filteredJobs.reduce((s,j) => s + j.revenue, 0);
+  const totalCost   = filteredJobs.reduce((s,j) => s + j.costs, 0);
   const totalProfit = totalRev - totalCost;
-  const winners     = jobSummaries.filter(j => j.profit > 0).length;
-  const losers      = jobSummaries.filter(j => j.profit <= 0).length;
-  const outstanding = jobSummaries.reduce((s,j) => s + j.outstanding, 0);
+  const winners     = filteredJobs.filter(j => j.profit > 0).length;
+  const losers      = filteredJobs.filter(j => j.profit <= 0).length;
+  const outstanding = filteredJobs.reduce((s,j) => s + j.outstanding, 0);
   const barData     = sorted.map(j => ({ name: j.name.length>16?j.name.slice(0,16)+"…":j.name, fullName:j.name, profit:j.profit }));
+
+  // Label shown under the page title
+  const rangeLabel = dateRange === "all"
+    ? "All jobs · Sep 2023 – Apr 2024"
+    : `${DATE_RANGES.find(r=>r.key===dateRange)?.label} · ${filteredJobs.length} job${filteredJobs.length!==1?"s":""}`;
 
   return (
     <div style={{ padding:"32px 36px", background:BG, minHeight:"100vh" }}>
-      {/* Page title */}
-      <div style={{ marginBottom:28 }}>
-        <h1 style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>Job Profitability Overview</h1>
-        <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>All jobs · Sep 2023 – Apr 2024</p>
+
+      {/* Page title + date slicer */}
+      <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:28 }}>
+        <div>
+          <h1 style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>Job Profitability Overview</h1>
+          <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>{rangeLabel}</p>
+        </div>
+
+        {/* Date slicer */}
+        <div style={{ display:"flex",alignItems:"center",gap:6,marginTop:4 }}>
+          {/* Segmented toggle for time windows */}
+          <div style={{ display:"flex",border:`1px solid ${BORDER}`,borderRadius:5,overflow:"hidden",background:CARD }}>
+            {DATE_RANGES.map((r,i) => (
+              <button
+                key={r.key}
+                onClick={()=>setDateRange(r.key)}
+                style={{
+                  cursor:"pointer",
+                  padding:"7px 13px",
+                  fontSize:11,
+                  fontWeight:500,
+                  fontFamily:"'DM Sans',sans-serif",
+                  letterSpacing:"0.03em",
+                  border:"none",
+                  borderRight: i < DATE_RANGES.length-1 ? `1px solid ${BORDER}` : "none",
+                  background: dateRange===r.key ? ACCENT : CARD,
+                  color: dateRange===r.key ? CARD : MID,
+                  transition:"all 0.15s",
+                }}
+              >{r.label}</button>
+            ))}
+          </div>
+
+          {/* Separate "All" button */}
+          <button
+            onClick={()=>setDateRange("all")}
+            style={{
+              cursor:"pointer",
+              padding:"7px 14px",
+              fontSize:11,
+              fontWeight:500,
+              fontFamily:"'DM Sans',sans-serif",
+              letterSpacing:"0.03em",
+              border:`1px solid ${BORDER}`,
+              borderRadius:5,
+              background: dateRange==="all" ? DARK : CARD,
+              color: dateRange==="all" ? CARD : MID,
+              transition:"all 0.15s",
+            }}
+          >All</button>
+        </div>
       </div>
 
       <div style={{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:28 }}>
         {[
           { label:"Total Revenue",    val:$(totalRev),    sub:"all jobs billed",                         hi:false },
-          { label:"Total Profit",     val:$(totalProfit), sub:`${((totalProfit/totalRev)*100).toFixed(1)}% overall margin`, hi:true },
-          { label:"Jobs Profitable",  val:`${winners} of ${jobSummaries.length}`, sub:"in the green",    hi:false },
+          { label:"Total Profit",     val:$(totalProfit), sub:totalRev>0?`${((totalProfit/totalRev)*100).toFixed(1)}% overall margin`:"no revenue", hi:true },
+          { label:"Jobs Profitable",  val:`${winners} of ${filteredJobs.length}`, sub:"in the green",    hi:false },
           { label:"Outstanding A/R",  val:$(outstanding), sub:`${losers} job${losers!==1?"s":""} losing money`, hi:false },
         ].map((k,i) => (
           <div key={i} className={`kpi${k.hi?" hi":""}`}>
@@ -300,25 +419,29 @@ function Dashboard({ onJobClick, jobSummaries }) {
               ))}
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={210}>
-            <BarChart data={barData} margin={{ top:4,right:4,left:0,bottom:48 }}>
-              <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false}/>
-              <XAxis dataKey="name" tick={{ fontSize:9,fill:DIM,fontFamily:"DM Mono" }} angle={-38} textAnchor="end" interval={0}/>
-              <YAxis tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} tickFormatter={$k} axisLine={false} tickLine={false}/>
-              <Tooltip content={({ active,payload }) => {
-                if (!active||!payload?.length) return null;
-                const d = payload[0].payload;
-                return <div style={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:5,padding:"10px 14px",fontFamily:"'DM Mono',monospace",fontSize:11,boxShadow:"0 4px 12px rgba(44,36,22,0.12)" }}>
-                  <div style={{ color:DIM,marginBottom:4,fontFamily:"'DM Sans',sans-serif",fontSize:10 }}>{d.fullName}</div>
-                  <div style={{ color:d.profit>=0?ACCENT2:RED,fontSize:14,fontWeight:600 }}>{d.profit>=0?"+":"-"}{$(d.profit)}</div>
-                </div>;
-              }}/>
-              <ReferenceLine y={0} stroke={BORDER}/>
-              <Bar dataKey="profit" radius={[3,3,0,0]}>
-                {barData.map((e,i) => <Cell key={i} fill={e.profit>=0?ACCENT2:RED} opacity={0.85}/>)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+          {barData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={barData} margin={{ top:4,right:4,left:12,bottom:60 }}>
+                <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false}/>
+                <XAxis dataKey="name" tick={{ fontSize:9,fill:DIM,fontFamily:"DM Mono" }} angle={-38} textAnchor="end" interval={0} height={60}/>
+                <YAxis tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} tickFormatter={$k} axisLine={false} tickLine={false} width={52}/>
+                <Tooltip content={({ active,payload }) => {
+                  if (!active||!payload?.length) return null;
+                  const d = payload[0].payload;
+                  return <div style={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:5,padding:"10px 14px",fontFamily:"'DM Mono',monospace",fontSize:11,boxShadow:"0 4px 12px rgba(44,36,22,0.12)" }}>
+                    <div style={{ color:DIM,marginBottom:4,fontFamily:"'DM Sans',sans-serif",fontSize:10 }}>{d.fullName}</div>
+                    <div style={{ color:d.profit>=0?ACCENT2:RED,fontSize:14,fontWeight:600 }}>{d.profit>=0?"+":"-"}{$(d.profit)}</div>
+                  </div>;
+                }}/>
+                <ReferenceLine y={0} stroke={BORDER}/>
+                <Bar dataKey="profit" radius={[3,3,0,0]}>
+                  {barData.map((e,i) => <Cell key={i} fill={e.profit>=0?ACCENT2:RED} opacity={0.85}/>)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div style={{ height:240,display:"flex",alignItems:"center",justifyContent:"center",color:DIM,fontSize:13,fontFamily:"'DM Sans',sans-serif",fontStyle:"italic" }}>No jobs in this period</div>
+          )}
         </div>
 
         <div className="card" style={{ padding:"22px 26px" }}>
@@ -326,11 +449,11 @@ function Dashboard({ onJobClick, jobSummaries }) {
             <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:5,fontWeight:500 }}>Monthly Trend</div>
             <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>How is profitability tracking?</div>
           </div>
-          <ResponsiveContainer width="100%" height={210}>
-            <LineChart data={MONTHLY_TREND} margin={{ top:4,right:16,left:0,bottom:0 }}>
+          <ResponsiveContainer width="100%" height={240}>
+            <LineChart data={filteredTrend} margin={{ top:4,right:16,left:12,bottom:20 }}>
               <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false}/>
-              <XAxis dataKey="month" tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} axisLine={false} tickLine={false}/>
-              <YAxis tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} tickFormatter={$k} axisLine={false} tickLine={false}/>
+              <XAxis dataKey="month" tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} axisLine={false} tickLine={false} height={40}/>
+              <YAxis tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} tickFormatter={$k} axisLine={false} tickLine={false} width={52}/>
               <Tooltip content={ChartTip}/>
               <Line type="monotone" dataKey="revenue" stroke={DIM} strokeWidth={1.5} dot={false} name="Revenue"/>
               <Line type="monotone" dataKey="costs" stroke={RED} strokeWidth={1.5} dot={false} name="Costs" strokeDasharray="4 2"/>
@@ -350,7 +473,9 @@ function Dashboard({ onJobClick, jobSummaries }) {
 
       <div className="card" style={{ overflow:"hidden" }}>
         <div style={{ padding:"18px 20px",borderBottom:`1px solid ${BORDER}`,display:"flex",justifyContent:"space-between",alignItems:"center",background:BG }}>
-          <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>All Jobs — click any row to see the full breakdown</div>
+          <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>
+            {filteredJobs.length > 0 ? `${filteredJobs.length} job${filteredJobs.length!==1?"s":""} — click any row to see the full breakdown` : "No jobs in this period"}
+          </div>
           <div style={{ display:"flex",gap:16,alignItems:"center",fontSize:10,color:DIM,fontFamily:"'DM Sans',sans-serif" }}>
             <span style={{ display:"flex",alignItems:"center",gap:5 }}><span style={{ width:8,height:8,borderRadius:"50%",background:ACCENT2,display:"inline-block" }}/> Profitable</span>
             <span style={{ display:"flex",alignItems:"center",gap:5 }}><span style={{ width:8,height:8,borderRadius:"50%",background:RED,display:"inline-block" }}/> Losing Money</span>
@@ -359,7 +484,7 @@ function Dashboard({ onJobClick, jobSummaries }) {
         <div className="thead" style={{ gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 90px" }}>
           {["Job Name","Client","Revenue","Costs","Profit / Loss","Status"].map(h => <div key={h} className="th">{h}</div>)}
         </div>
-        {sorted.map(j => {
+        {sorted.length > 0 ? sorted.map(j => {
           const win = j.profit > 0;
           return (
             <div key={j.id} className="trow" style={{ gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 90px",borderLeft:`3px solid ${win?ACCENT2:RED}`,opacity: win?1:0.92 }} onClick={()=>onJobClick(j)}>
@@ -376,7 +501,11 @@ function Dashboard({ onJobClick, jobSummaries }) {
               </div>
             </div>
           );
-        })}
+        }) : (
+          <div style={{ padding:"40px 20px",textAlign:"center",color:DIM,fontSize:13,fontFamily:"'DM Sans',sans-serif",fontStyle:"italic" }}>
+            No jobs had activity in this period
+          </div>
+        )}
       </div>
     </div>
   );
@@ -387,6 +516,7 @@ function Dashboard({ onJobClick, jobSummaries }) {
 function ExpenseInbox({ untagged, onTag, onDismiss, tagged }) {
   const [selections, setSelections] = useState({});
   const [filter, setFilter] = useState("all");
+  const [showSyncGuide, setShowSyncGuide] = useState(false);
 
   const totalUntagged = untagged.reduce((s,u) => s + u.amount, 0);
   const totalTagged   = tagged.reduce((s,t) => s + t.amount, 0);
@@ -407,8 +537,88 @@ function ExpenseInbox({ untagged, onTag, onDismiss, tagged }) {
     ? untagged.filter(u => u.suggestedJob)
     : untagged;
 
+  const SYNC_STEPS = [
+    {
+      num: "1",
+      title: "Open QuickBooks Online",
+      body: "Log in at quickbooks.intuit.com. Make sure you're in the correct company file — the same one connected to ProfitIQ.",
+    },
+    {
+      num: "2",
+      title: "Go to Expenses",
+      body: "In the left sidebar, click Expenses → Expenses. This shows all recorded expenses and bills.",
+    },
+    {
+      num: "3",
+      title: "Find the transaction",
+      body: "Use the date and vendor name from ProfitIQ to locate the expense in the list. You can use the search bar or filter by date range to narrow it down quickly.",
+    },
+    {
+      num: "4",
+      title: "Open and edit it",
+      body: "Click the expense to open it. Look for the Customer/Project field — this is the field that links an expense to a job. It may be blank or set to the wrong job.",
+    },
+    {
+      num: "5",
+      title: "Assign it to the correct job",
+      body: "Click the Customer/Project field and select the job from the dropdown. Match it to what you tagged in ProfitIQ. Make sure 'Billable' is unchecked unless you plan to pass the cost to the client.",
+    },
+    {
+      num: "6",
+      title: "Save",
+      body: "Click Save and Close. QuickBooks will now show this expense linked to that job. On the next nightly sync, ProfitIQ will pick up the clean tag directly from QuickBooks.",
+    },
+  ];
+
   return (
     <div style={{ padding:"32px 36px",background:BG,minHeight:"100vh" }}>
+
+      {/* QB Sync Guide Modal */}
+      {showSyncGuide && (
+        <div style={{ position:"fixed",inset:0,background:"rgba(44,36,22,0.45)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:24 }} onClick={()=>setShowSyncGuide(false)}>
+          <div style={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:8,width:"100%",maxWidth:580,maxHeight:"85vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(44,36,22,0.2)" }} onClick={e=>e.stopPropagation()}>
+
+            {/* Modal header */}
+            <div style={{ padding:"24px 28px",borderBottom:`1px solid ${BORDER}`,display:"flex",alignItems:"flex-start",justifyContent:"space-between" }}>
+              <div>
+                <h2 style={{ fontFamily:"'Lora',serif",fontSize:18,fontWeight:500,color:DARK,letterSpacing:"-0.01em",marginBottom:4 }}>QuickBooks Sync Guide</h2>
+                <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM }}>How to update tags in QuickBooks so your accountant sees clean books.</p>
+              </div>
+              <button onClick={()=>setShowSyncGuide(false)} style={{ background:"none",border:"none",cursor:"pointer",color:DIM,fontSize:20,lineHeight:1,padding:"2px 6px",fontFamily:"inherit" }}>×</button>
+            </div>
+
+            {/* Why it matters callout */}
+            <div style={{ margin:"20px 28px 0",padding:"14px 18px",borderRadius:5,background:"rgba(140,107,48,0.07)",border:`1px solid rgba(140,107,48,0.2)` }}>
+              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:AMBER,fontWeight:500,marginBottom:4 }}>Why bother updating QuickBooks?</div>
+              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:MID,lineHeight:1.6 }}>Tags you apply in ProfitIQ update your dashboard instantly — but they live only here. Your accountant, tax preparer, and QuickBooks reports won't see them unless you update QB directly. It takes about 2 minutes per expense.</div>
+            </div>
+
+            {/* Steps */}
+            <div style={{ padding:"20px 28px",display:"flex",flexDirection:"column",gap:16 }}>
+              {SYNC_STEPS.map((step,i) => (
+                <div key={i} style={{ display:"flex",gap:16,alignItems:"flex-start" }}>
+                  <div style={{ width:28,height:28,borderRadius:"50%",background:"rgba(92,122,90,0.12)",border:`1px solid rgba(92,122,90,0.3)`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:"'DM Mono',monospace",fontSize:11,color:ACCENT2,fontWeight:500,marginTop:1 }}>{step.num}</div>
+                  <div>
+                    <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,fontWeight:500,color:DARK,marginBottom:4 }}>{step.title}</div>
+                    <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:MID,lineHeight:1.65 }}>{step.body}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Pro tip */}
+            <div style={{ margin:"0 28px 20px",padding:"14px 18px",borderRadius:5,background:BG2,border:`1px solid ${BORDER}` }}>
+              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:ACCENT,fontWeight:500,marginBottom:4 }}>Pro tip</div>
+              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:MID,lineHeight:1.6 }}>Batch your QB updates once a week rather than one at a time. Set aside 15 minutes every Monday to clear the previous week's untagged expenses in both ProfitIQ and QuickBooks at the same time.</div>
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding:"16px 28px",borderTop:`1px solid ${BORDER}`,display:"flex",justifyContent:"flex-end" }}>
+              <button className="btn act" onClick={()=>setShowSyncGuide(false)}>Got it</button>
+            </div>
+          </div>
+        </div>
+      )}
       <div style={{ marginBottom:28 }}>
         <h1 style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>Expense Inbox</h1>
         <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>Expenses without a job assigned in QuickBooks. Tag them to keep profit numbers accurate.</p>
@@ -437,7 +647,7 @@ function ExpenseInbox({ untagged, onTag, onDismiss, tagged }) {
             <span style={{ fontWeight:500 }}>{tagged.length} expense{tagged.length!==1?"s":""} tagged in ProfitIQ</span>
             <span style={{ color:MID,marginLeft:8 }}>— these tags live here for now. Consider updating them in QuickBooks so your accountant sees clean books.</span>
           </div>
-          <button className="btn" style={{ borderColor:"rgba(140,107,48,0.3)",color:AMBER,whiteSpace:"nowrap",marginLeft:16 }}>
+          <button className="btn" style={{ borderColor:"rgba(140,107,48,0.3)",color:AMBER,whiteSpace:"nowrap",marginLeft:16 }} onClick={()=>setShowSyncGuide(true)}>
             View QB Sync Guide →
           </button>
         </div>
