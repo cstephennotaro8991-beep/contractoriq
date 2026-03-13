@@ -425,11 +425,24 @@ function Dashboard({ onJobClick, jobSummaries }) {
                 <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false}/>
                 <XAxis
                   dataKey="name"
-                  tick={{ fontSize:9, fill:DIM, fontFamily:"DM Mono" }}
-                  angle={-45}
-                  textAnchor="end"
                   interval={0}
-                  height={60}
+                  height={80}
+                  tick={({ x, y, payload }) => (
+                    <g transform={`translate(${x},${y})`}>
+                      <text
+                        x={0}
+                        y={0}
+                        dy={4}
+                        textAnchor="end"
+                        fill={DIM}
+                        fontSize={9}
+                        fontFamily="DM Mono"
+                        transform="rotate(-45)"
+                      >
+                        {payload.value.length > 18 ? payload.value.slice(0, 18) + "…" : payload.value}
+                      </text>
+                    </g>
+                  )}
                 />
                 <YAxis tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} tickFormatter={$k} axisLine={false} tickLine={false} width={52}/>
                 <Tooltip content={({ active,payload }) => {
