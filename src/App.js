@@ -420,10 +420,10 @@ function Dashboard({ onJobClick, jobSummaries }) {
             </div>
           </div>
           {barData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={barData} margin={{ top:4,right:4,left:12,bottom:60 }}>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={barData} margin={{ top:4,right:4,left:12,bottom:0 }}>
                 <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false}/>
-                <XAxis dataKey="name" tick={{ fontSize:9,fill:DIM,fontFamily:"DM Mono" }} angle={-38} textAnchor="end" interval={0} height={60}/>
+                <XAxis dataKey="name" tick={{ fontSize:9,fill:DIM,fontFamily:"DM Mono" }} angle={-40} textAnchor="end" interval={0} height={80}/>
                 <YAxis tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} tickFormatter={$k} axisLine={false} tickLine={false} width={52}/>
                 <Tooltip content={({ active,payload }) => {
                   if (!active||!payload?.length) return null;
@@ -440,7 +440,7 @@ function Dashboard({ onJobClick, jobSummaries }) {
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <div style={{ height:240,display:"flex",alignItems:"center",justifyContent:"center",color:DIM,fontSize:13,fontFamily:"'DM Sans',sans-serif",fontStyle:"italic" }}>No jobs in this period</div>
+            <div style={{ height:280,display:"flex",alignItems:"center",justifyContent:"center",color:DIM,fontSize:13,fontFamily:"'DM Sans',sans-serif",fontStyle:"italic" }}>No jobs in this period</div>
           )}
         </div>
 
@@ -449,8 +449,8 @@ function Dashboard({ onJobClick, jobSummaries }) {
             <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:5,fontWeight:500 }}>Monthly Trend</div>
             <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>How is profitability tracking?</div>
           </div>
-          <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={filteredTrend} margin={{ top:4,right:16,left:12,bottom:20 }}>
+          <ResponsiveContainer width="100%" height={280}>
+            <LineChart data={filteredTrend} margin={{ top:4,right:16,left:12,bottom:0 }}>
               <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false}/>
               <XAxis dataKey="month" tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} axisLine={false} tickLine={false} height={40}/>
               <YAxis tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} tickFormatter={$k} axisLine={false} tickLine={false} width={52}/>
