@@ -1,5 +1,12 @@
 import { useState, useRef, useEffect } from "react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine, PieChart, Pie, Legend } from "recharts";
+import { createClient } from "@supabase/supabase-js";
+
+// ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY
+);
 
 // ─── MOCK DATA (mirrors QuickBooks export) ───────────────────────────────────
 
@@ -1055,13 +1062,160 @@ function RawData() {
   );
 }
 
+// ─── LOGIN SCREEN ─────────────────────────────────────────────────────────────
+
+function Login({ onLogin }) {
+  const [email, setEmail]       = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState("");
+
+  async function handleLogin() {
+    if (!email || !password) { setError("Please enter your email and password."); return; }
+    setLoading(true);
+    setError("");
+    const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+    if (authError) {
+      setError("Incorrect email or password. Please try again.");
+      setLoading(false);
+      return;
+    }
+    // Fetch contractor profile to get client_type
+    const { data: profile } = await supabase
+      .from("contractors")
+      .select("*")
+      .eq("id", data.user.id)
+      .single();
+    onLogin(data.user, profile);
+    setLoading(false);
+  }
+
+  return (
+    <div style={{ minHeight:"100vh", background:BG, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:24 }}>
+      <style>{css}</style>
+
+      {/* Logo */}
+      <div style={{ marginBottom:40, textAlign:"center" }}>
+        <div style={{ fontFamily:"'Lora',serif", fontSize:32, fontWeight:500, color:DARK, letterSpacing:"-0.02em" }}>Canopy</div>
+        <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, letterSpacing:"0.14em", color:DIM, textTransform:"uppercase", marginTop:4 }}>Business Intelligence</div>
+      </div>
+
+      {/* Card */}
+      <div style={{ width:"100%", maxWidth:400, background:CARD, border:`1px solid ${BORDER}`, borderRadius:8, padding:"36px 40px", boxShadow:"0 4px 24px rgba(44,36,22,0.08)" }}>
+        <h2 style={{ fontFamily:"'Lora',serif", fontSize:20, fontWeight:500, color:DARK, marginBottom:6, letterSpacing:"-0.01em" }}>Sign in to your account</h2>
+        <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:13, color:DIM, marginBottom:28 }}>Enter your credentials below to access your dashboard.</p>
+
+        {/* Email */}
+        <div style={{ marginBottom:16 }}>
+          <label style={{ display:"block", fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:500, color:MID, letterSpacing:"0.04em", textTransform:"uppercase", marginBottom:6 }}>Email</label>
+          <input
+            type="email"
+            className="chat-input"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleLogin()}
+            placeholder="you@example.com"
+            autoFocus
+          />
+        </div>
+
+        {/* Password */}
+        <div style={{ marginBottom:24 }}>
+          <label style={{ display:"block", fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:500, color:MID, letterSpacing:"0.04em", textTransform:"uppercase", marginBottom:6 }}>Password</label>
+          <input
+            type="password"
+            className="chat-input"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleLogin()}
+            placeholder="••••••••"
+          />
+        </div>
+
+        {/* Error */}
+        {error && (
+          <div style={{ marginBottom:16, padding:"10px 14px", borderRadius:4, background:"rgba(140,64,64,0.07)", border:`1px solid rgba(140,64,64,0.2)`, fontFamily:"'DM Sans',sans-serif", fontSize:12, color:RED }}>
+            {error}
+          </div>
+        )}
+
+        {/* Submit */}
+        <button
+          className="btn act"
+          onClick={handleLogin}
+          disabled={loading}
+          style={{ width:"100%", padding:"12px", fontSize:13, opacity:loading ? 0.6 : 1, letterSpacing:"0.03em" }}
+        >
+          {loading ? "Signing in..." : "Sign In"}
+        </button>
+      </div>
+
+      {/* Footer */}
+      <div style={{ marginTop:24, fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DIM, textAlign:"center" }}>
+        Don't have an account? Contact your Canopy administrator.
+      </div>
+    </div>
+  );
+}
+
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [tab, setTab]           = useState("dashboard");
+  const [session, setSession]       = useState(null);
+  const [profile, setProfile]       = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [tab, setTab]               = useState("dashboard");
   const [selectedJob, setSelectedJob] = useState(null);
-  const [untagged, setUntagged] = useState(INITIAL_UNTAGGED);
-  const [tagged, setTagged]     = useState([]);
+  const [untagged, setUntagged]     = useState(INITIAL_UNTAGGED);
+  const [tagged, setTagged]         = useState([]);
+
+  // ── On mount: check if a session already exists (user refreshed the page)
+  useEffect(() => {
+    supabase.auth.getSession().then(async ({ data: { session: s } }) => {
+      setSession(s);
+      if (s) {
+        const { data: p } = await supabase.from("contractors").select("*").eq("id", s.user.id).single();
+        setProfile(p);
+      }
+      setAuthLoading(false);
+    });
+
+    // Listen for login/logout events
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s);
+      if (!s) { setProfile(null); setTab("dashboard"); }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  function handleLogin(user, contractorProfile) {
+    setSession({ user });
+    setProfile(contractorProfile);
+  }
+
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    setSession(null);
+    setProfile(null);
+    setTab("dashboard");
+  }
+
+  // ── Show nothing while checking session on first load
+  if (authLoading) {
+    return (
+      <div style={{ minHeight:"100vh", background:BG, display:"flex", alignItems:"center", justifyContent:"center" }}>
+        <style>{css}</style>
+        <div style={{ fontFamily:"'Lora',serif", fontSize:16, color:DIM, fontStyle:"italic" }}>Loading...</div>
+      </div>
+    );
+  }
+
+  // ── Show login if no session
+  if (!session) return <Login onLogin={handleLogin} />;
+
+  // ── Logged in — determine which tabs to show based on client_type
+  const clientType = profile?.client_type || "quickbooks";
+  const contractorName = profile?.name || session?.user?.email || "Your Account";
 
   // Extra costs per job accumulated from inbox tagging
   const extraCostsByJob = tagged.reduce((acc, t) => {
@@ -1079,7 +1233,6 @@ export default function App() {
   function handleTag(item, jobId, jobName) {
     setUntagged(prev => prev.filter(u => u.id !== item.id));
     setTagged(prev => [...prev, { ...item, taggedJobId: jobId, taggedJobName: jobName }]);
-    // Update selected job if it's open
     if (selectedJob && selectedJob.id === jobId) {
       const updated = jobSummaries.find(j => j.id === jobId);
       if (updated) setSelectedJob(updated);
@@ -1092,37 +1245,49 @@ export default function App() {
 
   const inboxCount = untagged.length;
 
+  // QB clients see Expense Inbox + Raw Data; basic clients will see Upload tab (coming soon)
   const TABS = [
     { key:"dashboard", label:"Dashboard" },
-    { key:"inbox",     label:"Expense Inbox" },
+    ...(clientType === "quickbooks" ? [{ key:"inbox", label:"Expense Inbox" }] : []),
     { key:"detail",    label:"Job Detail" },
     { key:"chat",      label:"AI Analyst" },
-    { key:"raw",       label:"Raw Data" },
+    ...(clientType === "quickbooks" ? [{ key:"raw", label:"Raw Data" }] : []),
   ];
 
   return (
-    <div style={{ fontFamily:"'DM Sans',sans-serif",background:BG,minHeight:"100vh",color:DARK }}>
+    <div style={{ fontFamily:"'DM Sans',sans-serif", background:BG, minHeight:"100vh", color:DARK }}>
       <style>{css}</style>
 
       {/* Header */}
-      <div style={{ borderBottom:`1px solid ${BORDER}`,background:CARD,position:"sticky",top:0,zIndex:100,boxShadow:"0 1px 4px rgba(44,36,22,0.06)" }}>
-        <div style={{ padding:"0 36px",display:"flex",alignItems:"center",gap:0 }}>
-          <div style={{ marginRight:36,paddingTop:14,paddingBottom:14,borderRight:`1px solid ${BORDER}`,paddingRight:36 }}>
-            <div style={{ fontFamily:"'Lora',serif",fontSize:18,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>Canopy</div>
-            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginTop:1 }}>Business Intelligence</div>
+      <div style={{ borderBottom:`1px solid ${BORDER}`, background:CARD, position:"sticky", top:0, zIndex:100, boxShadow:"0 1px 4px rgba(44,36,22,0.06)" }}>
+        <div style={{ padding:"0 36px", display:"flex", alignItems:"center", gap:0 }}>
+          <div style={{ marginRight:36, paddingTop:14, paddingBottom:14, borderRight:`1px solid ${BORDER}`, paddingRight:36 }}>
+            <div style={{ fontFamily:"'Lora',serif", fontSize:18, fontWeight:500, color:DARK, letterSpacing:"-0.01em" }}>Canopy</div>
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginTop:1 }}>Business Intelligence</div>
           </div>
           {TABS.map(t => (
             <div key={t.key} className={`nav-tab${tab===t.key?" active":""}`} onClick={()=>setTab(t.key)}>
               {t.label}
               {t.key==="inbox" && inboxCount > 0 && <span className="badge">{inboxCount}</span>}
               {t.key==="inbox" && inboxCount === 0 && tagged.length > 0 && <span className="badge done">✓</span>}
-              {t.key==="detail" && selectedJob && <span style={{ marginLeft:6,fontSize:10,color:DIM }}>· {selectedJob.name.split(" ")[0]}</span>}
-              {t.key==="chat" && <span style={{ marginLeft:6,fontSize:9,padding:"2px 7px",borderRadius:3,background:"rgba(92,122,90,0.12)",color:ACCENT2,fontWeight:500 }}>AI</span>}
+              {t.key==="detail" && selectedJob && <span style={{ marginLeft:6, fontSize:10, color:DIM }}>· {selectedJob.name.split(" ")[0]}</span>}
+              {t.key==="chat" && <span style={{ marginLeft:6, fontSize:9, padding:"2px 7px", borderRadius:3, background:"rgba(92,122,90,0.12)", color:ACCENT2, fontWeight:500 }}>AI</span>}
             </div>
           ))}
-          <div style={{ marginLeft:"auto",fontSize:10,color:DIM,display:"flex",alignItems:"center",gap:6,fontFamily:"'DM Sans',sans-serif" }}>
-            <div style={{ width:6,height:6,borderRadius:"50%",background:ACCENT2,opacity:0.7 }}/>
-            Demo data · QuickBooks format
+
+          {/* Right side — contractor name + sign out */}
+          <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:16 }}>
+            <div style={{ fontSize:11, color:DIM, fontFamily:"'DM Sans',sans-serif", display:"flex", alignItems:"center", gap:6 }}>
+              <div style={{ width:6, height:6, borderRadius:"50%", background:ACCENT2, opacity:0.7 }}/>
+              {contractorName}
+            </div>
+            <button
+              className="btn"
+              onClick={handleSignOut}
+              style={{ fontSize:11, padding:"5px 12px", color:DIM }}
+            >
+              Sign Out
+            </button>
           </div>
         </div>
       </div>
