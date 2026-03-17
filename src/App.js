@@ -4,8 +4,8 @@ import { createClient } from "@supabase/supabase-js";
 
 // ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
 const supabase = createClient(
-  "https://thkkbkxpnvcwjkbtxngq.supabase.co",
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRoa2tia3hwbnZjd2prYnR4bmdxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3MDkzNzAsImV4cCI6MjA4OTI4NTM3MH0.U0c9DWJawS70z4NoiZdhcvToqw-v_6azCPNwRAIe38k"
+  process.env.REACT_APP_SUPABASE_URL,
+  process.env.REACT_APP_SUPABASE_ANON_KEY
 );
 
 // ─── MOCK DATA (mirrors QuickBooks export) ───────────────────────────────────
