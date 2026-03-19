@@ -1212,33 +1212,99 @@ function doExcelExport(data, title) {
   XLSX.writeFile(wb, `Canopy - ${title} - ${new Date().toLocaleDateString('en-US')}.xlsx`);
 }
 
-// PDF export — uses window.print() with a print stylesheet injected at export time
-function exportToPDF(title) {
-  // Inject a print stylesheet if not already present
-  const styleId = 'canopy-print-style';
-  if (!document.getElementById(styleId)) {
-    const style = document.createElement('style');
-    style.id = styleId;
-    style.innerHTML = `
-      @media print {
-        body > div > div:first-child { display: none !important; } /* hide nav */
-        .no-print { display: none !important; }
-        .print-only { display: block !important; }
-        body { background: white !important; }
-        .card { box-shadow: none !important; border: 1px solid #ddd !important; }
-        @page { margin: 1cm; size: A4 landscape; }
-      }
-    `;
-    document.head.appendChild(style);
+// PDF export — renders report content into a clean new window and prints it
+function exportToPDF(title, insight, reportData, report) {
+  const formatVal = (k, v) => {
+    if (typeof v !== 'number') return v;
+    if (k === 'margin') return `${v}%`;
+    if (k === 'jobs')   return v;
+    return `$${Math.abs(v).toLocaleString()}`;
+  };
+
+  const headers = Object.keys(reportData[0] || {});
+
+  const tableRows = reportData.map(row =>
+    `<tr>${headers.map(k => `<td>${formatVal(k, row[k])}</td>`).join('')}</tr>`
+  ).join('');
+
+  const tableHTML = `
+    <table>
+      <thead><tr>${headers.map(k => `<th>${k.charAt(0).toUpperCase() + k.slice(1)}</th>`).join('')}</tr></thead>
+      <tbody>${tableRows}</tbody>
+    </table>
+  `;
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Canopy — ${title}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; background: white; color: #2C2416; padding: 32px 40px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid #DDD5C4; }
+    .logo { font-size: 18px; font-weight: bold; color: #1A3C2E; }
+    .logo span { font-size: 10px; display: block; color: #A89880; letter-spacing: 0.1em; text-transform: uppercase; margin-top: 2px; font-weight: normal; }
+    .date { font-size: 11px; color: #A89880; text-align: right; }
+    h1 { font-size: 20px; font-weight: bold; color: #2C2416; margin-bottom: 4px; }
+    .desc { font-size: 12px; color: #6B5E4E; margin-bottom: 20px; }
+    .insight { background: #F0F5EF; border: 1px solid rgba(92,122,90,0.3); border-left: 4px solid #2D6A4F; border-radius: 4px; padding: 14px 16px; margin-bottom: 24px; }
+    .insight-label { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: #2D6A4F; font-weight: bold; margin-bottom: 6px; }
+    .insight-text { font-size: 12px; color: #6B5E4E; line-height: 1.7; }
+    .section-label { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: #A89880; font-weight: bold; margin-bottom: 10px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { background: #F5F0E8; padding: 8px 12px; text-align: left; font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: #A89880; border-bottom: 1px solid #DDD5C4; font-weight: 500; }
+    td { padding: 10px 12px; border-bottom: 1px solid #EDE8DC; color: #6B5E4E; }
+    tr:last-child td { border-bottom: none; }
+    td:not(:first-child) { font-family: 'Courier New', monospace; }
+    .footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid #DDD5C4; font-size: 10px; color: #A89880; display: flex; justify-content: space-between; }
+    @media print { @page { margin: 1cm; size: A4 landscape; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="logo">Canopy <span>Business Intelligence</span></div>
+    </div>
+    <div class="date">
+      ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+    </div>
+  </div>
+
+  <h1>${title}</h1>
+  <div class="desc">${report.description}</div>
+
+  <div class="insight">
+    <div class="insight-label">Canopy Insight</div>
+    <div class="insight-text">${insight}</div>
+  </div>
+
+  <div class="section-label">Data</div>
+  ${tableHTML}
+
+  <div class="footer">
+    <span>Canopy Business Intelligence · app.canopybi.com</span>
+    <span>Confidential — for internal use only</span>
+  </div>
+
+  <script>
+    window.onload = function() {
+      setTimeout(function() { window.print(); }, 400);
+    };
+  </script>
+</body>
+</html>`;
+
+  const printWindow = window.open('', '_blank', 'width=900,height=700');
+  if (!printWindow) {
+    alert('Please allow popups for app.canopybi.com to use PDF export.');
+    return;
   }
-  // Set the document title so the PDF filename is the report name
-  const prevTitle = document.title;
-  document.title = `Canopy — ${title}`;
-  window.print();
-  document.title = prevTitle;
+  printWindow.document.write(html);
+  printWindow.document.close();
 }
 
-function ExportButtons({ data, title, compact = false }) {
+function ExportButtons({ data, title, insight, report, compact = false }) {
   const [exporting, setExporting] = useState(false);
 
   function handleExcel() {
@@ -1250,7 +1316,7 @@ function ExportButtons({ data, title, compact = false }) {
   }
 
   function handlePDF() {
-    exportToPDF(title);
+    exportToPDF(title, insight, data, report);
   }
 
   if (compact) {
@@ -1376,7 +1442,7 @@ function Reports({ jobSummaries }) {
             </div>
           </div>
           {/* Export buttons — full size on individual report page */}
-          <ExportButtons data={reportData} title={report.title} />
+          <ExportButtons data={reportData} title={report.title} insight={insight} report={report} />
         </div>
 
         {/* Print-only header (hidden on screen, shown when printing) */}
@@ -1484,7 +1550,7 @@ function Reports({ jobSummaries }) {
               <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",paddingTop:14,borderTop:`1px solid ${BORDER}` }}>
                 <button className="btn act" onClick={()=>setActiveReport(r.id)} style={{ fontSize:11 }}>Open report →</button>
                 {/* Compact export buttons on library card */}
-                <ExportButtons data={data} title={r.title} compact={true} />
+                <ExportButtons data={data} title={r.title} insight={r.insight(data)} report={r} compact={true} />
               </div>
             </div>
           );
