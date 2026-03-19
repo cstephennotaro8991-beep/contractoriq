@@ -301,6 +301,9 @@ const css = `
   @keyframes bounce { 0%,60%,100%{transform:translateY(0);opacity:0.3} 30%{transform:translateY(-5px);opacity:0.8} }
   @keyframes slideIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
   .slide-in { animation:slideIn 0.2s ease; }
+  .kpi-tooltip { position:relative; }
+  .kpi-tooltip .tooltip-text { visibility:hidden;opacity:0;position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);background:${DARK};color:#FDF8F0;font-size:10px;font-family:'DM Sans',sans-serif;padding:8px 12px;border-radius:4px;width:220px;line-height:1.5;text-align:center;z-index:200;transition:opacity 0.15s;pointer-events:none; }
+  .kpi-tooltip:hover .tooltip-text { visibility:visible;opacity:1; }
 `;
 
 // ─── CHART TOOLTIP ────────────────────────────────────────────────────────────
@@ -434,7 +437,12 @@ function Dashboard({ onJobClick, jobSummaries }) {
           { label:"Outstanding A/R",     val:$(outstanding), sub:`${losers} job${losers!==1?"s":""} losing money`,                hi:false, color:outstanding>0?AMBER:DARK },
           { label:"Data Quality Score",  val:`${dataQuality}%`, sub:`${dqLabel} · ${taggedExpenses}/${totalExpenses} expenses tagged`, hi:false, color:dqColor },
         ].map((k,i) => (
-          <div key={i} className={`kpi${k.hi?" hi":""}`} title={i===4?"Higher score = more accurate job numbers. Tag expenses in Expense Inbox to improve.":""}>
+          <div key={i} className={`kpi${k.hi?" hi":""}${i===4?" kpi-tooltip":""}`}>
+            {i===4 && (
+              <span className="tooltip-text">
+                Higher score = more accurate job profit numbers. Tag untagged expenses in the Expense Inbox to improve. Data sourced from QuickBooks — accuracy depends on your QB records.
+              </span>
+            )}
             <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:12,fontWeight:500 }}>{k.label}</div>
             <div style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:500,color:k.color,letterSpacing:"-0.01em" }}>{k.val}</div>
             <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>{k.sub}</div>
@@ -1659,13 +1667,14 @@ function Login({ onLogin }) {
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [session, setSession]       = useState(null);
-  const [profile, setProfile]       = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [tab, setTab]               = useState("dashboard");
-  const [selectedJob, setSelectedJob] = useState(null);
-  const [untagged, setUntagged]     = useState(INITIAL_UNTAGGED);
-  const [tagged, setTagged]         = useState([]);
+  const [session, setSession]           = useState(null);
+  const [profile, setProfile]           = useState(null);
+  const [authLoading, setAuthLoading]   = useState(true);
+  const [tab, setTab]                   = useState("dashboard");
+  const [selectedJob, setSelectedJob]   = useState(null);
+  const [untagged, setUntagged]         = useState(INITIAL_UNTAGGED);
+  const [tagged, setTagged]             = useState([]);
+  const [showDisclaimer, setShowDisclaimer] = useState(false);
 
   // ── On mount: check if a session already exists (user refreshed the page)
   useEffect(() => {
@@ -1674,6 +1683,9 @@ export default function App() {
       if (s) {
         const { data: p } = await supabase.from("contractors").select("*").eq("id", s.user.id).single();
         setProfile(p);
+        // Show first-login disclaimer if not yet dismissed
+        const dismissed = localStorage.getItem(`canopy_disclaimer_${s.user.id}`);
+        if (!dismissed) setShowDisclaimer(true);
       }
       setAuthLoading(false);
     });
@@ -1681,7 +1693,7 @@ export default function App() {
     // Listen for login/logout events
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
-      if (!s) { setProfile(null); setTab("dashboard"); }
+      if (!s) { setProfile(null); setTab("dashboard"); setShowDisclaimer(false); }
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -1689,6 +1701,15 @@ export default function App() {
   function handleLogin(user, contractorProfile) {
     setSession({ user });
     setProfile(contractorProfile);
+    const dismissed = localStorage.getItem(`canopy_disclaimer_${user.id}`);
+    if (!dismissed) setShowDisclaimer(true);
+  }
+
+  function dismissDisclaimer() {
+    if (session?.user?.id) {
+      localStorage.setItem(`canopy_disclaimer_${session.user.id}`, 'true');
+    }
+    setShowDisclaimer(false);
   }
 
   async function handleSignOut() {
@@ -1696,6 +1717,7 @@ export default function App() {
     setSession(null);
     setProfile(null);
     setTab("dashboard");
+    setShowDisclaimer(false);
   }
 
   // ── Show nothing while checking session on first load
@@ -1755,10 +1777,54 @@ export default function App() {
   ];
 
   return (
-    <div style={{ fontFamily:"'DM Sans',sans-serif", background:BG, minHeight:"100vh", color:DARK }}>
+    <div style={{ fontFamily:"'DM Sans',sans-serif", background:BG, minHeight:"100vh", color:DARK, display:"flex", flexDirection:"column" }}>
       <style>{css}</style>
 
-      {/* Header */}
+      {/* ── First-login disclaimer modal ── */}
+      {showDisclaimer && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(44,36,22,0.5)", zIndex:500, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
+          <div style={{ background:CARD, border:`1px solid ${BORDER}`, borderRadius:8, width:"100%", maxWidth:520, boxShadow:"0 20px 60px rgba(44,36,22,0.2)", padding:"32px 36px" }}>
+
+            {/* Icon + title */}
+            <div style={{ display:"flex", alignItems:"flex-start", gap:14, marginBottom:20 }}>
+              <div style={{ width:36, height:36, borderRadius:6, background:"rgba(140,107,48,0.1)", border:`1px solid rgba(140,107,48,0.25)`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontSize:16 }}>ℹ</div>
+              <div>
+                <h2 style={{ fontFamily:"'Lora',serif", fontSize:18, fontWeight:500, color:DARK, marginBottom:4 }}>A note about your data</h2>
+                <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:DIM }}>Please read before using your dashboard</p>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:13, color:MID, lineHeight:1.75, marginBottom:24 }}>
+              <p style={{ marginBottom:12 }}>
+                The figures shown in Canopy are derived directly from your <strong style={{ color:DARK }}>QuickBooks Online account</strong>. Canopy does not modify, verify, or audit your QuickBooks data — any inaccuracies or incomplete records in QuickBooks will be reflected here.
+              </p>
+              <p style={{ marginBottom:12 }}>
+                Common sources of inaccurate data include <strong style={{ color:DARK }}>untagged expenses</strong> (visible in the Expense Inbox), missing invoices, or duplicate entries. Your Data Quality Score on the dashboard indicates how complete your records are.
+              </p>
+              <p>
+                Canopy is provided for <strong style={{ color:DARK }}>informational purposes only</strong> and does not constitute financial, tax, or accounting advice. Always consult your accountant or bookkeeper before making significant business decisions.
+              </p>
+            </div>
+
+            {/* Divider */}
+            <div style={{ borderTop:`1px solid ${BORDER}`, paddingTop:20, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <div style={{ fontSize:11, color:DIM, fontFamily:"'DM Sans',sans-serif" }}>
+                This notice will not appear again after dismissal.
+              </div>
+              <button
+                className="btn act"
+                onClick={dismissDisclaimer}
+                style={{ padding:"9px 24px", fontSize:12 }}
+              >
+                I understand — continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Header ── */}
       <div style={{ borderBottom:`1px solid ${BORDER}`, background:CARD, position:"sticky", top:0, zIndex:100, boxShadow:"0 1px 4px rgba(44,36,22,0.06)" }}>
         <div style={{ padding:"0 36px", display:"flex", alignItems:"center", gap:0 }}>
           <div style={{ marginRight:36, paddingTop:14, paddingBottom:14, borderRight:`1px solid ${BORDER}`, paddingRight:36 }}>
@@ -1781,25 +1847,38 @@ export default function App() {
               <div style={{ width:6, height:6, borderRadius:"50%", background:ACCENT2, opacity:0.7 }}/>
               {contractorName}
             </div>
-            <button
-              className="btn"
-              onClick={handleSignOut}
-              style={{ fontSize:11, padding:"5px 12px", color:DIM }}
-            >
+            <button className="btn" onClick={handleSignOut} style={{ fontSize:11, padding:"5px 12px", color:DIM }}>
               Sign Out
             </button>
           </div>
         </div>
       </div>
 
-      {/* Content */}
-      {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} jobSummaries={jobSummaries}/>}
-      {tab==="inbox"     && <ExpenseInbox untagged={untagged} tagged={tagged} onTag={handleTag} onDismiss={handleDismiss}/>}
-      {tab==="detail"    && <JobDetail job={selectedJob} onBack={()=>setTab("dashboard")}/>}
-      {tab==="clients"   && <ClientScorecard jobSummaries={jobSummaries}/>}
-      {tab==="reports"   && <Reports jobSummaries={jobSummaries}/>}
-      {tab==="chat"      && <AIChat jobSummaries={jobSummaries}/>}
-      {tab==="raw"       && <RawData/>}
+      {/* ── Content ── */}
+      <div style={{ flex:1 }}>
+        {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} jobSummaries={jobSummaries}/>}
+        {tab==="inbox"     && <ExpenseInbox untagged={untagged} tagged={tagged} onTag={handleTag} onDismiss={handleDismiss}/>}
+        {tab==="detail"    && <JobDetail job={selectedJob} onBack={()=>setTab("dashboard")}/>}
+        {tab==="clients"   && <ClientScorecard jobSummaries={jobSummaries}/>}
+        {tab==="reports"   && <Reports jobSummaries={jobSummaries}/>}
+        {tab==="chat"      && <AIChat jobSummaries={jobSummaries}/>}
+        {tab==="raw"       && <RawData/>}
+      </div>
+
+      {/* ── Persistent footer disclaimer ── */}
+      <div style={{ background:BG2, borderTop:`1px solid ${BORDER}`, padding:"10px 36px", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8 }}>
+        <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, lineHeight:1.6 }}>
+          <span style={{ fontWeight:500, color:MID }}>Data disclaimer: </span>
+          All figures are sourced directly from QuickBooks Online. Canopy does not verify or audit source data — accuracy depends on the completeness of your QuickBooks records.
+        </div>
+        <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, whiteSpace:"nowrap" }}>
+          Not financial advice · <span
+            style={{ color:ACCENT, cursor:"pointer", textDecoration:"underline" }}
+            onClick={() => setShowDisclaimer(true)}
+          >View full notice</span>
+        </div>
+      </div>
+
     </div>
   );
 }
