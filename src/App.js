@@ -318,13 +318,18 @@ const ChartTip = ({ active, payload, label }) => {
 // ─── TAB: DASHBOARD ───────────────────────────────────────────────────────────
 
 function Dashboard({ onJobClick, jobSummaries }) {
-  const [sort, setSort]       = useState("profit");
-  const [sortDir, setSortDir] = useState("desc");
-  const [dateRange, setDateRange] = useState("all"); // "all" | "30d" | "90d" | "6m" | "12m" | "ytd"
+  const [sort, setSort]           = useState("profit");
+  const [sortDir, setSortDir]     = useState("desc");
+  const [dateRange, setDateRange] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
 
-  // Apply date filter to both jobs and trend
+  // Apply date filter
   const filteredJobs  = dateRange === "all" ? jobSummaries : filterJobsByDate(jobSummaries, dateRange);
   const filteredTrend = dateRange === "all" ? MONTHLY_TREND : filterTrendByDate(MONTHLY_TREND, dateRange);
+
+  // Job type filter
+  const allTypes = ["all", ...Array.from(new Set(jobSummaries.map(j => j.type).filter(Boolean))).sort()];
+  const typeFilteredJobs = typeFilter === "all" ? filteredJobs : filteredJobs.filter(j => j.type === typeFilter);
 
   function handleColSort(col) {
     if (sort === col) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -336,9 +341,9 @@ function Dashboard({ onJobClick, jobSummaries }) {
     return <span style={{ marginLeft:4, color:ACCENT }}>{sortDir === "asc" ? "↑" : "↓"}</span>;
   }
 
-  const sorted = [...filteredJobs].sort((a,b) => {
+  const sorted = [...typeFilteredJobs].sort((a,b) => {
     let diff = 0;
-    if (sort==="profit")  diff = b.profit - a.profit;
+    if (sort==="profit")       diff = b.profit - a.profit;
     else if (sort==="margin")  diff = parseFloat(b.marginPct) - parseFloat(a.marginPct);
     else if (sort==="revenue") diff = b.revenue - a.revenue;
     else if (sort==="costs")   diff = b.costs - a.costs;
@@ -347,18 +352,33 @@ function Dashboard({ onJobClick, jobSummaries }) {
     else if (sort==="status")  diff = a.status.localeCompare(b.status);
     return sortDir === "asc" ? -diff : diff;
   });
-  const totalRev    = filteredJobs.reduce((s,j) => s + j.revenue, 0);
-  const totalCost   = filteredJobs.reduce((s,j) => s + j.costs, 0);
-  const totalProfit = totalRev - totalCost;
-  const winners     = filteredJobs.filter(j => j.profit > 0).length;
-  const losers      = filteredJobs.filter(j => j.profit <= 0).length;
-  const outstanding = filteredJobs.reduce((s,j) => s + j.outstanding, 0);
-  const barData     = sorted.map(j => ({ name: j.name.length>16?j.name.slice(0,16)+"…":j.name, fullName:j.name, profit:j.profit }));
 
-  // Label shown under the page title
+  const totalRev    = typeFilteredJobs.reduce((s,j) => s + j.revenue, 0);
+  const totalCost   = typeFilteredJobs.reduce((s,j) => s + j.costs, 0);
+  const totalProfit = totalRev - totalCost;
+  const winners     = typeFilteredJobs.filter(j => j.profit > 0).length;
+  const losers      = typeFilteredJobs.filter(j => j.profit <= 0).length;
+  const outstanding = typeFilteredJobs.reduce((s,j) => s + j.outstanding, 0);
+  const barData     = sorted.map(j => ({ name: j.name, fullName:j.name, profit:j.profit }));
+
+  // Data Quality Score — ratio of tagged to total possible expenses
+  const totalExpenses  = QB_PURCHASES.length + INITIAL_UNTAGGED.length;
+  const taggedExpenses = QB_PURCHASES.length;
+  const dataQuality    = totalExpenses > 0 ? Math.round((taggedExpenses / totalExpenses) * 100) : 100;
+  const dqColor        = dataQuality >= 80 ? ACCENT2 : dataQuality >= 50 ? AMBER : RED;
+  const dqLabel        = dataQuality >= 80 ? "Good" : dataQuality >= 50 ? "Fair" : "Poor";
+
+  // Mid-job margin alerts — In Progress jobs where costs > 85% of revenue
+  const atRiskJobs = typeFilteredJobs.filter(j =>
+    j.status === "In Progress" && j.revenue > 0 && (j.costs / j.revenue) > 0.85
+  );
+
+  // Unbilled work alert — jobs with costs but no invoices
+  const unbilledJobs = jobSummaries.filter(j => j.costs > 0 && j.revenue === 0);
+
   const rangeLabel = dateRange === "all"
     ? "All jobs · Sep 2023 – Apr 2024"
-    : `${DATE_RANGES.find(r=>r.key===dateRange)?.label} · ${filteredJobs.length} job${filteredJobs.length!==1?"s":""}`;
+    : `${DATE_RANGES.find(r=>r.key===dateRange)?.label} · ${typeFilteredJobs.length} job${typeFilteredJobs.length!==1?"s":""}`;
 
   return (
     <div style={{ padding:"32px 36px", background:BG, minHeight:"100vh" }}>
@@ -369,62 +389,54 @@ function Dashboard({ onJobClick, jobSummaries }) {
           <h1 style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>Job Profitability Overview</h1>
           <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>{rangeLabel}</p>
         </div>
-
-        {/* Date slicer */}
         <div style={{ display:"flex",alignItems:"center",gap:6,marginTop:4 }}>
-          {/* Segmented toggle for time windows */}
           <div style={{ display:"flex",border:`1px solid ${BORDER}`,borderRadius:5,overflow:"hidden",background:CARD }}>
             {DATE_RANGES.map((r,i) => (
-              <button
-                key={r.key}
-                onClick={()=>setDateRange(r.key)}
-                style={{
-                  cursor:"pointer",
-                  padding:"7px 13px",
-                  fontSize:11,
-                  fontWeight:500,
-                  fontFamily:"'DM Sans',sans-serif",
-                  letterSpacing:"0.03em",
-                  border:"none",
-                  borderRight: i < DATE_RANGES.length-1 ? `1px solid ${BORDER}` : "none",
-                  background: dateRange===r.key ? ACCENT : CARD,
-                  color: dateRange===r.key ? CARD : MID,
-                  transition:"all 0.15s",
-                }}
-              >{r.label}</button>
+              <button key={r.key} onClick={()=>setDateRange(r.key)} style={{ cursor:"pointer",padding:"7px 13px",fontSize:11,fontWeight:500,fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.03em",border:"none",borderRight:i<DATE_RANGES.length-1?`1px solid ${BORDER}`:"none",background:dateRange===r.key?ACCENT:CARD,color:dateRange===r.key?CARD:MID,transition:"all 0.15s" }}>{r.label}</button>
             ))}
           </div>
-
-          {/* Separate "All" button */}
-          <button
-            onClick={()=>setDateRange("all")}
-            style={{
-              cursor:"pointer",
-              padding:"7px 14px",
-              fontSize:11,
-              fontWeight:500,
-              fontFamily:"'DM Sans',sans-serif",
-              letterSpacing:"0.03em",
-              border:`1px solid ${BORDER}`,
-              borderRadius:5,
-              background: dateRange==="all" ? DARK : CARD,
-              color: dateRange==="all" ? CARD : MID,
-              transition:"all 0.15s",
-            }}
-          >All</button>
+          <button onClick={()=>setDateRange("all")} style={{ cursor:"pointer",padding:"7px 14px",fontSize:11,fontWeight:500,fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.03em",border:`1px solid ${BORDER}`,borderRadius:5,background:dateRange==="all"?DARK:CARD,color:dateRange==="all"?CARD:MID,transition:"all 0.15s" }}>All</button>
         </div>
       </div>
 
-      <div style={{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:28 }}>
+      {/* Unbilled Work Alert */}
+      {unbilledJobs.length > 0 && (
+        <div style={{ marginBottom:20,padding:"13px 20px",borderRadius:5,border:`1px solid rgba(140,64,64,0.25)`,background:"rgba(140,64,64,0.04)",display:"flex",alignItems:"center",justifyContent:"space-between" }}>
+          <div style={{ fontSize:13,color:RED,fontFamily:"'DM Sans',sans-serif" }}>
+            <span style={{ fontWeight:500 }}>⚠ {unbilledJobs.length} job{unbilledJobs.length!==1?"s":""} with expenses recorded but no invoice sent</span>
+            <span style={{ color:MID,marginLeft:8 }}>— {$(unbilledJobs.reduce((s,j)=>s+j.costs,0))} potentially unbilled</span>
+          </div>
+          <div style={{ fontSize:11,color:RED,fontFamily:"'DM Sans',sans-serif",whiteSpace:"nowrap",marginLeft:16,fontWeight:500 }}>
+            {unbilledJobs.map(j=>j.name).join(", ")}
+          </div>
+        </div>
+      )}
+
+      {/* Mid-Job Margin Alert */}
+      {atRiskJobs.length > 0 && (
+        <div style={{ marginBottom:20,padding:"13px 20px",borderRadius:5,border:`1px solid rgba(140,107,48,0.25)`,background:"rgba(140,107,48,0.05)",display:"flex",alignItems:"center",justifyContent:"space-between" }}>
+          <div style={{ fontSize:13,color:AMBER,fontFamily:"'DM Sans',sans-serif" }}>
+            <span style={{ fontWeight:500 }}>● {atRiskJobs.length} active job{atRiskJobs.length!==1?"s":""} trending toward a loss</span>
+            <span style={{ color:MID,marginLeft:8 }}>— costs are running above 85% of revenue billed so far</span>
+          </div>
+          <div style={{ fontSize:11,color:AMBER,fontFamily:"'DM Sans',sans-serif",whiteSpace:"nowrap",marginLeft:16,fontWeight:500 }}>
+            {atRiskJobs.map(j=>`${j.name} (${j.marginPct}%)`).join("  ·  ")}
+          </div>
+        </div>
+      )}
+
+      {/* KPI strip — 5 cards including Data Quality Score */}
+      <div style={{ display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:14,marginBottom:28 }}>
         {[
-          { label:"Total Revenue",    val:$(totalRev),    sub:"all jobs billed",                         hi:false },
-          { label:"Total Profit",     val:$(totalProfit), sub:totalRev>0?`${((totalProfit/totalRev)*100).toFixed(1)}% overall margin`:"no revenue", hi:true },
-          { label:"Jobs Profitable",  val:`${winners} of ${filteredJobs.length}`, sub:"in the green",    hi:false },
-          { label:"Outstanding A/R",  val:$(outstanding), sub:`${losers} job${losers!==1?"s":""} losing money`, hi:false },
+          { label:"Total Revenue",       val:$(totalRev),    sub:"all jobs billed",                                                hi:false, color:DARK },
+          { label:"Total Profit",        val:$(totalProfit), sub:totalRev>0?`${((totalProfit/totalRev)*100).toFixed(1)}% overall margin`:"no revenue", hi:true,  color:ACCENT2 },
+          { label:"Jobs Profitable",     val:`${winners} of ${typeFilteredJobs.length}`, sub:"in the green",                      hi:false, color:DARK },
+          { label:"Outstanding A/R",     val:$(outstanding), sub:`${losers} job${losers!==1?"s":""} losing money`,                hi:false, color:outstanding>0?AMBER:DARK },
+          { label:"Data Quality Score",  val:`${dataQuality}%`, sub:`${dqLabel} · ${taggedExpenses}/${totalExpenses} expenses tagged`, hi:false, color:dqColor },
         ].map((k,i) => (
-          <div key={i} className={`kpi${k.hi?" hi":""}`}>
+          <div key={i} className={`kpi${k.hi?" hi":""}`} title={i===4?"Higher score = more accurate job numbers. Tag expenses in Expense Inbox to improve.":""}>
             <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:12,fontWeight:500 }}>{k.label}</div>
-            <div style={{ fontFamily:"'Lora',serif",fontSize:28,fontWeight:500,color:k.hi?ACCENT2:DARK,letterSpacing:"-0.01em" }}>{k.val}</div>
+            <div style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:500,color:k.color,letterSpacing:"-0.01em" }}>{k.val}</div>
             <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>{k.sub}</div>
           </div>
         ))}
@@ -447,27 +459,13 @@ function Dashboard({ onJobClick, jobSummaries }) {
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={barData} margin={{ top:4,right:4,left:12,bottom:60 }}>
                 <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false}/>
-                <XAxis
-                  dataKey="name"
-                  interval={0}
-                  height={80}
-                  tick={({ x, y, payload }) => (
-                    <g transform={`translate(${x},${y})`}>
-                      <text
-                        x={0}
-                        y={0}
-                        dy={4}
-                        textAnchor="end"
-                        fill={DIM}
-                        fontSize={9}
-                        fontFamily="DM Mono"
-                        transform="rotate(-45)"
-                      >
-                        {payload.value.length > 18 ? payload.value.slice(0, 18) + "…" : payload.value}
-                      </text>
-                    </g>
-                  )}
-                />
+                <XAxis dataKey="name" interval={0} height={80} tick={({ x, y, payload }) => (
+                  <g transform={`translate(${x},${y})`}>
+                    <text x={0} y={0} dy={4} textAnchor="end" fill={DIM} fontSize={9} fontFamily="DM Mono" transform="rotate(-45)">
+                      {payload.value.length > 18 ? payload.value.slice(0, 18) + "…" : payload.value}
+                    </text>
+                  </g>
+                )}/>
                 <YAxis tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} tickFormatter={$k} axisLine={false} tickLine={false} width={52}/>
                 <Tooltip content={({ active,payload }) => {
                   if (!active||!payload?.length) return null;
@@ -515,14 +513,25 @@ function Dashboard({ onJobClick, jobSummaries }) {
         </div>
       </div>
 
+      {/* Job table with Job Type filter */}
       <div className="card" style={{ overflow:"hidden" }}>
-        <div style={{ padding:"18px 20px",borderBottom:`1px solid ${BORDER}`,display:"flex",justifyContent:"space-between",alignItems:"center",background:BG }}>
+        <div style={{ padding:"18px 20px",borderBottom:`1px solid ${BORDER}`,display:"flex",justifyContent:"space-between",alignItems:"center",background:BG,flexWrap:"wrap",gap:12 }}>
           <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>
-            {filteredJobs.length > 0 ? `${filteredJobs.length} job${filteredJobs.length!==1?"s":""} — click any row to see the full breakdown` : "No jobs in this period"}
+            {typeFilteredJobs.length > 0 ? `${typeFilteredJobs.length} job${typeFilteredJobs.length!==1?"s":""} — click any row to see the full breakdown` : "No jobs in this period"}
           </div>
-          <div style={{ display:"flex",gap:16,alignItems:"center",fontSize:10,color:DIM,fontFamily:"'DM Sans',sans-serif" }}>
-            <span style={{ display:"flex",alignItems:"center",gap:5 }}><span style={{ width:8,height:8,borderRadius:"50%",background:ACCENT2,display:"inline-block" }}/> Profitable</span>
-            <span style={{ display:"flex",alignItems:"center",gap:5 }}><span style={{ width:8,height:8,borderRadius:"50%",background:RED,display:"inline-block" }}/> Losing Money</span>
+          <div style={{ display:"flex",alignItems:"center",gap:8,flexWrap:"wrap" }}>
+            {/* Job type filter pills */}
+            <div style={{ display:"flex",gap:5,flexWrap:"wrap" }}>
+              {allTypes.map(t => (
+                <button key={t} onClick={()=>setTypeFilter(t)} style={{ cursor:"pointer",padding:"4px 11px",borderRadius:20,fontSize:10,fontWeight:500,fontFamily:"'DM Sans',sans-serif",border:`1px solid ${typeFilter===t?ACCENT:BORDER}`,background:typeFilter===t?ACCENT:CARD,color:typeFilter===t?CARD:MID,transition:"all 0.15s",letterSpacing:"0.02em" }}>
+                  {t === "all" ? "All Types" : t}
+                </button>
+              ))}
+            </div>
+            <div style={{ display:"flex",gap:16,alignItems:"center",fontSize:10,color:DIM,fontFamily:"'DM Sans',sans-serif",paddingLeft:8,borderLeft:`1px solid ${BORDER}` }}>
+              <span style={{ display:"flex",alignItems:"center",gap:5 }}><span style={{ width:8,height:8,borderRadius:"50%",background:ACCENT2,display:"inline-block" }}/> Profitable</span>
+              <span style={{ display:"flex",alignItems:"center",gap:5 }}><span style={{ width:8,height:8,borderRadius:"50%",background:RED,display:"inline-block" }}/> Losing</span>
+            </div>
           </div>
         </div>
         <div className="thead" style={{ gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 90px" }}>
@@ -534,10 +543,14 @@ function Dashboard({ onJobClick, jobSummaries }) {
         </div>
         {sorted.length > 0 ? sorted.map(j => {
           const win = j.profit > 0;
+          const atRisk = j.status === "In Progress" && j.revenue > 0 && (j.costs / j.revenue) > 0.85;
           return (
-            <div key={j.id} className="trow" style={{ gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 90px",borderLeft:`3px solid ${win?ACCENT2:RED}`,opacity: win?1:0.92 }} onClick={()=>onJobClick(j)}>
+            <div key={j.id} className="trow" style={{ gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 90px",borderLeft:`3px solid ${win?ACCENT2:RED}`,opacity:win?1:0.92 }} onClick={()=>onJobClick(j)}>
               <div className="tcell" style={{ flexDirection:"column",alignItems:"flex-start",gap:3 }}>
-                <span style={{ color:DARK,fontWeight:500,fontFamily:"'DM Sans',sans-serif" }}>{j.name}</span>
+                <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+                  <span style={{ color:DARK,fontWeight:500,fontFamily:"'DM Sans',sans-serif" }}>{j.name}</span>
+                  {atRisk && <span style={{ fontSize:9,padding:"2px 7px",borderRadius:3,background:"rgba(140,107,48,0.1)",color:AMBER,fontWeight:500,fontFamily:"'DM Sans',sans-serif" }}>⚠ at risk</span>}
+                </div>
                 <span style={{ fontSize:10,color:DIM,fontFamily:"'DM Sans',sans-serif" }}>{j.type}</span>
               </div>
               <div className="tcell" style={{ color:MID,fontFamily:"'DM Sans',sans-serif" }}>{j.clientName}</div>
@@ -1062,6 +1075,308 @@ function RawData() {
   );
 }
 
+// ─── TAB: CLIENT SCORECARD ────────────────────────────────────────────────────
+
+function ClientScorecard({ jobSummaries }) {
+  const [sort, setSort] = useState("profit");
+
+  // Aggregate jobs by client
+  const clientMap = {};
+  jobSummaries.forEach(j => {
+    if (!clientMap[j.clientName]) {
+      clientMap[j.clientName] = { name: j.clientName, jobs: 0, revenue: 0, costs: 0, profit: 0, outstanding: 0 };
+    }
+    clientMap[j.clientName].jobs++;
+    clientMap[j.clientName].revenue    += j.revenue;
+    clientMap[j.clientName].costs      += j.costs;
+    clientMap[j.clientName].profit     += j.profit;
+    clientMap[j.clientName].outstanding += j.outstanding;
+  });
+
+  const clients = Object.values(clientMap).map(c => ({
+    ...c,
+    avgMargin: c.revenue > 0 ? ((c.profit / c.revenue) * 100).toFixed(1) : "0.0",
+    avgJobSize: c.jobs > 0 ? Math.round(c.revenue / c.jobs) : 0,
+  })).sort((a, b) => {
+    if (sort === "profit")   return b.profit - a.profit;
+    if (sort === "revenue")  return b.revenue - a.revenue;
+    if (sort === "margin")   return parseFloat(b.avgMargin) - parseFloat(a.avgMargin);
+    if (sort === "jobs")     return b.jobs - a.jobs;
+    return a.name.localeCompare(b.name);
+  });
+
+  const topClient = clients[0];
+
+  return (
+    <div style={{ padding:"32px 36px", background:BG, minHeight:"100vh" }}>
+      <div style={{ marginBottom:28 }}>
+        <h1 style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>Client Profitability</h1>
+        <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>Which clients consistently bring your most profitable work?</p>
+      </div>
+
+      {/* Top client highlight */}
+      {topClient && (
+        <div style={{ marginBottom:24,padding:"20px 24px",borderRadius:6,border:`1px solid rgba(92,122,90,0.3)`,background:"rgba(92,122,90,0.04)",display:"flex",alignItems:"center",gap:32 }}>
+          <div>
+            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:6,fontWeight:500 }}>Top Client by Profit</div>
+            <div style={{ fontFamily:"'Lora',serif",fontSize:20,fontWeight:500,color:DARK }}>{topClient.name}</div>
+          </div>
+          {[
+            { label:"Total Profit",    val:$(topClient.profit) },
+            { label:"Total Revenue",   val:$(topClient.revenue) },
+            { label:"Avg Margin",      val:`${topClient.avgMargin}%` },
+            { label:"Jobs",            val:topClient.jobs },
+            { label:"Avg Job Size",    val:$(topClient.avgJobSize) },
+          ].map((k,i) => (
+            <div key={i}>
+              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:4,fontWeight:500 }}>{k.label}</div>
+              <div style={{ fontFamily:"'Lora',serif",fontSize:18,fontWeight:500,color:ACCENT2 }}>{k.val}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Sort controls */}
+      <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:16 }}>
+        <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM }}>Sort by:</span>
+        {[["profit","Total Profit"],["revenue","Revenue"],["margin","Avg Margin"],["jobs","# Jobs"],["name","Name"]].map(([k,l]) => (
+          <button key={k} className={`btn${sort===k?" act":""}`} onClick={()=>setSort(k)}>{l}</button>
+        ))}
+      </div>
+
+      {/* Client table */}
+      <div className="card" style={{ overflow:"hidden" }}>
+        <div className="thead" style={{ gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 1fr" }}>
+          {["Client","# Jobs","Total Revenue","Total Costs","Total Profit","Avg Margin"].map(h => (
+            <div key={h} className="th">{h}</div>
+          ))}
+        </div>
+        {clients.map((cl, i) => {
+          const win = cl.profit > 0;
+          return (
+            <div key={i} className="trow" style={{ gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 1fr",borderLeft:`3px solid ${win?ACCENT2:RED}` }}>
+              <div className="tcell" style={{ color:DARK,fontWeight:500,fontFamily:"'DM Sans',sans-serif" }}>
+                {cl.name}
+                {cl.outstanding > 0 && <span style={{ marginLeft:8,fontSize:9,padding:"2px 7px",borderRadius:3,background:"rgba(140,107,48,0.1)",color:AMBER,fontWeight:500 }}>A/R {$(cl.outstanding)}</span>}
+              </div>
+              <div className="tcell mono" style={{ color:MID,fontSize:12 }}>{cl.jobs}</div>
+              <div className="tcell mono" style={{ color:MID,fontSize:12 }}>{$(cl.revenue)}</div>
+              <div className="tcell mono" style={{ color:MID,fontSize:12 }}>{$(cl.costs)}</div>
+              <div className="tcell"><span className={`chip ${win?"g":"r"}`}>{win?"+":"-"}{$(cl.profit)}</span></div>
+              <div className="tcell"><span className={`chip ${parseFloat(cl.avgMargin)>=20?"g":parseFloat(cl.avgMargin)>=0?"a":"r"}`}>{cl.avgMargin}%</span></div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── TAB: REPORTS ─────────────────────────────────────────────────────────────
+
+function Reports({ jobSummaries }) {
+  const [activeReport, setActiveReport] = useState(null);
+
+  const totalRev   = jobSummaries.reduce((s,j) => s + j.revenue, 0);
+  const totalCost  = jobSummaries.reduce((s,j) => s + j.costs, 0);
+  const totalProfit= totalRev - totalCost;
+
+  // Pre-built report definitions
+  const REPORTS = [
+    {
+      id: "top-job-types",
+      title: "Most Profitable Job Type",
+      description: "Average margin by job category — see which type of work earns you the most.",
+      icon: "▲",
+      compute: () => {
+        const byType = {};
+        jobSummaries.forEach(j => {
+          if (!byType[j.type]) byType[j.type] = { type:j.type, revenue:0, costs:0, jobs:0 };
+          byType[j.type].revenue += j.revenue;
+          byType[j.type].costs   += j.costs;
+          byType[j.type].jobs++;
+        });
+        return Object.values(byType).map(t => ({
+          name: t.type,
+          margin: t.revenue > 0 ? parseFloat(((t.revenue-t.costs)/t.revenue*100).toFixed(1)) : 0,
+          profit: t.revenue - t.costs,
+          jobs: t.jobs,
+        })).sort((a,b) => b.margin - a.margin);
+      },
+      chartType: "bar",
+      dataKey: "margin",
+      color: ACCENT2,
+      yLabel: "% Margin",
+      insight: (data) => {
+        const best = data[0];
+        const worst = data[data.length-1];
+        return `Your ${best?.name} jobs lead with ${best?.margin}% average margin — ${(best?.margin - worst?.margin).toFixed(1)} points ahead of ${worst?.name} work (${worst?.margin}%). Focus new business development on your highest-margin job types.`;
+      }
+    },
+    {
+      id: "worst-jobs",
+      title: "Worst Performing Jobs",
+      description: "Bottom 5 jobs by profit — understand where money is being lost.",
+      icon: "▼",
+      compute: () => [...jobSummaries].sort((a,b) => a.profit - b.profit).slice(0,5).map(j => ({ name:j.name, profit:j.profit, margin:parseFloat(j.marginPct) })),
+      chartType: "bar",
+      dataKey: "profit",
+      color: RED,
+      yLabel: "$ Profit",
+      insight: (data) => {
+        const worst = data[0];
+        const totalLoss = data.filter(d=>d.profit<0).reduce((s,d)=>s+Math.abs(d.profit),0);
+        return `${worst?.name} is your worst performing job at ${$(worst?.profit)} profit. Across your bottom 5 jobs, ${$(totalLoss)} in losses. Review pricing strategy and cost controls on these job types.`;
+      }
+    },
+    {
+      id: "monthly-trend",
+      title: "Monthly Profit Trend",
+      description: "Revenue, costs, and profit over time — see how your business is tracking.",
+      icon: "📈",
+      compute: () => MONTHLY_TREND,
+      chartType: "line",
+      dataKey: "profit",
+      color: ACCENT2,
+      yLabel: "$ Amount",
+      insight: (data) => {
+        const recent = data[data.length-1];
+        const prev   = data[data.length-2];
+        const change = recent && prev ? recent.profit - prev.profit : 0;
+        return `Your most recent month shows ${$(recent?.profit)} profit — ${change >= 0 ? "up" : "down"} ${$(Math.abs(change))} from the prior month. ${change >= 0 ? "Positive momentum — keep monitoring costs as revenue grows." : "Review which jobs closed that month and whether cost overruns were the driver."}`;
+      }
+    },
+    {
+      id: "client-ranking",
+      title: "Client Profitability Ranking",
+      description: "Total profit generated per client — know your most valuable relationships.",
+      icon: "★",
+      compute: () => {
+        const byClient = {};
+        jobSummaries.forEach(j => {
+          if (!byClient[j.clientName]) byClient[j.clientName] = { name:j.clientName, profit:0, revenue:0 };
+          byClient[j.clientName].profit  += j.profit;
+          byClient[j.clientName].revenue += j.revenue;
+        });
+        return Object.values(byClient).sort((a,b)=>b.profit-a.profit).map(c=>({ name:c.name, profit:c.profit, revenue:c.revenue }));
+      },
+      chartType: "bar",
+      dataKey: "profit",
+      color: ACCENT,
+      yLabel: "$ Profit",
+      insight: (data) => {
+        const top = data[0];
+        const pct = totalProfit > 0 ? ((top?.profit/totalProfit)*100).toFixed(0) : 0;
+        return `${top?.name} is your most profitable client, generating ${$(top?.profit)} — ${pct}% of your total profit. Consider what makes this relationship work and replicate it with similar clients.`;
+      }
+    },
+  ];
+
+  const report = activeReport ? REPORTS.find(r => r.id === activeReport) : null;
+  const reportData = report ? report.compute() : [];
+
+  if (report) {
+    const insight = report.insight(reportData);
+    return (
+      <div style={{ padding:"32px 36px", background:BG, minHeight:"100vh" }}>
+        <div style={{ display:"flex",alignItems:"center",gap:14,marginBottom:28 }}>
+          <button className="btn" onClick={()=>setActiveReport(null)}>← All Reports</button>
+          <div>
+            <h1 style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>{report.title}</h1>
+            <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>{report.description}</p>
+          </div>
+        </div>
+
+        {/* AI Insight card */}
+        <div style={{ marginBottom:24,padding:"16px 20px",borderRadius:6,border:`1px solid rgba(92,122,90,0.25)`,background:"rgba(92,122,90,0.04)" }}>
+          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:ACCENT2,textTransform:"uppercase",marginBottom:8,fontWeight:500 }}>Canopy Insight</div>
+          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:MID,lineHeight:1.7 }}>{insight}</div>
+        </div>
+
+        {/* Chart */}
+        <div className="card" style={{ padding:"22px 26px",marginBottom:24 }}>
+          <ResponsiveContainer width="100%" height={320}>
+            {report.chartType === "bar" ? (
+              <BarChart data={reportData} margin={{ top:4,right:4,left:16,bottom:60 }}>
+                <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false}/>
+                <XAxis dataKey="name" interval={0} height={80} tick={({ x, y, payload }) => (
+                  <g transform={`translate(${x},${y})`}>
+                    <text x={0} y={0} dy={4} textAnchor="end" fill={DIM} fontSize={9} fontFamily="DM Mono" transform="rotate(-45)">
+                      {payload.value.length > 16 ? payload.value.slice(0,16)+"…" : payload.value}
+                    </text>
+                  </g>
+                )}/>
+                <YAxis tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} tickFormatter={$k} axisLine={false} tickLine={false} width={56}/>
+                <Tooltip formatter={(v,n) => [report.dataKey==="margin"?`${v}%`:$(v), report.yLabel]} contentStyle={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:5,fontFamily:"'DM Mono',monospace",fontSize:11 }}/>
+                <ReferenceLine y={0} stroke={BORDER}/>
+                <Bar dataKey={report.dataKey} radius={[3,3,0,0]}>
+                  {reportData.map((e,i) => <Cell key={i} fill={(e[report.dataKey]||0)>=0?report.color:RED} opacity={0.85}/>)}
+                </Bar>
+              </BarChart>
+            ) : (
+              <LineChart data={reportData} margin={{ top:4,right:16,left:16,bottom:0 }}>
+                <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false}/>
+                <XAxis dataKey="month" tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} axisLine={false} tickLine={false}/>
+                <YAxis tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} tickFormatter={$k} axisLine={false} tickLine={false} width={56}/>
+                <Tooltip content={ChartTip}/>
+                <Line type="monotone" dataKey="revenue" stroke={DIM} strokeWidth={1.5} dot={false} name="Revenue"/>
+                <Line type="monotone" dataKey="costs" stroke={RED} strokeWidth={1.5} dot={false} name="Costs" strokeDasharray="4 2"/>
+                <Line type="monotone" dataKey="profit" stroke={ACCENT2} strokeWidth={2.5} dot={{ r:3,fill:ACCENT2 }} name="Profit"/>
+              </LineChart>
+            )}
+          </ResponsiveContainer>
+        </div>
+
+        {/* Data table */}
+        <div className="card" style={{ overflow:"hidden" }}>
+          <div style={{ padding:"14px 20px",borderBottom:`1px solid ${BORDER}`,background:BG }}>
+            <div style={{ fontFamily:"'Lora',serif",fontSize:13,color:MID,fontStyle:"italic" }}>Underlying data</div>
+          </div>
+          <table className="raw-table" style={{ width:"100%" }}>
+            <thead><tr>{Object.keys(reportData[0]||{}).map(k=><th key={k} style={{ textTransform:"capitalize" }}>{k}</th>)}</tr></thead>
+            <tbody>
+              {reportData.map((row,i) => (
+                <tr key={i}>
+                  {Object.entries(row).map(([k,v],j) => (
+                    <td key={j} className={typeof v==="number"&&k!=="jobs"?"mono":""}>{typeof v==="number"&&k!=="jobs"?(k==="margin"?`${v}%`:$(v)):v}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding:"32px 36px", background:BG, minHeight:"100vh" }}>
+      <div style={{ marginBottom:28 }}>
+        <h1 style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>Report Library</h1>
+        <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>Pre-built reports — click any to open the full view with charts and insights.</p>
+      </div>
+      <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:16 }}>
+        {REPORTS.map(r => (
+          <div key={r.id} className="card" style={{ padding:"24px 28px",cursor:"pointer",transition:"all 0.15s" }}
+            onClick={()=>setActiveReport(r.id)}
+            onMouseOver={e=>e.currentTarget.style.borderColor=ACCENT}
+            onMouseOut={e=>e.currentTarget.style.borderColor=BORDER}
+          >
+            <div style={{ display:"flex",alignItems:"flex-start",gap:14 }}>
+              <div style={{ fontSize:22,lineHeight:1 }}>{r.icon}</div>
+              <div>
+                <div style={{ fontFamily:"'Lora',serif",fontSize:16,fontWeight:500,color:DARK,marginBottom:6 }}>{r.title}</div>
+                <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:MID,lineHeight:1.6,marginBottom:14 }}>{r.description}</div>
+                <span style={{ fontSize:11,color:ACCENT,fontFamily:"'DM Sans',sans-serif",fontWeight:500 }}>Open report →</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── LOGIN SCREEN ─────────────────────────────────────────────────────────────
 
 function Login({ onLogin }) {
@@ -1250,6 +1565,8 @@ export default function App() {
     { key:"dashboard", label:"Dashboard" },
     ...(clientType === "quickbooks" ? [{ key:"inbox", label:"Expense Inbox" }] : []),
     { key:"detail",    label:"Job Detail" },
+    { key:"clients",   label:"Clients" },
+    { key:"reports",   label:"Reports" },
     { key:"chat",      label:"AI Analyst" },
     ...(clientType === "quickbooks" ? [{ key:"raw", label:"Raw Data" }] : []),
   ];
@@ -1296,8 +1613,11 @@ export default function App() {
       {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} jobSummaries={jobSummaries}/>}
       {tab==="inbox"     && <ExpenseInbox untagged={untagged} tagged={tagged} onTag={handleTag} onDismiss={handleDismiss}/>}
       {tab==="detail"    && <JobDetail job={selectedJob} onBack={()=>setTab("dashboard")}/>}
+      {tab==="clients"   && <ClientScorecard jobSummaries={jobSummaries}/>}
+      {tab==="reports"   && <Reports jobSummaries={jobSummaries}/>}
       {tab==="chat"      && <AIChat jobSummaries={jobSummaries}/>}
       {tab==="raw"       && <RawData/>}
     </div>
   );
 }
+
