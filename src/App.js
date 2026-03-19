@@ -1174,14 +1174,113 @@ function ClientScorecard({ jobSummaries }) {
 
 // ─── TAB: REPORTS ─────────────────────────────────────────────────────────────
 
+// Excel export — uses SheetJS loaded from CDN via a dynamic import shim
+function exportToExcel(data, title) {
+  // Dynamically load XLSX from CDN if not already present
+  if (!window.XLSX) {
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    script.onload = () => doExcelExport(data, title);
+    document.head.appendChild(script);
+  } else {
+    doExcelExport(data, title);
+  }
+}
+
+function doExcelExport(data, title) {
+  const XLSX = window.XLSX;
+  // Build header row with readable column names
+  const headers = Object.keys(data[0] || {}).map(k =>
+    k.charAt(0).toUpperCase() + k.slice(1).replace(/([A-Z])/g, ' $1')
+  );
+  // Build data rows — format numbers nicely
+  const rows = data.map(row =>
+    Object.entries(row).map(([k, v]) => {
+      if (typeof v === 'number') {
+        if (k === 'margin') return `${v}%`;
+        if (k === 'jobs')   return v;
+        return v; // keep raw numbers so Excel can format them
+      }
+      return v;
+    })
+  );
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  // Set column widths
+  ws['!cols'] = headers.map(() => ({ wch: 20 }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, title.slice(0, 31));
+  XLSX.writeFile(wb, `Canopy - ${title} - ${new Date().toLocaleDateString('en-US')}.xlsx`);
+}
+
+// PDF export — uses window.print() with a print stylesheet injected at export time
+function exportToPDF(title) {
+  // Inject a print stylesheet if not already present
+  const styleId = 'canopy-print-style';
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.innerHTML = `
+      @media print {
+        body > div > div:first-child { display: none !important; } /* hide nav */
+        .no-print { display: none !important; }
+        .print-only { display: block !important; }
+        body { background: white !important; }
+        .card { box-shadow: none !important; border: 1px solid #ddd !important; }
+        @page { margin: 1cm; size: A4 landscape; }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+  // Set the document title so the PDF filename is the report name
+  const prevTitle = document.title;
+  document.title = `Canopy — ${title}`;
+  window.print();
+  document.title = prevTitle;
+}
+
+function ExportButtons({ data, title, compact = false }) {
+  const [exporting, setExporting] = useState(false);
+
+  function handleExcel() {
+    setExporting(true);
+    setTimeout(() => {
+      exportToExcel(data, title);
+      setExporting(false);
+    }, 100);
+  }
+
+  function handlePDF() {
+    exportToPDF(title);
+  }
+
+  if (compact) {
+    return (
+      <div style={{ display:"flex",gap:6 }}>
+        <button className="btn" onClick={handlePDF} title="Export to PDF" style={{ fontSize:10,padding:"4px 10px" }}>PDF</button>
+        <button className="btn" onClick={handleExcel} disabled={exporting} title="Export to Excel" style={{ fontSize:10,padding:"4px 10px" }}>{exporting?"…":"XLS"}</button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display:"flex",gap:8 }}>
+      <button className="btn no-print" onClick={handlePDF} style={{ fontSize:11,display:"flex",alignItems:"center",gap:5 }}>
+        <span style={{ fontSize:13 }}>⬇</span> Export PDF
+      </button>
+      <button className="btn no-print" onClick={handleExcel} disabled={exporting} style={{ fontSize:11,display:"flex",alignItems:"center",gap:5 }}>
+        <span style={{ fontSize:13 }}>⬇</span> {exporting ? "Preparing…" : "Export Excel"}
+      </button>
+    </div>
+  );
+}
+
 function Reports({ jobSummaries }) {
   const [activeReport, setActiveReport] = useState(null);
 
-  const totalRev   = jobSummaries.reduce((s,j) => s + j.revenue, 0);
-  const totalCost  = jobSummaries.reduce((s,j) => s + j.costs, 0);
-  const totalProfit= totalRev - totalCost;
+  const totalRev    = jobSummaries.reduce((s,j) => s + j.revenue, 0);
+  const totalCost   = jobSummaries.reduce((s,j) => s + j.costs, 0);
+  const totalProfit = totalRev - totalCost;
 
-  // Pre-built report definitions
   const REPORTS = [
     {
       id: "top-job-types",
@@ -1203,13 +1302,9 @@ function Reports({ jobSummaries }) {
           jobs: t.jobs,
         })).sort((a,b) => b.margin - a.margin);
       },
-      chartType: "bar",
-      dataKey: "margin",
-      color: ACCENT2,
-      yLabel: "% Margin",
+      chartType: "bar", dataKey: "margin", color: ACCENT2, yLabel: "% Margin",
       insight: (data) => {
-        const best = data[0];
-        const worst = data[data.length-1];
+        const best = data[0]; const worst = data[data.length-1];
         return `Your ${best?.name} jobs lead with ${best?.margin}% average margin — ${(best?.margin - worst?.margin).toFixed(1)} points ahead of ${worst?.name} work (${worst?.margin}%). Focus new business development on your highest-margin job types.`;
       }
     },
@@ -1219,10 +1314,7 @@ function Reports({ jobSummaries }) {
       description: "Bottom 5 jobs by profit — understand where money is being lost.",
       icon: "▼",
       compute: () => [...jobSummaries].sort((a,b) => a.profit - b.profit).slice(0,5).map(j => ({ name:j.name, profit:j.profit, margin:parseFloat(j.marginPct) })),
-      chartType: "bar",
-      dataKey: "profit",
-      color: RED,
-      yLabel: "$ Profit",
+      chartType: "bar", dataKey: "profit", color: RED, yLabel: "$ Profit",
       insight: (data) => {
         const worst = data[0];
         const totalLoss = data.filter(d=>d.profit<0).reduce((s,d)=>s+Math.abs(d.profit),0);
@@ -1235,13 +1327,9 @@ function Reports({ jobSummaries }) {
       description: "Revenue, costs, and profit over time — see how your business is tracking.",
       icon: "📈",
       compute: () => MONTHLY_TREND,
-      chartType: "line",
-      dataKey: "profit",
-      color: ACCENT2,
-      yLabel: "$ Amount",
+      chartType: "line", dataKey: "profit", color: ACCENT2, yLabel: "$ Amount",
       insight: (data) => {
-        const recent = data[data.length-1];
-        const prev   = data[data.length-2];
+        const recent = data[data.length-1]; const prev = data[data.length-2];
         const change = recent && prev ? recent.profit - prev.profit : 0;
         return `Your most recent month shows ${$(recent?.profit)} profit — ${change >= 0 ? "up" : "down"} ${$(Math.abs(change))} from the prior month. ${change >= 0 ? "Positive momentum — keep monitoring costs as revenue grows." : "Review which jobs closed that month and whether cost overruns were the driver."}`;
       }
@@ -1260,10 +1348,7 @@ function Reports({ jobSummaries }) {
         });
         return Object.values(byClient).sort((a,b)=>b.profit-a.profit).map(c=>({ name:c.name, profit:c.profit, revenue:c.revenue }));
       },
-      chartType: "bar",
-      dataKey: "profit",
-      color: ACCENT,
-      yLabel: "$ Profit",
+      chartType: "bar", dataKey: "profit", color: ACCENT, yLabel: "$ Profit",
       insight: (data) => {
         const top = data[0];
         const pct = totalProfit > 0 ? ((top?.profit/totalProfit)*100).toFixed(0) : 0;
@@ -1272,22 +1357,36 @@ function Reports({ jobSummaries }) {
     },
   ];
 
-  const report = activeReport ? REPORTS.find(r => r.id === activeReport) : null;
+  const report     = activeReport ? REPORTS.find(r => r.id === activeReport) : null;
   const reportData = report ? report.compute() : [];
 
+  // ── Individual report view ──
   if (report) {
     const insight = report.insight(reportData);
     return (
       <div style={{ padding:"32px 36px", background:BG, minHeight:"100vh" }}>
-        <div style={{ display:"flex",alignItems:"center",gap:14,marginBottom:28 }}>
-          <button className="btn" onClick={()=>setActiveReport(null)}>← All Reports</button>
-          <div>
-            <h1 style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>{report.title}</h1>
-            <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>{report.description}</p>
+
+        {/* Header row */}
+        <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:28 }}>
+          <div style={{ display:"flex",alignItems:"center",gap:14 }}>
+            <button className="btn no-print" onClick={()=>setActiveReport(null)}>← All Reports</button>
+            <div>
+              <h1 style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>{report.title}</h1>
+              <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>{report.description}</p>
+            </div>
           </div>
+          {/* Export buttons — full size on individual report page */}
+          <ExportButtons data={reportData} title={report.title} />
         </div>
 
-        {/* AI Insight card */}
+        {/* Print-only header (hidden on screen, shown when printing) */}
+        <div className="print-only" style={{ display:"none",marginBottom:20 }}>
+          <div style={{ fontFamily:"Arial,sans-serif",fontSize:10,color:"#888",marginBottom:4 }}>Canopy Business Intelligence · {new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</div>
+          <div style={{ fontFamily:"Arial,sans-serif",fontSize:18,fontWeight:"bold",color:"#2C2416" }}>{report.title}</div>
+          <div style={{ fontFamily:"Arial,sans-serif",fontSize:12,color:"#6B5E4E",marginTop:4 }}>{report.description}</div>
+        </div>
+
+        {/* Canopy Insight card */}
         <div style={{ marginBottom:24,padding:"16px 20px",borderRadius:6,border:`1px solid rgba(92,122,90,0.25)`,background:"rgba(92,122,90,0.04)" }}>
           <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:ACCENT2,textTransform:"uppercase",marginBottom:8,fontWeight:500 }}>Canopy Insight</div>
           <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:MID,lineHeight:1.7 }}>{insight}</div>
@@ -1307,7 +1406,7 @@ function Reports({ jobSummaries }) {
                   </g>
                 )}/>
                 <YAxis tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} tickFormatter={$k} axisLine={false} tickLine={false} width={56}/>
-                <Tooltip formatter={(v,n) => [report.dataKey==="margin"?`${v}%`:$(v), report.yLabel]} contentStyle={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:5,fontFamily:"'DM Mono',monospace",fontSize:11 }}/>
+                <Tooltip formatter={(v) => [report.dataKey==="margin"?`${v}%`:$(v), report.yLabel]} contentStyle={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:5,fontFamily:"'DM Mono',monospace",fontSize:11 }}/>
                 <ReferenceLine y={0} stroke={BORDER}/>
                 <Bar dataKey={report.dataKey} radius={[3,3,0,0]}>
                   {reportData.map((e,i) => <Cell key={i} fill={(e[report.dataKey]||0)>=0?report.color:RED} opacity={0.85}/>)}
@@ -1329,16 +1428,24 @@ function Reports({ jobSummaries }) {
 
         {/* Data table */}
         <div className="card" style={{ overflow:"hidden" }}>
-          <div style={{ padding:"14px 20px",borderBottom:`1px solid ${BORDER}`,background:BG }}>
+          <div style={{ padding:"14px 20px",borderBottom:`1px solid ${BORDER}`,background:BG,display:"flex",justifyContent:"space-between",alignItems:"center" }}>
             <div style={{ fontFamily:"'Lora',serif",fontSize:13,color:MID,fontStyle:"italic" }}>Underlying data</div>
           </div>
           <table className="raw-table" style={{ width:"100%" }}>
-            <thead><tr>{Object.keys(reportData[0]||{}).map(k=><th key={k} style={{ textTransform:"capitalize" }}>{k}</th>)}</tr></thead>
+            <thead>
+              <tr>{Object.keys(reportData[0]||{}).map(k=>(
+                <th key={k} style={{ textTransform:"capitalize" }}>
+                  {k.replace(/([A-Z])/g,' $1').replace(/^./,s=>s.toUpperCase())}
+                </th>
+              ))}</tr>
+            </thead>
             <tbody>
               {reportData.map((row,i) => (
                 <tr key={i}>
                   {Object.entries(row).map(([k,v],j) => (
-                    <td key={j} className={typeof v==="number"&&k!=="jobs"?"mono":""}>{typeof v==="number"&&k!=="jobs"?(k==="margin"?`${v}%`:$(v)):v}</td>
+                    <td key={j} className={typeof v==="number"&&k!=="jobs"?"mono":""}>
+                      {typeof v==="number"&&k!=="jobs" ? (k==="margin"?`${v}%`:$(v)) : v}
+                    </td>
                   ))}
                 </tr>
               ))}
@@ -1349,29 +1456,39 @@ function Reports({ jobSummaries }) {
     );
   }
 
+  // ── Report library view ──
   return (
     <div style={{ padding:"32px 36px", background:BG, minHeight:"100vh" }}>
-      <div style={{ marginBottom:28 }}>
-        <h1 style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>Report Library</h1>
-        <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>Pre-built reports — click any to open the full view with charts and insights.</p>
+      <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:28 }}>
+        <div>
+          <h1 style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>Report Library</h1>
+          <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>Pre-built reports — open any report to view, export to PDF, or download as Excel.</p>
+        </div>
       </div>
       <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:16 }}>
-        {REPORTS.map(r => (
-          <div key={r.id} className="card" style={{ padding:"24px 28px",cursor:"pointer",transition:"all 0.15s" }}
-            onClick={()=>setActiveReport(r.id)}
-            onMouseOver={e=>e.currentTarget.style.borderColor=ACCENT}
-            onMouseOut={e=>e.currentTarget.style.borderColor=BORDER}
-          >
-            <div style={{ display:"flex",alignItems:"flex-start",gap:14 }}>
-              <div style={{ fontSize:22,lineHeight:1 }}>{r.icon}</div>
-              <div>
-                <div style={{ fontFamily:"'Lora',serif",fontSize:16,fontWeight:500,color:DARK,marginBottom:6 }}>{r.title}</div>
-                <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:MID,lineHeight:1.6,marginBottom:14 }}>{r.description}</div>
-                <span style={{ fontSize:11,color:ACCENT,fontFamily:"'DM Sans',sans-serif",fontWeight:500 }}>Open report →</span>
+        {REPORTS.map(r => {
+          const data = r.compute();
+          return (
+            <div key={r.id} className="card" style={{ padding:"24px 28px",transition:"all 0.15s" }}
+              onMouseOver={e=>e.currentTarget.style.borderColor=ACCENT}
+              onMouseOut={e=>e.currentTarget.style.borderColor=BORDER}
+            >
+              <div style={{ display:"flex",alignItems:"flex-start",gap:14,marginBottom:16 }}>
+                <div style={{ fontSize:22,lineHeight:1 }}>{r.icon}</div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontFamily:"'Lora',serif",fontSize:16,fontWeight:500,color:DARK,marginBottom:6 }}>{r.title}</div>
+                  <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:MID,lineHeight:1.6 }}>{r.description}</div>
+                </div>
+              </div>
+              {/* Action row — open + export buttons */}
+              <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",paddingTop:14,borderTop:`1px solid ${BORDER}` }}>
+                <button className="btn act" onClick={()=>setActiveReport(r.id)} style={{ fontSize:11 }}>Open report →</button>
+                {/* Compact export buttons on library card */}
+                <ExportButtons data={data} title={r.title} compact={true} />
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -1620,4 +1737,3 @@ export default function App() {
     </div>
   );
 }
-
