@@ -1757,7 +1757,7 @@ function useContractorData(userId, mockJobSummaries, mockUntagged) {
     setLoading(false);
   }
 
-  useEffect(() => { loadLiveData(); }, [userId]);
+  useEffect(() => { loadLiveData(); }, [userId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return {
     jobSummaries: liveJobSummaries || mockJobSummaries,
@@ -1862,7 +1862,7 @@ export default function App() {
       if (!s) { setProfile(null); setTab("dashboard"); setShowDisclaimer(false); setQbConnected(false); }
     });
     return () => subscription.unsubscribe();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleLogin(user, contractorProfile) {
     setSession({ user });
