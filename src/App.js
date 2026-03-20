@@ -335,7 +335,9 @@ function Dashboard({ onJobClick, jobSummaries, untagged, qbConnected, userId, cl
         if (!inv.TxnDate) return;
         const d     = new Date(inv.TxnDate);
         const key   = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-        const label = d.toLocaleDateString('en-US', { month:'short', year:"'YY" }).replace(' ', " '");
+        const month = d.toLocaleDateString('en-US', { month:'short' });
+        const year  = String(d.getFullYear()).slice(-2);
+        const label = `${month} '${year}`;
         if (!monthMap[key]) monthMap[key] = { month: label, date: key+'-01', revenue:0, costs:0 };
         monthMap[key].revenue += inv.TotalAmt || 0;
       });
@@ -343,7 +345,9 @@ function Dashboard({ onJobClick, jobSummaries, untagged, qbConnected, userId, cl
         if (!p.TxnDate) return;
         const d   = new Date(p.TxnDate);
         const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-        const label = d.toLocaleDateString('en-US', { month:'short', year:"'YY" }).replace(' ', " '");
+        const month = d.toLocaleDateString('en-US', { month:'short' });
+        const year  = String(d.getFullYear()).slice(-2);
+        const label = `${month} '${year}`;
         if (!monthMap[key]) monthMap[key] = { month: label, date: key+'-01', revenue:0, costs:0 };
         monthMap[key].costs += p.TotalAmt || 0;
       });
@@ -634,14 +638,7 @@ function Dashboard({ onJobClick, jobSummaries, untagged, qbConnected, userId, cl
                     );
                   }}/>
                   <ReferenceLine y={0} stroke={BORDER}/>
-                  {/* Shaded area under cumulative line */}
-                  <defs>
-                    <linearGradient id="profitGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={ACCENT2} stopOpacity={0.15}/>
-                      <stop offset="95%" stopColor={ACCENT2} stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <Line type="monotone" dataKey="cumulativeProfit" stroke={ACCENT2} strokeWidth={2.5} dot={{ r:3, fill:ACCENT2 }} name="Cumulative Profit" fill="url(#profitGrad)"/>
+                  <Line type="monotone" dataKey="cumulativeProfit" stroke={ACCENT2} strokeWidth={2.5} dot={{ r:3, fill:ACCENT2 }} name="Cumulative Profit"/>
                 </LineChart>
               </ResponsiveContainer>
               <div style={{ display:"flex",gap:20,marginTop:12,justifyContent:"space-between",alignItems:"center" }}>
@@ -1611,7 +1608,7 @@ function Reports({ jobSummaries }) {
             if (!inv.TxnDate) return;
             const d   = new Date(inv.TxnDate);
             const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-            const label = d.toLocaleDateString('en-US', { month:'short', year:"'YY" }).replace(' '," '");
+            const label = `${d.toLocaleDateString('en-US', { month:'short' })} '${String(d.getFullYear()).slice(-2)}`;
             if (!monthMap[key]) monthMap[key] = { month:label, date:key+'-01', revenue:0, costs:0 };
             monthMap[key].revenue += inv.TotalAmt || 0;
           });
@@ -1619,7 +1616,7 @@ function Reports({ jobSummaries }) {
             if (!p.TxnDate) return;
             const d   = new Date(p.TxnDate);
             const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-            const label = d.toLocaleDateString('en-US', { month:'short', year:"'YY" }).replace(' '," '");
+            const label = `${d.toLocaleDateString('en-US', { month:'short' })} '${String(d.getFullYear()).slice(-2)}`;
             if (!monthMap[key]) monthMap[key] = { month:label, date:key+'-01', revenue:0, costs:0 };
             monthMap[key].costs += p.TotalAmt || 0;
           });
