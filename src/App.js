@@ -1680,6 +1680,94 @@ function Login({ onLogin }) {
   );
 }
 
+// ─── SUPABASE DATA HOOK ───────────────────────────────────────────────────────
+
+function useContractorData(userId, mockJobSummaries, mockUntagged) {
+  const [liveJobSummaries, setLiveJobSummaries] = useState(null);
+  const [liveUntagged, setLiveUntagged]         = useState(null);
+  const [loading, setLoading]                   = useState(false);
+  const [dataSource, setDataSource]             = useState('mock');
+
+  async function loadLiveData() {
+    if (!userId) return;
+    setLoading(true);
+    try {
+      const { data: jobs, error: jobsError } = await supabase
+        .from('jobs').select('*').eq('contractor_id', userId);
+
+      if (jobsError || !jobs || jobs.length === 0) {
+        setLoading(false);
+        return;
+      }
+
+      const { data: transactions } = await supabase
+        .from('transactions').select('*').eq('contractor_id', userId);
+
+      const { data: inboxItems } = await supabase
+        .from('inbox_tags').select('*').eq('contractor_id', userId).eq('status', 'pending');
+
+      const liveSummaries = jobs.map(job => {
+        const jobTxns   = (transactions || []).filter(t => t.job_id === job.id);
+        const invoices  = jobTxns.filter(t => t.type === 'revenue');
+        const expenses  = jobTxns.filter(t => t.type === 'expense');
+        const revenue   = invoices.reduce((s, t) => s + (t.amount || 0), 0);
+        const costs     = expenses.reduce((s, t) => s + (t.amount || 0), 0);
+        const profit    = revenue - costs;
+        const marginPct = revenue > 0 ? ((profit / revenue) * 100).toFixed(1) : '0.0';
+        const costByVendor = {};
+        expenses.forEach(t => {
+          if (t.vendor) costByVendor[t.vendor] = (costByVendor[t.vendor] || 0) + t.amount;
+        });
+        const invoiceObjs = invoices.map(t => ({
+          Id: t.id, DocNumber: t.doc_number, TxnDate: t.txn_date,
+          TotalAmt: t.amount, Balance: 0,
+          Line: [{ Description: t.description, Amount: t.amount }],
+          CustomerRef: { value: job.qb_job_id || job.id }
+        }));
+        const purchaseObjs = expenses.map(t => ({
+          Id: t.id, DocNumber: t.doc_number, TxnDate: t.txn_date,
+          TotalAmt: t.amount, EntityRef: { name: t.vendor || 'Unknown' },
+          Line: [{ Amount: t.amount, Description: t.description,
+            AccountBasedExpenseLineDetail: { CustomerRef: { value: job.qb_job_id || job.id } } }]
+        }));
+        return {
+          id: job.id, name: job.name, clientName: job.client_name || '',
+          type: job.job_type || 'General Construction', status: job.status || 'Complete',
+          revenue, costs, profit, marginPct, outstanding: 0,
+          invoices: invoiceObjs, purchases: purchaseObjs, costByVendor,
+          firstDate: invoices[0]?.txn_date || '', lastDate: invoices[invoices.length-1]?.txn_date || '',
+        };
+      }).filter(j => j.revenue > 0 || j.costs > 0);
+
+      const parsedUntagged = (inboxItems || []).map(item => ({
+        id: item.id, docNumber: item.doc_number, vendor: item.vendor,
+        date: item.txn_date, amount: item.amount, description: item.description,
+        paymentType: item.payment_type || 'Check',
+        suggestedJob: item.suggested_job_id, suggestionReason: item.suggestion_reason,
+      }));
+
+      if (liveSummaries.length > 0) {
+        setLiveJobSummaries(liveSummaries);
+        setLiveUntagged(parsedUntagged);
+        setDataSource('live');
+      }
+    } catch (err) {
+      console.error('Error loading live data:', err);
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => { loadLiveData(); }, [userId]);
+
+  return {
+    jobSummaries: liveJobSummaries || mockJobSummaries,
+    untagged:     liveUntagged     || mockUntagged,
+    loading,
+    dataSource,
+    refresh: loadLiveData,
+  };
+}
+
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -1688,15 +1776,60 @@ export default function App() {
   const [authLoading, setAuthLoading]   = useState(true);
   const [tab, setTab]                   = useState("dashboard");
   const [selectedJob, setSelectedJob]   = useState(null);
-  const [untagged, setUntagged]         = useState(INITIAL_UNTAGGED);
   const [tagged, setTagged]             = useState([]);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [qbConnected, setQbConnected]   = useState(false);
   const [qbError, setQbError]           = useState(null);
+  const [syncing, setSyncing]           = useState(false);
+
+  // ── Live data hook — loads from Supabase, falls back to mock
+  const mockJobSummaries = buildJobSummaries({});
+  const {
+    jobSummaries: baseJobSummaries,
+    untagged: baseUntagged,
+    dataSource,
+    refresh: refreshData,
+  } = useContractorData(session?.user?.id, mockJobSummaries, INITIAL_UNTAGGED);
+
+  // Apply tagged expense costs on top of live/mock data
+  const extraCostsByJob = tagged.reduce((acc, t) => {
+    acc[t.taggedJobId] = (acc[t.taggedJobId] || 0) + t.amount;
+    return acc;
+  }, {});
+
+  // Merge extra tagged costs into job summaries
+  const jobSummaries = baseJobSummaries.map(j => {
+    const extra = extraCostsByJob[j.id] || 0;
+    if (!extra) return j;
+    const costs  = j.costs + extra;
+    const profit = j.revenue - costs;
+    return { ...j, costs, profit, marginPct: j.revenue > 0 ? ((profit/j.revenue)*100).toFixed(1) : '0.0' };
+  });
+
+  // Untagged — filter out items already tagged this session
+  const taggedIds = new Set(tagged.map(t => t.id));
+  const untagged  = baseUntagged.filter(u => !taggedIds.has(u.id));
+
+  // ── Trigger a QB sync after successful OAuth connect
+  async function triggerSync(userId) {
+    setSyncing(true);
+    try {
+      const res = await fetch(`/api/qb-sync?userId=${userId}`);
+      const data = await res.json();
+      if (data.success) {
+        console.log('QB sync complete:', data.summary);
+        await refreshData();
+      } else {
+        console.error('QB sync failed:', data.error);
+      }
+    } catch (err) {
+      console.error('QB sync error:', err);
+    }
+    setSyncing(false);
+  }
 
   // ── On mount: check session + handle QB OAuth redirect params
   useEffect(() => {
-    // Handle QB OAuth redirect — check URL params immediately on load
     const params = new URLSearchParams(window.location.search);
     if (params.get('qb_connected') === 'true') {
       setQbConnected(true);
@@ -1712,16 +1845,18 @@ export default function App() {
       if (s) {
         const { data: p } = await supabase.from("contractors").select("*").eq("id", s.user.id).single();
         setProfile(p);
-        // QB is connected if a realm ID is stored
         if (p?.qb_realm_id) setQbConnected(true);
-        // Show first-login disclaimer if not yet dismissed
+        // If just came back from QB connect, trigger a sync
+        const params2 = new URLSearchParams(window.location.search);
+        if (params2.get('qb_connected') === 'true') {
+          triggerSync(s.user.id);
+        }
         const dismissed = localStorage.getItem(`canopy_disclaimer_${s.user.id}`);
         if (!dismissed) setShowDisclaimer(true);
       }
       setAuthLoading(false);
     });
 
-    // Listen for login/logout events
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
       if (!s) { setProfile(null); setTab("dashboard"); setShowDisclaimer(false); setQbConnected(false); }
@@ -1738,20 +1873,14 @@ export default function App() {
   }
 
   function dismissDisclaimer() {
-    if (session?.user?.id) {
-      localStorage.setItem(`canopy_disclaimer_${session.user.id}`, 'true');
-    }
+    if (session?.user?.id) localStorage.setItem(`canopy_disclaimer_${session.user.id}`, 'true');
     setShowDisclaimer(false);
   }
 
   async function handleSignOut() {
     await supabase.auth.signOut();
-    setSession(null);
-    setProfile(null);
-    setTab("dashboard");
-    setShowDisclaimer(false);
-    setQbConnected(false);
-    setQbError(null);
+    setSession(null); setProfile(null); setTab("dashboard");
+    setShowDisclaimer(false); setQbConnected(false); setQbError(null);
   }
 
   // ── Show nothing while checking session on first load
@@ -1764,20 +1893,10 @@ export default function App() {
     );
   }
 
-  // ── Show login if no session
   if (!session) return <Login onLogin={handleLogin} />;
 
-  // ── Logged in — determine which tabs to show based on client_type
-  const clientType = profile?.client_type || "quickbooks";
+  const clientType     = profile?.client_type || "quickbooks";
   const contractorName = profile?.name || session?.user?.email || "Your Account";
-
-  // Extra costs per job accumulated from inbox tagging
-  const extraCostsByJob = tagged.reduce((acc, t) => {
-    acc[t.taggedJobId] = (acc[t.taggedJobId] || 0) + t.amount;
-    return acc;
-  }, {});
-
-  const jobSummaries = buildJobSummaries(extraCostsByJob);
 
   function handleJobClick(job) {
     setSelectedJob(job);
@@ -1785,7 +1904,6 @@ export default function App() {
   }
 
   function handleTag(item, jobId, jobName) {
-    setUntagged(prev => prev.filter(u => u.id !== item.id));
     setTagged(prev => [...prev, { ...item, taggedJobId: jobId, taggedJobName: jobName }]);
     if (selectedJob && selectedJob.id === jobId) {
       const updated = jobSummaries.find(j => j.id === jobId);
@@ -1794,7 +1912,7 @@ export default function App() {
   }
 
   function handleDismiss(id) {
-    setUntagged(prev => prev.filter(u => u.id !== id));
+    setTagged(prev => prev.filter(u => u.id !== id));
   }
 
   const inboxCount = untagged.length;
@@ -1859,8 +1977,14 @@ export default function App() {
               <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:10, fontFamily:"'DM Sans',sans-serif" }}>
                 <div style={{ width:6, height:6, borderRadius:"50%", background: qbConnected ? ACCENT2 : AMBER }}/>
                 <span style={{ color: qbConnected ? ACCENT2 : AMBER }}>
-                  {qbConnected ? "QuickBooks connected" : "QuickBooks not connected"}
+                  {syncing ? "Syncing data…" : qbConnected ? "QuickBooks connected" : "QuickBooks not connected"}
                 </span>
+                {qbConnected && !syncing && dataSource === 'live' && (
+                  <span style={{ color:DIM, fontSize:9 }}>· live data</span>
+                )}
+                {qbConnected && !syncing && dataSource === 'mock' && (
+                  <span style={{ color:DIM, fontSize:9 }}>· demo data</span>
+                )}
               </div>
             )}
             <div style={{ fontSize:11, color:DIM, fontFamily:"'DM Sans',sans-serif", display:"flex", alignItems:"center", gap:6, paddingLeft:16, borderLeft:`1px solid ${BORDER}` }}>
@@ -1883,11 +2007,20 @@ export default function App() {
         </div>
       )}
 
-      {/* ── QB success banner ── */}
-      {qbConnected && !profile?.qb_realm_id && (
-        <div style={{ background:"rgba(92,122,90,0.06)", borderBottom:`1px solid rgba(92,122,90,0.25)`, padding:"11px 36px", display:"flex", alignItems:"center", gap:10 }}>
-          <div style={{ width:6, height:6, borderRadius:"50%", background:ACCENT2 }}/>
-          <div style={{ fontSize:13, color:ACCENT2, fontFamily:"'DM Sans',sans-serif", fontWeight:500 }}>QuickBooks connected successfully — your data will sync shortly.</div>
+      {/* ── QB success / syncing banner ── */}
+      {qbConnected && dataSource === 'mock' && (
+        <div style={{ background:"rgba(92,122,90,0.06)", borderBottom:`1px solid rgba(92,122,90,0.25)`, padding:"11px 36px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <div style={{ width:6, height:6, borderRadius:"50%", background:ACCENT2 }}/>
+            <div style={{ fontSize:13, color:ACCENT2, fontFamily:"'DM Sans',sans-serif", fontWeight:500 }}>
+              {syncing ? "Syncing your QuickBooks data — this takes about 30 seconds…" : "QuickBooks connected — click to load your real data"}
+            </div>
+          </div>
+          {!syncing && (
+            <button className="btn act" style={{ fontSize:11 }} onClick={() => triggerSync(session.user.id)}>
+              Sync Now →
+            </button>
+          )}
         </div>
       )}
 
