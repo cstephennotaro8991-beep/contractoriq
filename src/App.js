@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine, PieChart, Pie, Legend } from "recharts";
 import { createClient } from "@supabase/supabase-js";
 
@@ -191,8 +191,8 @@ const DATE_RANGES = [
   { key: "ytd",  label: "YTD",       months: null }, // special case
 ];
 
-// Reference "today" as end of our mock data period
-const MOCK_TODAY = new Date("2024-04-30");
+// Use actual current date for date range calculations
+const MOCK_TODAY = new Date();
 
 function getDateCutoff(rangeKey) {
   if (!rangeKey || rangeKey === "all") return null;
@@ -320,15 +320,68 @@ const ChartTip = ({ active, payload, label }) => {
 
 // ─── TAB: DASHBOARD ───────────────────────────────────────────────────────────
 
-function Dashboard({ onJobClick, jobSummaries, qbConnected, userId, clientType }) {
-  const [sort, setSort]           = useState("profit");
-  const [sortDir, setSortDir]     = useState("desc");
-  const [dateRange, setDateRange] = useState("all");
+function Dashboard({ onJobClick, jobSummaries, untagged, qbConnected, userId, clientType }) {
+  const [sort, setSort]             = useState("profit");
+  const [sortDir, setSortDir]       = useState("desc");
+  const [dateRange, setDateRange]   = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [trendView, setTrendView]   = useState("cumulative");
+
+  // Build monthly trend dynamically from live job summaries
+  const dynamicTrend = useMemo(() => {
+    const monthMap = {};
+    jobSummaries.forEach(j => {
+      j.invoices.forEach(inv => {
+        if (!inv.TxnDate) return;
+        const d     = new Date(inv.TxnDate);
+        const key   = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+        const label = d.toLocaleDateString('en-US', { month:'short', year:"'YY" }).replace(' ', " '");
+        if (!monthMap[key]) monthMap[key] = { month: label, date: key+'-01', revenue:0, costs:0 };
+        monthMap[key].revenue += inv.TotalAmt || 0;
+      });
+      j.purchases.forEach(p => {
+        if (!p.TxnDate) return;
+        const d   = new Date(p.TxnDate);
+        const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+        const label = d.toLocaleDateString('en-US', { month:'short', year:"'YY" }).replace(' ', " '");
+        if (!monthMap[key]) monthMap[key] = { month: label, date: key+'-01', revenue:0, costs:0 };
+        monthMap[key].costs += p.TotalAmt || 0;
+      });
+    });
+    return Object.values(monthMap)
+      .sort((a,b) => a.date.localeCompare(b.date))
+      .map(d => ({ ...d, profit: d.revenue - d.costs }));
+  }, [jobSummaries]);
+
+  const TREND = dynamicTrend.length > 0 ? dynamicTrend : MONTHLY_TREND;
 
   // Apply date filter
   const filteredJobs  = dateRange === "all" ? jobSummaries : filterJobsByDate(jobSummaries, dateRange);
-  const filteredTrend = dateRange === "all" ? MONTHLY_TREND : filterTrendByDate(MONTHLY_TREND, dateRange);
+  const filteredTrend = dateRange === "all" ? TREND : filterTrendByDate(TREND, dateRange);
+
+  // Cumulative profit data — running total across months
+  const cumulativeData = useMemo(() => {
+    let running = 0;
+    return filteredTrend.map(d => {
+      running += d.profit;
+      return { ...d, cumulativeProfit: running };
+    });
+  }, [filteredTrend]);
+
+  // Linear regression trend line for "By Month" profit bars
+  const trendLineData = useMemo(() => {
+    const n = filteredTrend.length;
+    if (n < 2) return [];
+    const xs = filteredTrend.map((_, i) => i);
+    const ys = filteredTrend.map(d => d.profit);
+    const sumX  = xs.reduce((s,x) => s+x, 0);
+    const sumY  = ys.reduce((s,y) => s+y, 0);
+    const sumXY = xs.reduce((s,x,i) => s + x*ys[i], 0);
+    const sumX2 = xs.reduce((s,x) => s + x*x, 0);
+    const slope = (n*sumXY - sumX*sumY) / (n*sumX2 - sumX*sumX);
+    const intercept = (sumY - slope*sumX) / n;
+    return filteredTrend.map((d, i) => ({ ...d, trend: Math.round(slope*i + intercept) }));
+  }, [filteredTrend]);
 
   // Job type filter
   const allTypes = ["all", ...Array.from(new Set(jobSummaries.map(j => j.type).filter(Boolean))).sort()];
@@ -364,23 +417,32 @@ function Dashboard({ onJobClick, jobSummaries, qbConnected, userId, clientType }
   const outstanding = typeFilteredJobs.reduce((s,j) => s + j.outstanding, 0);
   const barData     = sorted.map(j => ({ name: j.name, fullName:j.name, profit:j.profit }));
 
-  // Data Quality Score — ratio of tagged to total possible expenses
-  const totalExpenses  = QB_PURCHASES.length + INITIAL_UNTAGGED.length;
-  const taggedExpenses = QB_PURCHASES.length;
-  const dataQuality    = totalExpenses > 0 ? Math.round((taggedExpenses / totalExpenses) * 100) : 100;
+  // Data Quality Score — based on live data: tagged expenses vs untagged inbox items
+  const totalTaggedExpenses = jobSummaries.reduce((s,j) => s + j.purchases.length, 0);
+  const totalUntaggedExpenses = untagged.length;
+  const totalExpenses  = totalTaggedExpenses + totalUntaggedExpenses;
+  const dataQuality    = totalExpenses > 0 ? Math.round((totalTaggedExpenses / totalExpenses) * 100) : 100;
   const dqColor        = dataQuality >= 80 ? ACCENT2 : dataQuality >= 50 ? AMBER : RED;
   const dqLabel        = dataQuality >= 80 ? "Good" : dataQuality >= 50 ? "Fair" : "Poor";
 
-  // Mid-job margin alerts — In Progress jobs where costs > 85% of revenue
+  // Mid-job margin alerts
   const atRiskJobs = typeFilteredJobs.filter(j =>
     j.status === "In Progress" && j.revenue > 0 && (j.costs / j.revenue) > 0.85
   );
 
-  // Unbilled work alert — jobs with costs but no invoices
+  // Unbilled work alert
   const unbilledJobs = jobSummaries.filter(j => j.costs > 0 && j.revenue === 0);
 
+  // Date range label — dynamically built from actual data dates
+  const allDates = jobSummaries.flatMap(j => j.invoices.map(i => i.TxnDate)).filter(Boolean).sort();
+  const firstDate = allDates[0] ? new Date(allDates[0]).toLocaleDateString('en-US', { month:'short', year:'numeric' }) : '';
+  const lastDate  = allDates[allDates.length-1] ? new Date(allDates[allDates.length-1]).toLocaleDateString('en-US', { month:'short', year:'numeric' }) : '';
+  const allTimeLabel = firstDate && lastDate && firstDate !== lastDate
+    ? `All jobs · ${firstDate} – ${lastDate}`
+    : firstDate ? `All jobs · ${firstDate}` : "All jobs";
+
   const rangeLabel = dateRange === "all"
-    ? "All jobs · Sep 2023 – Apr 2024"
+    ? allTimeLabel
     : `${DATE_RANGES.find(r=>r.key===dateRange)?.label} · ${typeFilteredJobs.length} job${typeFilteredJobs.length!==1?"s":""}`;
 
   return (
@@ -511,29 +573,95 @@ function Dashboard({ onJobClick, jobSummaries, qbConnected, userId, clientType }
         </div>
 
         <div className="card" style={{ padding:"22px 26px" }}>
-          <div style={{ marginBottom:20 }}>
-            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:5,fontWeight:500 }}>Monthly Trend</div>
-            <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>How is profitability tracking?</div>
-          </div>
-          <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={filteredTrend} margin={{ top:4,right:16,left:12,bottom:0 }}>
-              <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false}/>
-              <XAxis dataKey="month" tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} axisLine={false} tickLine={false} height={40}/>
-              <YAxis tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} tickFormatter={$k} axisLine={false} tickLine={false} width={52}/>
-              <Tooltip content={ChartTip}/>
-              <Line type="monotone" dataKey="revenue" stroke={DIM} strokeWidth={1.5} dot={false} name="Revenue"/>
-              <Line type="monotone" dataKey="costs" stroke={RED} strokeWidth={1.5} dot={false} name="Costs" strokeDasharray="4 2"/>
-              <Line type="monotone" dataKey="profit" stroke={ACCENT2} strokeWidth={2.5} dot={{ r:3,fill:ACCENT2 }} name="Profit"/>
-            </LineChart>
-          </ResponsiveContainer>
-          <div style={{ display:"flex",gap:20,marginTop:12,justifyContent:"flex-end" }}>
-            {[["Revenue",DIM,false],["Costs",RED,true],["Profit",ACCENT2,false]].map(([l,c,d]) => (
-              <div key={l} style={{ display:"flex",alignItems:"center",gap:6,fontSize:10,color:DIM,fontFamily:"'DM Sans',sans-serif" }}>
-                <div style={{ width:16,height:2,background:d?"transparent":c,borderRadius:2,borderBottom:d?`2px dashed ${c}`:"none" }}/>
-                {l}
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20 }}>
+            <div>
+              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:5,fontWeight:500 }}>Profitability Trend</div>
+              <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>
+                {trendView === "cumulative" ? "Running total profit over time" : "Monthly revenue, costs & profit"}
               </div>
-            ))}
+            </div>
+            {/* View toggle */}
+            <div style={{ display:"flex", border:`1px solid ${BORDER}`, borderRadius:5, overflow:"hidden", background:CARD }}>
+              {[["monthly","By Month"],["cumulative","Cumulative"]].map(([k,l],i) => (
+                <button key={k} onClick={()=>setTrendView(k)} style={{ cursor:"pointer", padding:"6px 12px", fontSize:10, fontWeight:500, fontFamily:"'DM Sans',sans-serif", letterSpacing:"0.03em", border:"none", borderRight:i===0?`1px solid ${BORDER}`:"none", background:trendView===k?ACCENT:CARD, color:trendView===k?CARD:MID, transition:"all 0.15s" }}>{l}</button>
+              ))}
+            </div>
           </div>
+
+          {trendView === "monthly" ? (
+            <>
+              <ResponsiveContainer width="100%" height={260}>
+                <LineChart data={filteredTrend} margin={{ top:4,right:16,left:12,bottom:0 }}>
+                  <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false}/>
+                  <XAxis dataKey="month" tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} axisLine={false} tickLine={false} height={40}/>
+                  <YAxis tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} tickFormatter={$k} axisLine={false} tickLine={false} width={52}/>
+                  <Tooltip content={ChartTip}/>
+                  <ReferenceLine y={0} stroke={BORDER}/>
+                  <Line type="monotone" dataKey="revenue" stroke={DIM} strokeWidth={1.5} dot={false} name="Revenue"/>
+                  <Line type="monotone" dataKey="costs" stroke={RED} strokeWidth={1.5} dot={false} name="Costs" strokeDasharray="4 2"/>
+                  <Line type="monotone" dataKey="profit" stroke={ACCENT2} strokeWidth={2.5} dot={{ r:3,fill:ACCENT2 }} name="Profit"/>
+                  {/* Linear regression trend line on profit */}
+                  {trendLineData.length > 1 && (
+                    <Line type="linear" data={trendLineData} dataKey="trend" stroke={ACCENT} strokeWidth={1} dot={false} strokeDasharray="6 3" name="Trend" legendType="none"/>
+                  )}
+                </LineChart>
+              </ResponsiveContainer>
+              <div style={{ display:"flex",gap:20,marginTop:12,justifyContent:"flex-end",flexWrap:"wrap" }}>
+                {[["Revenue",DIM,false],["Costs",RED,true],["Profit",ACCENT2,false],["Trend",ACCENT,true]].map(([l,c,d]) => (
+                  <div key={l} style={{ display:"flex",alignItems:"center",gap:6,fontSize:10,color:DIM,fontFamily:"'DM Sans',sans-serif" }}>
+                    <div style={{ width:16,height:2,background:d?"transparent":c,borderRadius:2,borderBottom:d?`2px dashed ${c}`:"none" }}/>
+                    {l}
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              <ResponsiveContainer width="100%" height={260}>
+                <LineChart data={cumulativeData} margin={{ top:4,right:16,left:12,bottom:0 }}>
+                  <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false}/>
+                  <XAxis dataKey="month" tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} axisLine={false} tickLine={false} height={40}/>
+                  <YAxis tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} tickFormatter={$k} axisLine={false} tickLine={false} width={52}/>
+                  <Tooltip content={({ active, payload, label }) => {
+                    if (!active||!payload?.length) return null;
+                    const d = payload[0]?.payload;
+                    return (
+                      <div style={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:5,padding:"10px 14px",fontFamily:"'DM Mono',monospace",fontSize:11,boxShadow:"0 4px 12px rgba(44,36,22,0.12)" }}>
+                        <div style={{ color:DIM,marginBottom:6,fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.06em",textTransform:"uppercase" }}>{label}</div>
+                        <div style={{ color:ACCENT2,marginBottom:3 }}>Cumulative profit: {$k(d?.cumulativeProfit||0)}</div>
+                        <div style={{ color:DIM,fontSize:10 }}>This month: {d?.profit>=0?"+":""}{$k(d?.profit||0)}</div>
+                      </div>
+                    );
+                  }}/>
+                  <ReferenceLine y={0} stroke={BORDER}/>
+                  {/* Shaded area under cumulative line */}
+                  <defs>
+                    <linearGradient id="profitGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={ACCENT2} stopOpacity={0.15}/>
+                      <stop offset="95%" stopColor={ACCENT2} stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <Line type="monotone" dataKey="cumulativeProfit" stroke={ACCENT2} strokeWidth={2.5} dot={{ r:3, fill:ACCENT2 }} name="Cumulative Profit" fill="url(#profitGrad)"/>
+                </LineChart>
+              </ResponsiveContainer>
+              <div style={{ display:"flex",gap:20,marginTop:12,justifyContent:"space-between",alignItems:"center" }}>
+                <div style={{ fontSize:11,color:DIM,fontFamily:"'DM Sans',sans-serif",fontStyle:"italic" }}>
+                  {cumulativeData.length > 0 && (() => {
+                    const last = cumulativeData[cumulativeData.length-1];
+                    const first = cumulativeData[0];
+                    const isUp = last.cumulativeProfit > first.cumulativeProfit;
+                    return <span style={{ color: isUp ? ACCENT2 : RED }}>
+                      {isUp ? "↑" : "↓"} {isUp ? "Trending up" : "Trending down"} — {$(Math.abs(last.cumulativeProfit - first.cumulativeProfit))} {isUp ? "gained" : "lost"} over this period
+                    </span>;
+                  })()}
+                </div>
+                <div style={{ display:"flex",alignItems:"center",gap:6,fontSize:10,color:DIM,fontFamily:"'DM Sans',sans-serif" }}>
+                  <div style={{ width:16,height:2,background:ACCENT2,borderRadius:2 }}/>
+                  Cumulative profit
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -598,10 +726,18 @@ function Dashboard({ onJobClick, jobSummaries, qbConnected, userId, clientType }
 
 // ─── TAB: EXPENSE INBOX ───────────────────────────────────────────────────────
 
-function ExpenseInbox({ untagged, onTag, onDismiss, tagged }) {
+function ExpenseInbox({ untagged, onTag, onDismiss, tagged, jobSummaries }) {
   const [selections, setSelections] = useState({});
   const [filter, setFilter] = useState("all");
   const [showSyncGuide, setShowSyncGuide] = useState(false);
+
+  // Build job options from live data — fall back to mock if empty
+  const liveJobOptions = (jobSummaries || []).map(j => ({
+    value: j.id,
+    label: j.name,
+    client: j.clientName || "",
+  }));
+  const jobOptions = liveJobOptions.length > 0 ? liveJobOptions : JOB_OPTIONS;
 
   const totalUntagged = untagged.reduce((s,u) => s + u.amount, 0);
   const totalTagged   = tagged.reduce((s,t) => s + t.amount, 0);
@@ -614,7 +750,7 @@ function ExpenseInbox({ untagged, onTag, onDismiss, tagged }) {
   function handleConfirm(item) {
     const jobId = selections[item.id];
     if (!jobId) return;
-    const job = JOB_OPTIONS.find(j => j.value === jobId);
+    const job = jobOptions.find(j => j.value === jobId);
     onTag(item, jobId, job?.label || "");
   }
 
@@ -774,7 +910,7 @@ function ExpenseInbox({ untagged, onTag, onDismiss, tagged }) {
                     <div style={{ display:"flex",gap:8,width:"100%" }}>
                       <select className="job-select" value={selections[item.id] || ""} onChange={e => setSelections(prev => ({ ...prev, [item.id]: e.target.value }))}>
                         <option value="">Assign to a job...</option>
-                        {JOB_OPTIONS.map(j => (
+                        {jobOptions.map(j => (
                           <option key={j.value} value={j.value}>{j.label} ({j.client})</option>
                         ))}
                       </select>
@@ -932,14 +1068,37 @@ function JobDetail({ job, onBack }) {
 
 // ─── TAB: AI CHAT ─────────────────────────────────────────────────────────────
 
-function AIChat({ jobSummaries }) {
+function AIChat({ jobSummaries, trendData }) {
+  // Build dynamic trend from job summaries if not passed in
+  const trend = trendData || (() => {
+    const monthMap = {};
+    jobSummaries.forEach(j => {
+      j.invoices.forEach(inv => {
+        if (!inv.TxnDate) return;
+        const d = new Date(inv.TxnDate);
+        const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+        if (!monthMap[key]) monthMap[key] = { month: key, revenue:0, costs:0 };
+        monthMap[key].revenue += inv.TotalAmt || 0;
+      });
+      j.purchases.forEach(p => {
+        if (!p.TxnDate) return;
+        const d = new Date(p.TxnDate);
+        const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+        if (!monthMap[key]) monthMap[key] = { month: key, revenue:0, costs:0 };
+        monthMap[key].costs += p.TotalAmt || 0;
+      });
+    });
+    return Object.values(monthMap).sort((a,b) => a.month.localeCompare(b.month))
+      .map(d => ({ ...d, profit: d.revenue - d.costs }));
+  })();
+
   const SYSTEM_PROMPT = `You are a sharp, no-nonsense financial analyst for a small contracting business. You have access to all job data below. Answer questions about profitability, trends, and business performance concisely and in plain English — like a smart bookkeeper talking to a busy contractor. Be direct. Use dollar figures and percentages. Flag problems clearly. Keep responses under 200 words unless a detailed breakdown is asked for.
 
 JOB SUMMARY DATA:
 ${JSON.stringify(jobSummaries.map(j=>({ id:j.id,name:j.name,client:j.clientName,type:j.type,status:j.status,revenue:j.revenue,costs:j.costs,profit:j.profit,marginPct:j.marginPct+"%" })),null,2)}
 
 MONTHLY TREND DATA:
-${JSON.stringify(MONTHLY_TREND,null,2)}`;
+${JSON.stringify(trend,null,2)}`;
 
   const [messages, setMessages] = useState([
     { role:"assistant", content:"I've got your full job data loaded. Ask me anything — which jobs are hurting your margin, why a month looked rough, which job type is most profitable, or what to watch. What would you like to know?" }
@@ -1011,41 +1170,72 @@ ${JSON.stringify(MONTHLY_TREND,null,2)}`;
 
 // ─── TAB: RAW DATA ────────────────────────────────────────────────────────────
 
-function RawData() {
-  const [view, setView] = useState("customers");
+function RawData({ jobSummaries, dataSource }) {
+  const [view, setView] = useState("jobs");
+
+  // Build flat lists from live jobSummaries
+  const liveJobs = jobSummaries.map(j => ({
+    id: j.id, name: j.name, clientName: j.clientName,
+    type: j.type, status: j.status,
+  }));
+
+  const liveInvoices = jobSummaries.flatMap(j =>
+    j.invoices.map(inv => ({
+      id: inv.Id, docNumber: inv.DocNumber, jobName: j.name,
+      txnDate: inv.TxnDate, totalAmt: inv.TotalAmt, balance: inv.Balance,
+      description: inv.Line?.[0]?.Description || '—',
+    }))
+  );
+
+  const liveExpenses = jobSummaries.flatMap(j =>
+    j.purchases.map(p => ({
+      id: p.Id, docNumber: p.DocNumber, vendor: p.EntityRef?.name || '—',
+      jobName: j.name, txnDate: p.TxnDate, totalAmt: p.TotalAmt,
+      description: p.Line?.[0]?.Description || '—',
+    }))
+  );
+
+  const isLive = dataSource === 'live';
+
   const VIEWS = [
-    { key:"customers", label:"Customers / Jobs" },
-    { key:"invoices",  label:"Invoices" },
-    { key:"purchases", label:"Purchases & Bills" },
+    { key:"jobs",     label:"Jobs",     count: liveJobs.length },
+    { key:"invoices", label:"Invoices", count: liveInvoices.length },
+    { key:"expenses", label:"Expenses", count: liveExpenses.length },
   ];
+
   return (
-    <div style={{ padding:"32px 36px",background:BG,minHeight:"100vh" }}>
+    <div style={{ padding:"32px 36px", background:BG, minHeight:"100vh" }}>
       <div style={{ marginBottom:24 }}>
-        <h1 style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:DARK,letterSpacing:"-0.01em",marginBottom:4 }}>QuickBooks Raw Data</h1>
-        <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginBottom:18 }}>This mirrors exactly what the QB API returns. In production, this syncs nightly into Supabase.</p>
-        <div style={{ display:"flex",gap:8 }}>
+        <h1 style={{ fontFamily:"'Lora',serif", fontSize:22, fontWeight:500, color:DARK, letterSpacing:"-0.01em", marginBottom:4 }}>
+          Raw Data
+        </h1>
+        <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:13, color:DIM, marginBottom:18 }}>
+          {isLive
+            ? "Live data synced from your QuickBooks account via Supabase."
+            : "Demo data — connect QuickBooks to see your real transactions here."}
+        </p>
+        <div style={{ display:"flex", gap:8 }}>
           {VIEWS.map(v => (
             <button key={v.key} className={`btn${view===v.key?" act":""}`} onClick={()=>setView(v.key)}>
-              {v.label} <span style={{ opacity:0.55,fontSize:10,marginLeft:4 }}>({v.key==="customers"?QB_CUSTOMERS.length:v.key==="invoices"?QB_INVOICES.length:QB_PURCHASES.length})</span>
+              {v.label} <span style={{ opacity:0.55, fontSize:10, marginLeft:4 }}>({v.count})</span>
             </button>
           ))}
         </div>
       </div>
+
       <div className="card" style={{ overflow:"hidden" }}>
         <div style={{ overflowX:"auto" }}>
-          {view==="customers" && (
+          {view==="jobs" && (
             <table className="raw-table">
-              <thead><tr>{["Id","DisplayName","FullyQualifiedName","Job","ParentRef.value","Active","Balance"].map(h=><th key={h}>{h}</th>)}</tr></thead>
+              <thead><tr>{["ID","Job Name","Client","Type","Status"].map(h=><th key={h}>{h}</th>)}</tr></thead>
               <tbody>
-                {QB_CUSTOMERS.map(c => (
-                  <tr key={c.Id}>
-                    <td className="mono">{c.Id}</td>
-                    <td style={{ color:DARK,fontWeight:500 }}>{c.DisplayName}</td>
-                    <td style={{ color:MID }}>{c.FullyQualifiedName}</td>
-                    <td><span style={{ display:"inline-block",padding:"2px 8px",borderRadius:3,fontSize:10,fontWeight:500,fontFamily:"'DM Sans',sans-serif",background:c.Job?"rgba(92,122,90,0.1)":"rgba(168,152,128,0.12)",color:c.Job?ACCENT2:DIM }}>{c.Job?"true":"false"}</span></td>
-                    <td className="mono">{c.ParentRef?.value||<span style={{ color:DIM }}>—</span>}</td>
-                    <td><span style={{ color:c.Active?ACCENT2:DIM,fontFamily:"'DM Sans',sans-serif",fontSize:12 }}>{c.Active?"true":"false"}</span></td>
-                    <td className="mono" style={{ color:c.Balance>0?AMBER:DIM }}>${c.Balance.toLocaleString()}</td>
+                {liveJobs.map((j,i) => (
+                  <tr key={i}>
+                    <td className="mono" style={{ fontSize:10 }}>{j.id}</td>
+                    <td style={{ color:DARK, fontWeight:500 }}>{j.name}</td>
+                    <td style={{ color:MID }}>{j.clientName}</td>
+                    <td><span className="tag">{j.type}</span></td>
+                    <td><span style={{ color:j.status==="Complete"?DIM:AMBER, fontSize:11, fontFamily:"'DM Sans',sans-serif" }}>{j.status}</span></td>
                   </tr>
                 ))}
               </tbody>
@@ -1053,37 +1243,33 @@ function RawData() {
           )}
           {view==="invoices" && (
             <table className="raw-table">
-              <thead><tr>{["Id","DocNumber","CustomerRef.value","TxnDate","DueDate","TotalAmt","Balance","Lines"].map(h=><th key={h}>{h}</th>)}</tr></thead>
+              <thead><tr>{["Doc #","Job","Date","Amount","Balance","Description"].map(h=><th key={h}>{h}</th>)}</tr></thead>
               <tbody>
-                {QB_INVOICES.map(inv => (
-                  <tr key={inv.Id}>
-                    <td className="mono">{inv.Id}</td>
-                    <td className="mono">{inv.DocNumber}</td>
-                    <td className="mono" style={{ color:ACCENT2 }}>{inv.CustomerRef.value}</td>
-                    <td className="mono">{inv.TxnDate}</td>
-                    <td className="mono">{inv.DueDate}</td>
-                    <td className="mono" style={{ color:ACCENT2 }}>${inv.TotalAmt.toLocaleString()}</td>
-                    <td className="mono" style={{ color:inv.Balance>0?AMBER:DIM }}>${inv.Balance.toLocaleString()}</td>
-                    <td><div style={{ display:"flex",flexDirection:"column",gap:3 }}>{inv.Line.map((l,i)=><div key={i} style={{ fontSize:10,color:MID,fontFamily:"'DM Sans',sans-serif" }}>{l.Description}: <span style={{ color:ACCENT }}>${l.Amount.toLocaleString()}</span></div>)}</div></td>
+                {liveInvoices.map((inv,i) => (
+                  <tr key={i}>
+                    <td className="mono">{inv.docNumber}</td>
+                    <td style={{ color:DARK, fontWeight:500 }}>{inv.jobName}</td>
+                    <td className="mono">{inv.txnDate}</td>
+                    <td className="mono" style={{ color:ACCENT2 }}>${(inv.totalAmt||0).toLocaleString()}</td>
+                    <td className="mono" style={{ color:inv.balance>0?AMBER:DIM }}>${(inv.balance||0).toLocaleString()}</td>
+                    <td style={{ color:MID, maxWidth:240 }}>{inv.description}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
-          {view==="purchases" && (
+          {view==="expenses" && (
             <table className="raw-table">
-              <thead><tr>{["Id","DocNumber","Vendor","TxnDate","PaymentType","TotalAmt","Job (from Line)","Description"].map(h=><th key={h}>{h}</th>)}</tr></thead>
+              <thead><tr>{["Doc #","Vendor","Job","Date","Amount","Description"].map(h=><th key={h}>{h}</th>)}</tr></thead>
               <tbody>
-                {QB_PURCHASES.map(p => (
-                  <tr key={p.Id}>
-                    <td className="mono">{p.Id}</td>
-                    <td className="mono">{p.DocNumber}</td>
-                    <td style={{ color:DARK,fontWeight:500 }}>{p.EntityRef.name}</td>
-                    <td className="mono">{p.TxnDate}</td>
-                    <td><span className="tag">{p.PaymentType}</span></td>
-                    <td className="mono" style={{ color:RED }}>${p.TotalAmt.toLocaleString()}</td>
-                    <td className="mono" style={{ color:AMBER }}>{p.Line[0]?.AccountBasedExpenseLineDetail?.CustomerRef?.value}</td>
-                    <td style={{ color:MID,maxWidth:240 }}>{p.Line[0]?.Description}</td>
+                {liveExpenses.map((p,i) => (
+                  <tr key={i}>
+                    <td className="mono">{p.docNumber}</td>
+                    <td style={{ color:DARK, fontWeight:500 }}>{p.vendor}</td>
+                    <td style={{ color:MID }}>{p.jobName}</td>
+                    <td className="mono">{p.txnDate}</td>
+                    <td className="mono" style={{ color:RED }}>${(p.totalAmt||0).toLocaleString()}</td>
+                    <td style={{ color:MID, maxWidth:240 }}>{p.description}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1091,9 +1277,11 @@ function RawData() {
           )}
         </div>
       </div>
-      <div style={{ marginTop:20,padding:"16px 20px",borderRadius:5,border:`1px solid ${BORDER}`,background:CARD,fontSize:12,color:DIM,lineHeight:1.7,fontFamily:"'DM Sans',sans-serif" }}>
-        <span style={{ color:ACCENT,fontWeight:500 }}>Note: </span>
-        This is mock data structured to mirror real QuickBooks API responses. The key field is <span style={{ color:ACCENT,fontFamily:"'DM Mono',monospace",fontSize:11 }}>AccountBasedExpenseLineDetail.CustomerRef.value</span> inside each Purchase Line — this is how QB links a cost to a specific job. Expenses without this field appear in the Expense Inbox as untagged.
+      <div style={{ marginTop:20, padding:"16px 20px", borderRadius:5, border:`1px solid ${BORDER}`, background:CARD, fontSize:12, color:DIM, lineHeight:1.7, fontFamily:"'DM Sans',sans-serif" }}>
+        <span style={{ color:ACCENT, fontWeight:500 }}>Source: </span>
+        {isLive
+          ? "Live data from your QuickBooks account, stored in Supabase. Expenses tagged to jobs appear here; untagged expenses appear in the Expense Inbox."
+          : "Demo data shown as fallback. Connect QuickBooks and run a sync to see your real data here."}
       </div>
     </div>
   );
@@ -1416,7 +1604,29 @@ function Reports({ jobSummaries }) {
       title: "Monthly Profit Trend",
       description: "Revenue, costs, and profit over time — see how your business is tracking.",
       icon: "📈",
-      compute: () => MONTHLY_TREND,
+      compute: () => {
+        const monthMap = {};
+        jobSummaries.forEach(j => {
+          j.invoices.forEach(inv => {
+            if (!inv.TxnDate) return;
+            const d   = new Date(inv.TxnDate);
+            const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+            const label = d.toLocaleDateString('en-US', { month:'short', year:"'YY" }).replace(' '," '");
+            if (!monthMap[key]) monthMap[key] = { month:label, date:key+'-01', revenue:0, costs:0 };
+            monthMap[key].revenue += inv.TotalAmt || 0;
+          });
+          j.purchases.forEach(p => {
+            if (!p.TxnDate) return;
+            const d   = new Date(p.TxnDate);
+            const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+            const label = d.toLocaleDateString('en-US', { month:'short', year:"'YY" }).replace(' '," '");
+            if (!monthMap[key]) monthMap[key] = { month:label, date:key+'-01', revenue:0, costs:0 };
+            monthMap[key].costs += p.TotalAmt || 0;
+          });
+        });
+        const trend = Object.values(monthMap).sort((a,b)=>a.date.localeCompare(b.date)).map(d=>({...d, profit:d.revenue-d.costs}));
+        return trend.length > 0 ? trend : MONTHLY_TREND;
+      },
       chartType: "line", dataKey: "profit", color: ACCENT2, yLabel: "$ Amount",
       insight: (data) => {
         const recent = data[data.length-1]; const prev = data[data.length-2];
@@ -2026,13 +2236,13 @@ export default function App() {
 
       {/* ── Content ── */}
       <div style={{ flex:1 }}>
-        {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} jobSummaries={jobSummaries} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType}/>}
-        {tab==="inbox"     && <ExpenseInbox untagged={untagged} tagged={tagged} onTag={handleTag} onDismiss={handleDismiss}/>}
+        {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} jobSummaries={jobSummaries} untagged={untagged} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType}/>}
+        {tab==="inbox"     && <ExpenseInbox untagged={untagged} tagged={tagged} onTag={handleTag} onDismiss={handleDismiss} jobSummaries={jobSummaries}/>}
         {tab==="detail"    && <JobDetail job={selectedJob} onBack={()=>setTab("dashboard")}/>}
         {tab==="clients"   && <ClientScorecard jobSummaries={jobSummaries}/>}
         {tab==="reports"   && <Reports jobSummaries={jobSummaries}/>}
         {tab==="chat"      && <AIChat jobSummaries={jobSummaries}/>}
-        {tab==="raw"       && <RawData/>}
+        {tab==="raw"       && <RawData jobSummaries={jobSummaries} dataSource={dataSource}/>}
       </div>
 
       {/* ── Persistent footer disclaimer ── */}
