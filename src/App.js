@@ -418,8 +418,6 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
   const totalCost   = typeFilteredJobs.reduce((s,j) => s + j.costs, 0);
   const totalProfit = totalRev - totalCost;
   const winners     = typeFilteredJobs.filter(j => j.profit > 0).length;
-  const losers      = typeFilteredJobs.filter(j => j.profit <= 0).length;
-  const outstanding = typeFilteredJobs.reduce((s,j) => s + j.outstanding, 0);
   const barData     = sorted.map(j => ({ name: j.name, fullName:j.name, profit:j.profit }));
 
   // Data Quality Score — tagged + overhead both count as accounted for
