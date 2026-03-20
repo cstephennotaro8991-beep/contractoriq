@@ -759,7 +759,7 @@ function ExpenseInbox({ untagged, onTag, onDismiss, tagged, jobSummaries }) {
     {
       num: "1",
       title: "Open QuickBooks Online",
-      body: "Log in at quickbooks.intuit.com. Make sure you're in the correct company file — the same one connected to ProfitIQ.",
+      body: "Log in at quickbooks.intuit.com. Make sure you're in the correct company file — the same one connected to Canopy.",
     },
     {
       num: "2",
@@ -769,7 +769,7 @@ function ExpenseInbox({ untagged, onTag, onDismiss, tagged, jobSummaries }) {
     {
       num: "3",
       title: "Find the transaction",
-      body: "Use the date and vendor name from ProfitIQ to locate the expense in the list. You can use the search bar or filter by date range to narrow it down quickly.",
+      body: "Use the date and vendor name from Canopy to locate the expense in the list. You can use the search bar or filter by date range to narrow it down quickly.",
     },
     {
       num: "4",
@@ -779,12 +779,12 @@ function ExpenseInbox({ untagged, onTag, onDismiss, tagged, jobSummaries }) {
     {
       num: "5",
       title: "Assign it to the correct job",
-      body: "Click the Customer/Project field and select the job from the dropdown. Match it to what you tagged in ProfitIQ. Make sure 'Billable' is unchecked unless you plan to pass the cost to the client.",
+      body: "Click the Customer/Project field and select the job from the dropdown. Match it to what you tagged in Canopy. Make sure 'Billable' is unchecked unless you plan to pass the cost to the client.",
     },
     {
       num: "6",
       title: "Save",
-      body: "Click Save and Close. QuickBooks will now show this expense linked to that job. On the next nightly sync, ProfitIQ will pick up the clean tag directly from QuickBooks.",
+      body: "Click Save and Close. QuickBooks will now show this expense linked to that job. On the next nightly sync, Canopy will pick up the clean tag directly from QuickBooks.",
     },
   ];
 
@@ -808,7 +808,7 @@ function ExpenseInbox({ untagged, onTag, onDismiss, tagged, jobSummaries }) {
             {/* Why it matters callout */}
             <div style={{ margin:"20px 28px 0",padding:"14px 18px",borderRadius:5,background:"rgba(140,107,48,0.07)",border:`1px solid rgba(140,107,48,0.2)` }}>
               <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:AMBER,fontWeight:500,marginBottom:4 }}>Why bother updating QuickBooks?</div>
-              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:MID,lineHeight:1.6 }}>Tags you apply in ProfitIQ update your dashboard instantly — but they live only here. Your accountant, tax preparer, and QuickBooks reports won't see them unless you update QB directly. It takes about 2 minutes per expense.</div>
+              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:MID,lineHeight:1.6 }}>Tags you apply in Canopy update your dashboard instantly — but they live only here. Your accountant, tax preparer, and QuickBooks reports won't see them unless you update QB directly. It takes about 2 minutes per expense.</div>
             </div>
 
             {/* Steps */}
@@ -827,7 +827,7 @@ function ExpenseInbox({ untagged, onTag, onDismiss, tagged, jobSummaries }) {
             {/* Pro tip */}
             <div style={{ margin:"0 28px 20px",padding:"14px 18px",borderRadius:5,background:BG2,border:`1px solid ${BORDER}` }}>
               <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:ACCENT,fontWeight:500,marginBottom:4 }}>Pro tip</div>
-              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:MID,lineHeight:1.6 }}>Batch your QB updates once a week rather than one at a time. Set aside 15 minutes every Monday to clear the previous week's untagged expenses in both ProfitIQ and QuickBooks at the same time.</div>
+              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:MID,lineHeight:1.6 }}>Batch your QB updates once a week rather than one at a time. Set aside 15 minutes every Monday to clear the previous week's untagged expenses in both Canopy and QuickBooks at the same time.</div>
             </div>
 
             {/* Footer */}
@@ -844,12 +844,19 @@ function ExpenseInbox({ untagged, onTag, onDismiss, tagged, jobSummaries }) {
 
       {/* KPIs */}
       <div style={{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:28 }}>
-        {[
-          { label:"Untagged Expenses", val:untagged.length, sub:$(totalUntagged)+" unallocated", color:untagged.length>0?AMBER:ACCENT2 },
-          { label:"Tagged This Session", val:tagged.length, sub:$(totalTagged)+" now allocated", color:ACCENT2 },
-          { label:"Data Quality Score", val:untagged.length===0?"100%":`${Math.round((30/(30+untagged.length))*100)}%`, sub:"of expenses linked to jobs", color:untagged.length===0?ACCENT2:AMBER },
-          { label:"Needs QB Sync", val:needsQBSync, sub:"tags not yet in QuickBooks", color:needsQBSync>0?MID:DIM },
-        ].map((k,i) => (
+        {(() => {
+          const taggedCount   = (jobSummaries||[]).reduce((s,j) => s + j.purchases.length, 0);
+          const untaggedCount = untagged.length;
+          const total         = taggedCount + untaggedCount;
+          const dqPct         = total > 0 ? Math.round((taggedCount / total) * 100) : 100;
+          const dqColor       = dqPct >= 80 ? ACCENT2 : dqPct >= 50 ? AMBER : RED;
+          return [
+            { label:"Untagged Expenses",   val:untagged.length, sub:$(totalUntagged)+" unallocated",          color:untagged.length>0?AMBER:ACCENT2 },
+            { label:"Tagged This Session",  val:tagged.length,   sub:$(totalTagged)+" now allocated",          color:ACCENT2 },
+            { label:"Data Quality Score",   val:`${dqPct}%`,     sub:`${taggedCount}/${total} expenses tagged`, color:dqColor },
+            { label:"Needs QB Sync",        val:needsQBSync,     sub:"tags not yet in QuickBooks",             color:needsQBSync>0?MID:DIM },
+          ];
+        })().map((k,i) => (
           <div key={i} className="kpi">
             <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:12,fontWeight:500 }}>{k.label}</div>
             <div style={{ fontFamily:"'Lora',serif",fontSize:28,fontWeight:500,color:k.color }}>{k.val}</div>
@@ -862,7 +869,7 @@ function ExpenseInbox({ untagged, onTag, onDismiss, tagged, jobSummaries }) {
       {tagged.length > 0 && (
         <div style={{ marginBottom:24,padding:"16px 22px",borderRadius:5,border:`1px solid rgba(140,107,48,0.25)`,background:"rgba(140,107,48,0.05)",display:"flex",alignItems:"center",justifyContent:"space-between" }}>
           <div style={{ fontSize:13,color:AMBER,fontFamily:"'DM Sans',sans-serif" }}>
-            <span style={{ fontWeight:500 }}>{tagged.length} expense{tagged.length!==1?"s":""} tagged in ProfitIQ</span>
+            <span style={{ fontWeight:500 }}>{tagged.length} expense{tagged.length!==1?"s":""} tagged in Canopy</span>
             <span style={{ color:MID,marginLeft:8 }}>— these tags live here for now. Consider updating them in QuickBooks so your accountant sees clean books.</span>
           </div>
           <button className="btn" style={{ borderColor:"rgba(140,107,48,0.3)",color:AMBER,whiteSpace:"nowrap",marginLeft:16 }} onClick={()=>setShowSyncGuide(true)}>
@@ -945,7 +952,7 @@ function ExpenseInbox({ untagged, onTag, onDismiss, tagged, jobSummaries }) {
                     <td style={{ color:MID,maxWidth:220 }}>{t.description}</td>
                     <td className="mono" style={{ color:RED }}>–{$(t.amount)}</td>
                     <td><span className="chip g">{t.taggedJobName}</span></td>
-                    <td><span style={{ fontSize:10,color:ACCENT,fontFamily:"'DM Sans',sans-serif" }}>ProfitIQ</span></td>
+                    <td><span style={{ fontSize:10,color:ACCENT,fontFamily:"'DM Sans',sans-serif" }}>Canopy</span></td>
                   </tr>
                 ))}
               </tbody>
@@ -1911,7 +1918,10 @@ function useContractorData(userId, mockJobSummaries, mockUntagged) {
         .from('transactions').select('*').eq('contractor_id', userId);
 
       const { data: inboxItems } = await supabase
-        .from('inbox_tags').select('*').eq('contractor_id', userId).eq('status', 'pending');
+        .from('inbox_tags')
+        .select('*')
+        .eq('contractor_id', userId)
+        .eq('status', 'pending');
 
       const liveSummaries = jobs.map(job => {
         const jobTxns   = (transactions || []).filter(t => t.job_id === job.id);
@@ -2110,16 +2120,58 @@ export default function App() {
     setTab("detail");
   }
 
-  function handleTag(item, jobId, jobName) {
+  async function handleTag(item, jobId, jobName) {
+    // Optimistically update local state immediately so UI feels instant
     setTagged(prev => [...prev, { ...item, taggedJobId: jobId, taggedJobName: jobName }]);
     if (selectedJob && selectedJob.id === jobId) {
       const updated = jobSummaries.find(j => j.id === jobId);
       if (updated) setSelectedJob(updated);
     }
+
+    // Write tag to Supabase — update inbox_tags row status and linked job
+    try {
+      await supabase
+        .from('inbox_tags')
+        .update({ status: 'tagged', tagged_job_id: jobId })
+        .eq('id', item.id);
+
+      // Also add as a transaction so it shows in job costs
+      await supabase
+        .from('transactions')
+        .upsert({
+          id:            `${session.user.id}_inbox_${item.id}`,
+          contractor_id: session.user.id,
+          job_id:        jobId,
+          type:          'expense',
+          doc_number:    item.docNumber,
+          txn_date:      item.date,
+          amount:        item.amount,
+          description:   item.description,
+          vendor:        item.vendor,
+        }, { onConflict: 'id' });
+
+      // Refresh live data so Data Quality Score and job costs update
+      await refreshData();
+    } catch (err) {
+      console.error('Error saving tag to Supabase:', err);
+    }
   }
 
-  function handleDismiss(id) {
+  async function handleDismiss(id) {
+    // Optimistically remove from local state
     setTagged(prev => prev.filter(u => u.id !== id));
+
+    // Write dismissal to Supabase
+    try {
+      await supabase
+        .from('inbox_tags')
+        .update({ status: 'dismissed' })
+        .eq('id', id);
+
+      await refreshData();
+    } catch (err) {
+      console.error('Error saving dismissal to Supabase:', err);
+    }
   }
 
   const inboxCount = untagged.length;
