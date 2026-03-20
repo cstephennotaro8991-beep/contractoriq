@@ -519,24 +519,24 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
         </div>
       )}
 
-      {/* KPI strip — 5 cards, Total Expenses is toggleable */}
+      {/* KPI strip — 5 cards: Revenue | Expenses (toggle) | Profit (dynamic) | Jobs Profitable | Data Quality */}
       <div style={{ display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:14,marginBottom:28 }}>
 
-        {/* Static KPIs */}
-        {[
-          { label:"Total Revenue",      val:$(totalRev),      sub:"all jobs billed",                                                     hi:false, color:DARK },
-          { label:"Total Profit",       val:$(totalProfit),   sub:totalRev>0?`${((totalProfit/totalRev)*100).toFixed(1)}% gross margin`:"no revenue", hi:true, color:ACCENT2 },
-          { label:"Jobs Profitable",    val:`${winners} of ${typeFilteredJobs.length}`, sub:"in the green",                               hi:false, color:DARK },
-        ].map((k,i) => (
-          <div key={i} className={`kpi${k.hi?" hi":""}`}>
-            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>{k.label}</div>
-            <div style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:k.color,letterSpacing:"-0.01em" }}>{k.val}</div>
-            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>{k.sub}</div>
-          </div>
-        ))}
+        {/* 1. Total Revenue */}
+        <div className="kpi kpi-tooltip">
+          <span className="tooltip-text">Total revenue invoiced across all jobs in the selected period.</span>
+          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>Total Revenue</div>
+          <div style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>{$(totalRev)}</div>
+          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>all jobs billed</div>
+        </div>
 
-        {/* Total Expenses — toggleable between Job Costs and Fixed */}
-        <div className="kpi" style={{ position:"relative" }}>
+        {/* 2. Total Expenses — toggleable, drives profit card */}
+        <div className="kpi kpi-tooltip" style={{ position:"relative" }}>
+          <span className="tooltip-text">
+            {expenseView==="job"
+              ? "Job Costs: direct expenses tagged to specific jobs in QuickBooks. Toggle to Fixed to include overhead in the profit calculation."
+              : "Fixed Costs: overhead expenses marked as fixed costs in the Expense Inbox. Not tied to any specific job. Toggle to Jobs to see gross profit only."}
+          </span>
           <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10 }}>
             <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",fontWeight:500 }}>Total Expenses</div>
             <div style={{ display:"flex",border:`1px solid ${BORDER}`,borderRadius:3,overflow:"hidden" }}>
@@ -555,10 +555,45 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
           </div>
         </div>
 
-        {/* Data Quality Score */}
+        {/* 3. Profit — updates dynamically with toggle */}
+        {(() => {
+          const isNet      = expenseView === "fixed";
+          const netProfit  = totalProfit - totalOverhead;
+          const dispProfit = isNet ? netProfit : totalProfit;
+          const dispMargin = totalRev > 0 ? ((dispProfit / totalRev) * 100).toFixed(1) : "0.0";
+          const profitColor = dispProfit >= 0 ? ACCENT2 : RED;
+          return (
+            <div className="kpi hi kpi-tooltip">
+              <span className="tooltip-text">
+                {isNet
+                  ? `Net Profit = Revenue (${$(totalRev)}) − Job Costs (${$(totalCost)}) − Fixed Costs (${$(totalOverhead)}). This is your true bottom line after all known expenses.`
+                  : `Gross Profit = Revenue (${$(totalRev)}) − Job Costs (${$(totalCost)}). Toggle Expenses to "Fixed" to subtract overhead and see net profit.`}
+              </span>
+              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>
+                {isNet ? "Total Net Profit" : "Total Gross Profit"}
+              </div>
+              <div style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:profitColor,letterSpacing:"-0.01em" }}>
+                {$(dispProfit)}
+              </div>
+              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>
+                {dispMargin}% {isNet ? "net" : "gross"} margin
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* 4. Jobs Profitable */}
+        <div className="kpi kpi-tooltip">
+          <span className="tooltip-text">Number of jobs where revenue exceeded direct job costs. Does not account for fixed overhead allocation.</span>
+          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>Jobs Profitable</div>
+          <div style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>{winners} of {typeFilteredJobs.length}</div>
+          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>in the green</div>
+        </div>
+
+        {/* 5. Data Quality Score */}
         <div className="kpi kpi-tooltip">
           <span className="tooltip-text">
-            Includes job-tagged and fixed cost expenses. Tag remaining expenses in the Expense Inbox to improve. Data sourced from QuickBooks.
+            Includes job-tagged expenses and fixed costs. Tag remaining untagged expenses in the Expense Inbox to improve this score. Data sourced from QuickBooks.
           </span>
           <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>Data Quality Score</div>
           <div style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:dqColor,letterSpacing:"-0.01em" }}>{dataQuality}%</div>
