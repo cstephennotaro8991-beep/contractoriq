@@ -513,7 +513,7 @@ function Dashboard({ onJobClick, jobSummaries, untagged, qbConnected, userId, cl
           { label:"Total Profit",        val:$(totalProfit), sub:totalRev>0?`${((totalProfit/totalRev)*100).toFixed(1)}% overall margin`:"no revenue", hi:true,  color:ACCENT2 },
           { label:"Jobs Profitable",     val:`${winners} of ${typeFilteredJobs.length}`, sub:"in the green",                      hi:false, color:DARK },
           { label:"Outstanding A/R",     val:$(outstanding), sub:`${losers} job${losers!==1?"s":""} losing money`,                hi:false, color:outstanding>0?AMBER:DARK },
-          { label:"Data Quality Score",  val:`${dataQuality}%`, sub:`${dqLabel} · ${taggedExpenses}/${totalExpenses} expenses tagged`, hi:false, color:dqColor },
+          { label:"Data Quality Score",  val:`${dataQuality}%`, sub:`${dqLabel} · ${totalTaggedExpenses}/${totalExpenses} expenses tagged`, hi:false, color:dqColor },
         ].map((k,i) => (
           <div key={i} className={`kpi${k.hi?" hi":""}${i===4?" kpi-tooltip":""}`}>
             {i===4 && (
