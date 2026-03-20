@@ -320,7 +320,7 @@ const ChartTip = ({ active, payload, label }) => {
 
 // ─── TAB: DASHBOARD ───────────────────────────────────────────────────────────
 
-function Dashboard({ onJobClick, jobSummaries }) {
+function Dashboard({ onJobClick, jobSummaries, qbConnected, userId, clientType }) {
   const [sort, setSort]           = useState("profit");
   const [sortDir, setSortDir]     = useState("desc");
   const [dateRange, setDateRange] = useState("all");
@@ -401,6 +401,24 @@ function Dashboard({ onJobClick, jobSummaries }) {
           <button onClick={()=>setDateRange("all")} style={{ cursor:"pointer",padding:"7px 14px",fontSize:11,fontWeight:500,fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.03em",border:`1px solid ${BORDER}`,borderRadius:5,background:dateRange==="all"?DARK:CARD,color:dateRange==="all"?CARD:MID,transition:"all 0.15s" }}>All</button>
         </div>
       </div>
+
+    <div style={{ padding:"32px 36px", background:BG, minHeight:"100vh" }}>
+
+      {/* Connect QuickBooks banner — shown for QB clients who haven't connected yet */}
+      {clientType === "quickbooks" && !qbConnected && (
+        <div style={{ marginBottom:24, padding:"16px 22px", borderRadius:6, border:`1px solid rgba(140,107,48,0.3)`, background:"rgba(140,107,48,0.05)", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          <div>
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:13, fontWeight:500, color:AMBER, marginBottom:3 }}>Connect your QuickBooks account</div>
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:MID }}>You're currently viewing demo data. Connect QuickBooks to see your real job profitability numbers.</div>
+          </div>
+          <a
+            href={`/api/qb-connect?userId=${userId}`}
+            style={{ cursor:"pointer", padding:"9px 20px", borderRadius:4, fontSize:12, fontWeight:500, border:`1px solid ${AMBER}`, color:CARD, background:AMBER, fontFamily:"'DM Sans',sans-serif", textDecoration:"none", whiteSpace:"nowrap", marginLeft:24, transition:"all 0.15s" }}
+          >
+            Connect QuickBooks →
+          </a>
+        </div>
+      )}
 
       {/* Unbilled Work Alert */}
       {unbilledJobs.length > 0 && (
@@ -1675,14 +1693,29 @@ export default function App() {
   const [untagged, setUntagged]         = useState(INITIAL_UNTAGGED);
   const [tagged, setTagged]             = useState([]);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
+  const [qbConnected, setQbConnected]   = useState(false);
+  const [qbError, setQbError]           = useState(null);
 
-  // ── On mount: check if a session already exists (user refreshed the page)
+  // ── On mount: check session + handle QB OAuth redirect params
   useEffect(() => {
+    // Handle QB OAuth redirect — check URL params immediately on load
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('qb_connected') === 'true') {
+      setQbConnected(true);
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+    if (params.get('qb_error')) {
+      setQbError(params.get('qb_error'));
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+
     supabase.auth.getSession().then(async ({ data: { session: s } }) => {
       setSession(s);
       if (s) {
         const { data: p } = await supabase.from("contractors").select("*").eq("id", s.user.id).single();
         setProfile(p);
+        // QB is connected if a realm ID is stored
+        if (p?.qb_realm_id) setQbConnected(true);
         // Show first-login disclaimer if not yet dismissed
         const dismissed = localStorage.getItem(`canopy_disclaimer_${s.user.id}`);
         if (!dismissed) setShowDisclaimer(true);
@@ -1693,7 +1726,7 @@ export default function App() {
     // Listen for login/logout events
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
-      if (!s) { setProfile(null); setTab("dashboard"); setShowDisclaimer(false); }
+      if (!s) { setProfile(null); setTab("dashboard"); setShowDisclaimer(false); setQbConnected(false); }
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -1701,6 +1734,7 @@ export default function App() {
   function handleLogin(user, contractorProfile) {
     setSession({ user });
     setProfile(contractorProfile);
+    if (contractorProfile?.qb_realm_id) setQbConnected(true);
     const dismissed = localStorage.getItem(`canopy_disclaimer_${user.id}`);
     if (!dismissed) setShowDisclaimer(true);
   }
@@ -1718,6 +1752,8 @@ export default function App() {
     setProfile(null);
     setTab("dashboard");
     setShowDisclaimer(false);
+    setQbConnected(false);
+    setQbError(null);
   }
 
   // ── Show nothing while checking session on first load
@@ -1765,7 +1801,6 @@ export default function App() {
 
   const inboxCount = untagged.length;
 
-  // QB clients see Expense Inbox + Raw Data; basic clients will see Upload tab (coming soon)
   const TABS = [
     { key:"dashboard", label:"Dashboard" },
     ...(clientType === "quickbooks" ? [{ key:"inbox", label:"Expense Inbox" }] : []),
@@ -1784,8 +1819,6 @@ export default function App() {
       {showDisclaimer && (
         <div style={{ position:"fixed", inset:0, background:"rgba(44,36,22,0.5)", zIndex:500, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
           <div style={{ background:CARD, border:`1px solid ${BORDER}`, borderRadius:8, width:"100%", maxWidth:520, boxShadow:"0 20px 60px rgba(44,36,22,0.2)", padding:"32px 36px" }}>
-
-            {/* Icon + title */}
             <div style={{ display:"flex", alignItems:"flex-start", gap:14, marginBottom:20 }}>
               <div style={{ width:36, height:36, borderRadius:6, background:"rgba(140,107,48,0.1)", border:`1px solid rgba(140,107,48,0.25)`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontSize:16 }}>ℹ</div>
               <div>
@@ -1793,32 +1826,14 @@ export default function App() {
                 <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:DIM }}>Please read before using your dashboard</p>
               </div>
             </div>
-
-            {/* Body */}
             <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:13, color:MID, lineHeight:1.75, marginBottom:24 }}>
-              <p style={{ marginBottom:12 }}>
-                The figures shown in Canopy are derived directly from your <strong style={{ color:DARK }}>QuickBooks Online account</strong>. Canopy does not modify, verify, or audit your QuickBooks data — any inaccuracies or incomplete records in QuickBooks will be reflected here.
-              </p>
-              <p style={{ marginBottom:12 }}>
-                Common sources of inaccurate data include <strong style={{ color:DARK }}>untagged expenses</strong> (visible in the Expense Inbox), missing invoices, or duplicate entries. Your Data Quality Score on the dashboard indicates how complete your records are.
-              </p>
-              <p>
-                Canopy is provided for <strong style={{ color:DARK }}>informational purposes only</strong> and does not constitute financial, tax, or accounting advice. Always consult your accountant or bookkeeper before making significant business decisions.
-              </p>
+              <p style={{ marginBottom:12 }}>The figures shown in Canopy are derived directly from your <strong style={{ color:DARK }}>QuickBooks Online account</strong>. Canopy does not modify, verify, or audit your QuickBooks data — any inaccuracies or incomplete records in QuickBooks will be reflected here.</p>
+              <p style={{ marginBottom:12 }}>Common sources of inaccurate data include <strong style={{ color:DARK }}>untagged expenses</strong> (visible in the Expense Inbox), missing invoices, or duplicate entries. Your Data Quality Score on the dashboard indicates how complete your records are.</p>
+              <p>Canopy is provided for <strong style={{ color:DARK }}>informational purposes only</strong> and does not constitute financial, tax, or accounting advice. Always consult your accountant or bookkeeper before making significant business decisions.</p>
             </div>
-
-            {/* Divider */}
             <div style={{ borderTop:`1px solid ${BORDER}`, paddingTop:20, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-              <div style={{ fontSize:11, color:DIM, fontFamily:"'DM Sans',sans-serif" }}>
-                This notice will not appear again after dismissal.
-              </div>
-              <button
-                className="btn act"
-                onClick={dismissDisclaimer}
-                style={{ padding:"9px 24px", fontSize:12 }}
-              >
-                I understand — continue
-              </button>
+              <div style={{ fontSize:11, color:DIM, fontFamily:"'DM Sans',sans-serif" }}>This notice will not appear again after dismissal.</div>
+              <button className="btn act" onClick={dismissDisclaimer} style={{ padding:"9px 24px", fontSize:12 }}>I understand — continue</button>
             </div>
           </div>
         </div>
@@ -1840,23 +1855,47 @@ export default function App() {
               {t.key==="chat" && <span style={{ marginLeft:6, fontSize:9, padding:"2px 7px", borderRadius:3, background:"rgba(92,122,90,0.12)", color:ACCENT2, fontWeight:500 }}>AI</span>}
             </div>
           ))}
-
-          {/* Right side — contractor name + sign out */}
           <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:16 }}>
-            <div style={{ fontSize:11, color:DIM, fontFamily:"'DM Sans',sans-serif", display:"flex", alignItems:"center", gap:6 }}>
+            {/* QB connection status indicator */}
+            {clientType === "quickbooks" && (
+              <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:10, fontFamily:"'DM Sans',sans-serif" }}>
+                <div style={{ width:6, height:6, borderRadius:"50%", background: qbConnected ? ACCENT2 : AMBER }}/>
+                <span style={{ color: qbConnected ? ACCENT2 : AMBER }}>
+                  {qbConnected ? "QuickBooks connected" : "QuickBooks not connected"}
+                </span>
+              </div>
+            )}
+            <div style={{ fontSize:11, color:DIM, fontFamily:"'DM Sans',sans-serif", display:"flex", alignItems:"center", gap:6, paddingLeft:16, borderLeft:`1px solid ${BORDER}` }}>
               <div style={{ width:6, height:6, borderRadius:"50%", background:ACCENT2, opacity:0.7 }}/>
               {contractorName}
             </div>
-            <button className="btn" onClick={handleSignOut} style={{ fontSize:11, padding:"5px 12px", color:DIM }}>
-              Sign Out
-            </button>
+            <button className="btn" onClick={handleSignOut} style={{ fontSize:11, padding:"5px 12px", color:DIM }}>Sign Out</button>
           </div>
         </div>
       </div>
 
+      {/* ── QB error banner ── */}
+      {qbError && (
+        <div style={{ background:"rgba(140,64,64,0.06)", borderBottom:`1px solid rgba(140,64,64,0.2)`, padding:"11px 36px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          <div style={{ fontSize:13, color:RED, fontFamily:"'DM Sans',sans-serif" }}>
+            <span style={{ fontWeight:500 }}>QuickBooks connection failed</span>
+            <span style={{ color:MID, marginLeft:8 }}>— {qbError.replace(/_/g,' ')}. Please try connecting again.</span>
+          </div>
+          <button onClick={()=>setQbError(null)} style={{ background:"none", border:"none", cursor:"pointer", color:DIM, fontSize:16, padding:"0 4px" }}>×</button>
+        </div>
+      )}
+
+      {/* ── QB success banner ── */}
+      {qbConnected && !profile?.qb_realm_id && (
+        <div style={{ background:"rgba(92,122,90,0.06)", borderBottom:`1px solid rgba(92,122,90,0.25)`, padding:"11px 36px", display:"flex", alignItems:"center", gap:10 }}>
+          <div style={{ width:6, height:6, borderRadius:"50%", background:ACCENT2 }}/>
+          <div style={{ fontSize:13, color:ACCENT2, fontFamily:"'DM Sans',sans-serif", fontWeight:500 }}>QuickBooks connected successfully — your data will sync shortly.</div>
+        </div>
+      )}
+
       {/* ── Content ── */}
       <div style={{ flex:1 }}>
-        {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} jobSummaries={jobSummaries}/>}
+        {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} jobSummaries={jobSummaries} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType}/>}
         {tab==="inbox"     && <ExpenseInbox untagged={untagged} tagged={tagged} onTag={handleTag} onDismiss={handleDismiss}/>}
         {tab==="detail"    && <JobDetail job={selectedJob} onBack={()=>setTab("dashboard")}/>}
         {tab==="clients"   && <ClientScorecard jobSummaries={jobSummaries}/>}
@@ -1872,10 +1911,7 @@ export default function App() {
           All figures are sourced directly from QuickBooks Online. Canopy does not verify or audit source data — accuracy depends on the completeness of your QuickBooks records.
         </div>
         <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, whiteSpace:"nowrap" }}>
-          Not financial advice · <span
-            style={{ color:ACCENT, cursor:"pointer", textDecoration:"underline" }}
-            onClick={() => setShowDisclaimer(true)}
-          >View full notice</span>
+          Not financial advice · <span style={{ color:ACCENT, cursor:"pointer", textDecoration:"underline" }} onClick={() => setShowDisclaimer(true)}>View full notice</span>
         </div>
       </div>
 
