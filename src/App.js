@@ -320,12 +320,13 @@ const ChartTip = ({ active, payload, label }) => {
 
 // ─── TAB: DASHBOARD ───────────────────────────────────────────────────────────
 
-function Dashboard({ onJobClick, jobSummaries, untagged, qbConnected, userId, clientType }) {
+function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, userId, clientType }) {
   const [sort, setSort]             = useState("profit");
   const [sortDir, setSortDir]       = useState("desc");
   const [dateRange, setDateRange]   = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [trendView, setTrendView]   = useState("cumulative");
+  const [expenseView, setExpenseView] = useState("job");
 
   // Build monthly trend dynamically from live job summaries
   const dynamicTrend = useMemo(() => {
@@ -421,13 +422,23 @@ function Dashboard({ onJobClick, jobSummaries, untagged, qbConnected, userId, cl
   const outstanding = typeFilteredJobs.reduce((s,j) => s + j.outstanding, 0);
   const barData     = sorted.map(j => ({ name: j.name, fullName:j.name, profit:j.profit }));
 
-  // Data Quality Score — based on live data: tagged expenses vs untagged inbox items
-  const totalTaggedExpenses = jobSummaries.reduce((s,j) => s + j.purchases.length, 0);
+  // Data Quality Score — tagged + overhead both count as accounted for
+  const totalTaggedExpenses   = jobSummaries.reduce((s,j) => s + j.purchases.length, 0);
+  const totalOverheadExpenses = (overhead || []).length;
   const totalUntaggedExpenses = untagged.length;
-  const totalExpenses  = totalTaggedExpenses + totalUntaggedExpenses;
-  const dataQuality    = totalExpenses > 0 ? Math.round((totalTaggedExpenses / totalExpenses) * 100) : 100;
+  const totalExpenses  = totalTaggedExpenses + totalOverheadExpenses + totalUntaggedExpenses;
+  const accountedFor   = totalTaggedExpenses + totalOverheadExpenses;
+  const dataQuality    = totalExpenses > 0 ? Math.round((accountedFor / totalExpenses) * 100) : 100;
   const dqColor        = dataQuality >= 80 ? ACCENT2 : dataQuality >= 50 ? AMBER : RED;
   const dqLabel        = dataQuality >= 80 ? "Good" : dataQuality >= 50 ? "Fair" : "Poor";
+
+  // Overhead total — filtered to selected date range
+  const overheadInRange = (overhead || []).filter(o => {
+    if (dateRange === "all") return true;
+    const cutoff = getDateCutoff(dateRange);
+    return cutoff ? new Date(o.date) >= cutoff : true;
+  });
+  const totalOverhead = overheadInRange.reduce((s, o) => s + (o.amount || 0), 0);
 
   // Mid-job margin alerts
   const atRiskJobs = typeFilteredJobs.filter(j =>
@@ -510,26 +521,52 @@ function Dashboard({ onJobClick, jobSummaries, untagged, qbConnected, userId, cl
         </div>
       )}
 
-      {/* KPI strip — 5 cards including Data Quality Score */}
+      {/* KPI strip — 5 cards, Total Expenses is toggleable */}
       <div style={{ display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:14,marginBottom:28 }}>
+
+        {/* Static KPIs */}
         {[
-          { label:"Total Revenue",       val:$(totalRev),    sub:"all jobs billed",                                                hi:false, color:DARK },
-          { label:"Total Profit",        val:$(totalProfit), sub:totalRev>0?`${((totalProfit/totalRev)*100).toFixed(1)}% overall margin`:"no revenue", hi:true,  color:ACCENT2 },
-          { label:"Jobs Profitable",     val:`${winners} of ${typeFilteredJobs.length}`, sub:"in the green",                      hi:false, color:DARK },
-          { label:"Outstanding A/R",     val:$(outstanding), sub:`${losers} job${losers!==1?"s":""} losing money`,                hi:false, color:outstanding>0?AMBER:DARK },
-          { label:"Data Quality Score",  val:`${dataQuality}%`, sub:`${dqLabel} · ${totalTaggedExpenses}/${totalExpenses} expenses tagged`, hi:false, color:dqColor },
+          { label:"Total Revenue",      val:$(totalRev),      sub:"all jobs billed",                                                     hi:false, color:DARK },
+          { label:"Total Profit",       val:$(totalProfit),   sub:totalRev>0?`${((totalProfit/totalRev)*100).toFixed(1)}% gross margin`:"no revenue", hi:true, color:ACCENT2 },
+          { label:"Jobs Profitable",    val:`${winners} of ${typeFilteredJobs.length}`, sub:"in the green",                               hi:false, color:DARK },
         ].map((k,i) => (
-          <div key={i} className={`kpi${k.hi?" hi":""}${i===4?" kpi-tooltip":""}`}>
-            {i===4 && (
-              <span className="tooltip-text">
-                Higher score = more accurate job profit numbers. Tag untagged expenses in the Expense Inbox to improve. Data sourced from QuickBooks — accuracy depends on your QB records.
-              </span>
-            )}
-            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:12,fontWeight:500 }}>{k.label}</div>
-            <div style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:500,color:k.color,letterSpacing:"-0.01em" }}>{k.val}</div>
+          <div key={i} className={`kpi${k.hi?" hi":""}`}>
+            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>{k.label}</div>
+            <div style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:k.color,letterSpacing:"-0.01em" }}>{k.val}</div>
             <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>{k.sub}</div>
           </div>
         ))}
+
+        {/* Total Expenses — toggleable between Job Costs and Fixed */}
+        <div className="kpi" style={{ position:"relative" }}>
+          <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10 }}>
+            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",fontWeight:500 }}>Total Expenses</div>
+            <div style={{ display:"flex",border:`1px solid ${BORDER}`,borderRadius:3,overflow:"hidden" }}>
+              {[["job","Jobs"],["fixed","Fixed"]].map(([k,l],i) => (
+                <button key={k} onClick={e=>{e.stopPropagation();setExpenseView(k);}} style={{ cursor:"pointer",padding:"2px 7px",fontSize:9,fontWeight:500,fontFamily:"'DM Sans',sans-serif",border:"none",borderRight:i===0?`1px solid ${BORDER}`:"none",background:expenseView===k?ACCENT:CARD,color:expenseView===k?CARD:DIM,transition:"all 0.15s" }}>{l}</button>
+              ))}
+            </div>
+          </div>
+          <div style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:expenseView==="fixed"?AMBER:MID,letterSpacing:"-0.01em" }}>
+            {expenseView==="job" ? $(totalCost) : $(totalOverhead)}
+          </div>
+          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>
+            {expenseView==="job"
+              ? `${typeFilteredJobs.reduce((s,j)=>s+j.purchases.length,0)} job-tagged expenses`
+              : `${overheadInRange.length} fixed cost expense${overheadInRange.length!==1?"s":""}`}
+          </div>
+        </div>
+
+        {/* Data Quality Score */}
+        <div className="kpi kpi-tooltip">
+          <span className="tooltip-text">
+            Includes job-tagged and fixed cost expenses. Tag remaining expenses in the Expense Inbox to improve. Data sourced from QuickBooks.
+          </span>
+          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>Data Quality Score</div>
+          <div style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:dqColor,letterSpacing:"-0.01em" }}>{dataQuality}%</div>
+          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>{dqLabel} · {accountedFor}/{totalExpenses} accounted for</div>
+        </div>
+
       </div>
 
       <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:18,marginBottom:28 }}>
@@ -693,6 +730,9 @@ function Dashboard({ onJobClick, jobSummaries, untagged, qbConnected, userId, cl
         {sorted.length > 0 ? sorted.map(j => {
           const win = j.profit > 0;
           const atRisk = j.status === "In Progress" && j.revenue > 0 && (j.costs / j.revenue) > 0.85;
+          // Untagged flags — strong if inbox item suggests this job, soft if any untagged exist
+          const hasSuggestedUntagged = untagged.some(u => u.suggestedJob === j.id);
+          const hasAnyUntagged       = untagged.length > 0;
           return (
             <div key={j.id} className="trow" style={{ gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 90px",borderLeft:`3px solid ${win?ACCENT2:RED}`,opacity:win?1:0.92 }} onClick={()=>onJobClick(j)}>
               <div className="tcell" style={{ flexDirection:"column",alignItems:"flex-start",gap:3 }}>
@@ -705,7 +745,15 @@ function Dashboard({ onJobClick, jobSummaries, untagged, qbConnected, userId, cl
               <div className="tcell" style={{ color:MID,fontFamily:"'DM Sans',sans-serif" }}>{j.clientName}</div>
               <div className="tcell mono" style={{ color:MID,fontSize:12 }}>{$(j.revenue)}</div>
               <div className="tcell mono" style={{ color:MID,fontSize:12 }}>{$(j.costs)}</div>
-              <div className="tcell"><span className={`chip ${win?"g":"r"}`}>{win?"+":"-"}{$(j.profit)} ({j.marginPct}%)</span></div>
+              <div className="tcell" style={{ flexDirection:"column",alignItems:"flex-start",gap:4 }}>
+                <span className={`chip ${win?"g":"r"}`}>{win?"+":"-"}{$(j.profit)} ({j.marginPct}%)</span>
+                {hasSuggestedUntagged && (
+                  <span style={{ fontSize:9,color:AMBER,fontFamily:"'DM Sans',sans-serif",fontWeight:500 }} title="Untagged expenses in the inbox may belong to this job — profit may be lower than shown">⚠ est. — untagged expenses likely</span>
+                )}
+                {!hasSuggestedUntagged && hasAnyUntagged && (
+                  <span style={{ fontSize:9,color:DIM,fontFamily:"'DM Sans',sans-serif" }} title="Untagged expenses exist — profit figures may be incomplete">~ est.</span>
+                )}
+              </div>
               <div className="tcell" style={{ fontSize:11,color:j.status==="Complete"?DIM:AMBER,letterSpacing:"0.03em",fontFamily:"'DM Sans',sans-serif" }}>
                 {j.status==="Complete"?"Complete":"● Active"}
               </div>
@@ -721,9 +769,62 @@ function Dashboard({ onJobClick, jobSummaries, untagged, qbConnected, userId, cl
   );
 }
 
+// ─── DISMISSED SECTION (used inside ExpenseInbox) ────────────────────────────
+
+function DismissedSection({ dismissed, onRestore }) {
+  const [expanded, setExpanded] = useState(false);
+  const total = (dismissed||[]).reduce((s,d) => s + d.amount, 0);
+
+  return (
+    <div style={{ marginTop:36 }}>
+      <div
+        style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom: expanded ? 14 : 0, cursor:"pointer", userSelect:"none" }}
+        onClick={() => setExpanded(e => !e)}
+      >
+        <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",fontWeight:500 }}>
+          Dismissed — {(dismissed||[]).length} expense{(dismissed||[]).length!==1?"s":""} · {$(total)}
+        </div>
+        <div style={{ fontSize:11,color:DIM,fontFamily:"'DM Sans',sans-serif",display:"flex",alignItems:"center",gap:6 }}>
+          {expanded ? "Hide ▲" : "Show ▼"}
+        </div>
+      </div>
+      {expanded && (
+        <div className="card" style={{ overflow:"hidden" }}>
+          <table className="raw-table" style={{ width:"100%" }}>
+            <thead><tr>{["Date","Doc #","Vendor","Description","Amount",""].map(h=><th key={h}>{h}</th>)}</tr></thead>
+            <tbody>
+              {(dismissed||[]).map((d,i) => (
+                <tr key={i}>
+                  <td className="mono">{d.date}</td>
+                  <td className="mono">{d.docNumber}</td>
+                  <td style={{ color:DARK,fontWeight:500 }}>{d.vendor}</td>
+                  <td style={{ color:MID,maxWidth:240 }}>{d.description}</td>
+                  <td className="mono" style={{ color:DIM }}>–{$(d.amount)}</td>
+                  <td>
+                    <button
+                      className="btn"
+                      style={{ fontSize:10,padding:"3px 10px" }}
+                      onClick={() => onRestore(d.id)}
+                    >
+                      Restore
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div style={{ padding:"10px 20px",fontSize:11,color:DIM,fontFamily:"'DM Sans',sans-serif",fontStyle:"italic",borderTop:`1px solid ${BORDER}` }}>
+            Dismissed expenses are excluded from job costs and the Data Quality Score. Click Restore to move an expense back to the inbox.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── TAB: EXPENSE INBOX ───────────────────────────────────────────────────────
 
-function ExpenseInbox({ untagged, onTag, onDismiss, tagged, jobSummaries }) {
+function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, tagged, jobSummaries, overhead, dismissed }) {
   const [selections, setSelections] = useState({});
   const [filter, setFilter] = useState("all");
   const [showSyncGuide, setShowSyncGuide] = useState(false);
@@ -846,15 +947,17 @@ function ExpenseInbox({ untagged, onTag, onDismiss, tagged, jobSummaries }) {
       <div style={{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:28 }}>
         {(() => {
           const taggedCount   = (jobSummaries||[]).reduce((s,j) => s + j.purchases.length, 0);
+          const overheadCount = (overhead||[]).length;
           const untaggedCount = untagged.length;
-          const total         = taggedCount + untaggedCount;
-          const dqPct         = total > 0 ? Math.round((taggedCount / total) * 100) : 100;
+          const total         = taggedCount + overheadCount + untaggedCount;
+          const accountedFor  = taggedCount + overheadCount;
+          const dqPct         = total > 0 ? Math.round((accountedFor / total) * 100) : 100;
           const dqColor       = dqPct >= 80 ? ACCENT2 : dqPct >= 50 ? AMBER : RED;
           return [
-            { label:"Untagged Expenses",   val:untagged.length, sub:$(totalUntagged)+" unallocated",          color:untagged.length>0?AMBER:ACCENT2 },
-            { label:"Tagged This Session",  val:tagged.length,   sub:$(totalTagged)+" now allocated",          color:ACCENT2 },
-            { label:"Data Quality Score",   val:`${dqPct}%`,     sub:`${taggedCount}/${total} expenses tagged`, color:dqColor },
-            { label:"Needs QB Sync",        val:needsQBSync,     sub:"tags not yet in QuickBooks",             color:needsQBSync>0?MID:DIM },
+            { label:"Untagged Expenses",   val:untagged.length,  sub:$(totalUntagged)+" unallocated",           color:untagged.length>0?AMBER:ACCENT2 },
+            { label:"Fixed Costs Tagged",  val:overheadCount,    sub:$(((overhead||[]).reduce((s,o)=>s+o.amount,0)))+" overhead total", color:overheadCount>0?ACCENT2:DIM },
+            { label:"Data Quality Score",  val:`${dqPct}%`,      sub:`${accountedFor}/${total} expenses accounted for`, color:dqColor },
+            { label:"Needs QB Sync",       val:needsQBSync,      sub:"tags not yet in QuickBooks",              color:needsQBSync>0?MID:DIM },
           ];
         })().map((k,i) => (
           <div key={i} className="kpi">
@@ -921,6 +1024,7 @@ function ExpenseInbox({ untagged, onTag, onDismiss, tagged, jobSummaries }) {
                     </div>
                     <div style={{ display:"flex",gap:8 }}>
                       <button className="btn red" onClick={() => onDismiss(item.id)}>Dismiss</button>
+                      <button className="btn" onClick={() => onMarkOverhead(item)} style={{ borderColor:"rgba(140,107,48,0.3)", color:AMBER }} title="Mark as a fixed/overhead business expense not tied to any job">Fixed Cost</button>
                       <button className={`btn${selections[item.id]?" act":""}`} onClick={() => handleConfirm(item)} disabled={!selections[item.id]} style={{ opacity:selections[item.id]?1:0.45 }}>Confirm →</button>
                     </div>
                   </div>
@@ -963,13 +1067,49 @@ function ExpenseInbox({ untagged, onTag, onDismiss, tagged, jobSummaries }) {
           </div>
         </div>
       )}
+
+      {/* Fixed Costs section */}
+      {(overhead||[]).length > 0 && (
+        <div style={{ marginTop:36 }}>
+          <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14 }}>
+            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",fontWeight:500 }}>
+              Fixed Costs / Overhead — {(overhead||[]).length} expense{(overhead||[]).length!==1?"s":""}, {$(((overhead||[]).reduce((s,o)=>s+o.amount,0)))} total
+            </div>
+            <div style={{ fontSize:11,color:DIM,fontFamily:"'DM Sans',sans-serif",fontStyle:"italic" }}>Not attributed to any job</div>
+          </div>
+          <div className="card" style={{ overflow:"hidden" }}>
+            <table className="raw-table" style={{ width:"100%" }}>
+              <thead><tr>{["Date","Doc #","Vendor","Description","Amount"].map(h=><th key={h}>{h}</th>)}</tr></thead>
+              <tbody>
+                {(overhead||[]).map((o,i) => (
+                  <tr key={i}>
+                    <td className="mono">{o.date}</td>
+                    <td className="mono">{o.docNumber}</td>
+                    <td style={{ color:DARK,fontWeight:500 }}>{o.vendor}</td>
+                    <td style={{ color:MID,maxWidth:260 }}>{o.description}</td>
+                    <td className="mono" style={{ color:AMBER }}>–{$(o.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ marginTop:10,fontSize:11,color:DIM,fontFamily:"'DM Sans',sans-serif",fontStyle:"italic",textAlign:"right" }}>
+            These expenses are included in your Data Quality Score but not allocated to individual jobs.
+          </div>
+        </div>
+      )}
+
+      {/* Dismissed Expenses — collapsible */}
+      {(dismissed||[]).length > 0 && (
+        <DismissedSection dismissed={dismissed} onRestore={onRestore} />
+      )}
     </div>
   );
 }
 
 // ─── TAB: JOB DETAIL ─────────────────────────────────────────────────────────
 
-function JobDetail({ job, onBack }) {
+function JobDetail({ job, onBack, untagged }) {
   if (!job) return (
     <div style={{ padding:80,textAlign:"center",color:DIM,background:BG,minHeight:"100vh" }}>
       <div style={{ fontFamily:"'Lora',serif",fontSize:18,color:MID,fontStyle:"italic",marginBottom:8 }}>No job selected</div>
@@ -977,6 +1117,8 @@ function JobDetail({ job, onBack }) {
     </div>
   );
   const win = job.profit > 0;
+  const hasSuggestedUntagged = (untagged||[]).some(u => u.suggestedJob === job.id);
+  const hasAnyUntagged       = (untagged||[]).length > 0;
   const vendorData = Object.entries(job.costByVendor).map(([name,value]) => ({ name,value })).sort((a,b) => b.value-a.value);
   const COLORS = [ACCENT2,ACCENT,"#8C7055","#5C8C7A","#8C6B55","#7A8C5A"];
   const invoiceLines = job.invoices.flatMap(inv => inv.Line.map(l => ({ doc:inv.DocNumber,date:inv.TxnDate,desc:l.Description,amount:l.Amount,type:"Revenue" })));
@@ -988,7 +1130,7 @@ function JobDetail({ job, onBack }) {
 
   return (
     <div style={{ padding:"32px 36px",background:BG,minHeight:"100vh" }}>
-      <div style={{ display:"flex",alignItems:"center",gap:14,marginBottom:28 }}>
+      <div style={{ display:"flex",alignItems:"center",gap:14,marginBottom: hasSuggestedUntagged || hasAnyUntagged ? 12 : 28 }}>
         <button className="btn" onClick={onBack}>← All Jobs</button>
         <div style={{ flex:1 }}>
           <h1 style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>{job.name}</h1>
@@ -998,6 +1140,20 @@ function JobDetail({ job, onBack }) {
           {win?"+":"–"}{$(job.profit)} &nbsp; {job.marginPct}% margin
         </span>
       </div>
+
+      {/* Untagged expense warning banner */}
+      {hasSuggestedUntagged && (
+        <div style={{ marginBottom:20,padding:"11px 18px",borderRadius:5,border:`1px solid rgba(140,107,48,0.3)`,background:"rgba(140,107,48,0.05)",fontSize:12,color:AMBER,fontFamily:"'DM Sans',sans-serif" }}>
+          <span style={{ fontWeight:500 }}>⚠ Estimated figures</span>
+          <span style={{ color:MID,marginLeft:8 }}>— untagged expenses in the inbox are likely associated with this job. Profit may be lower than shown. Tag them in the Expense Inbox for accurate numbers.</span>
+        </div>
+      )}
+      {!hasSuggestedUntagged && hasAnyUntagged && (
+        <div style={{ marginBottom:20,padding:"11px 18px",borderRadius:5,border:`1px solid ${BORDER}`,background:CARD,fontSize:12,color:DIM,fontFamily:"'DM Sans',sans-serif" }}>
+          <span style={{ fontWeight:500,color:MID }}>~ Estimated figures</span>
+          <span style={{ marginLeft:8 }}>— untagged expenses exist in the inbox. Some may belong to this job. Tag them for more accurate numbers.</span>
+        </div>
+      )}
 
       <div style={{ display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:14,marginBottom:24 }}>
         {[
@@ -1899,6 +2055,8 @@ function Login({ onLogin }) {
 function useContractorData(userId, mockJobSummaries, mockUntagged) {
   const [liveJobSummaries, setLiveJobSummaries] = useState(null);
   const [liveUntagged, setLiveUntagged]         = useState(null);
+  const [liveOverhead, setLiveOverhead]         = useState([]);
+  const [liveDismissed, setLiveDismissed]       = useState([]);
   const [loading, setLoading]                   = useState(false);
   const [dataSource, setDataSource]             = useState('mock');
 
@@ -1922,6 +2080,20 @@ function useContractorData(userId, mockJobSummaries, mockUntagged) {
         .select('*')
         .eq('contractor_id', userId)
         .eq('status', 'pending');
+
+      // Fetch overhead (fixed cost) items
+      const { data: overheadItems } = await supabase
+        .from('inbox_tags')
+        .select('*')
+        .eq('contractor_id', userId)
+        .eq('status', 'overhead');
+
+      // Fetch dismissed items
+      const { data: dismissedItems } = await supabase
+        .from('inbox_tags')
+        .select('*')
+        .eq('contractor_id', userId)
+        .eq('status', 'dismissed');
 
       const liveSummaries = jobs.map(job => {
         const jobTxns   = (transactions || []).filter(t => t.job_id === job.id);
@@ -1963,9 +2135,23 @@ function useContractorData(userId, mockJobSummaries, mockUntagged) {
         suggestedJob: item.suggested_job_id, suggestionReason: item.suggestion_reason,
       }));
 
+      const parsedOverhead = (overheadItems || []).map(item => ({
+        id: item.id, docNumber: item.doc_number, vendor: item.vendor,
+        date: item.txn_date, amount: item.amount, description: item.description,
+        paymentType: item.payment_type || 'Check',
+      }));
+
+      const parsedDismissed = (dismissedItems || []).map(item => ({
+        id: item.id, docNumber: item.doc_number, vendor: item.vendor,
+        date: item.txn_date, amount: item.amount, description: item.description,
+        paymentType: item.payment_type || 'Check',
+      }));
+
       if (liveSummaries.length > 0) {
         setLiveJobSummaries(liveSummaries);
         setLiveUntagged(parsedUntagged);
+        setLiveOverhead(parsedOverhead);
+        setLiveDismissed(parsedDismissed);
         setDataSource('live');
       }
     } catch (err) {
@@ -1979,6 +2165,8 @@ function useContractorData(userId, mockJobSummaries, mockUntagged) {
   return {
     jobSummaries: liveJobSummaries || mockJobSummaries,
     untagged:     liveUntagged     || mockUntagged,
+    overhead:     liveOverhead,
+    dismissed:    liveDismissed,
     loading,
     dataSource,
     refresh: loadLiveData,
@@ -2004,6 +2192,8 @@ export default function App() {
   const {
     jobSummaries: baseJobSummaries,
     untagged: baseUntagged,
+    overhead,
+    dismissed,
     dataSource,
     refresh: refreshData,
   } = useContractorData(session?.user?.id, mockJobSummaries, INITIAL_UNTAGGED);
@@ -2157,20 +2347,44 @@ export default function App() {
     }
   }
 
-  async function handleDismiss(id) {
-    // Optimistically remove from local state
-    setTagged(prev => prev.filter(u => u.id !== id));
+  async function handleMarkOverhead(item) {
+    // Optimistically remove from untagged
+    setTagged(prev => prev.filter(u => u.id !== item.id));
 
-    // Write dismissal to Supabase
+    try {
+      await supabase
+        .from('inbox_tags')
+        .update({ status: 'overhead' })
+        .eq('id', item.id);
+
+      await refreshData();
+    } catch (err) {
+      console.error('Error marking as overhead:', err);
+    }
+  }
+
+  async function handleDismiss(id) {
+    setTagged(prev => prev.filter(u => u.id !== id));
     try {
       await supabase
         .from('inbox_tags')
         .update({ status: 'dismissed' })
         .eq('id', id);
-
       await refreshData();
     } catch (err) {
       console.error('Error saving dismissal to Supabase:', err);
+    }
+  }
+
+  async function handleRestore(id) {
+    try {
+      await supabase
+        .from('inbox_tags')
+        .update({ status: 'pending' })
+        .eq('id', id);
+      await refreshData();
+    } catch (err) {
+      console.error('Error restoring expense:', err);
     }
   }
 
@@ -2285,9 +2499,9 @@ export default function App() {
 
       {/* ── Content ── */}
       <div style={{ flex:1 }}>
-        {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} jobSummaries={jobSummaries} untagged={untagged} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType}/>}
-        {tab==="inbox"     && <ExpenseInbox untagged={untagged} tagged={tagged} onTag={handleTag} onDismiss={handleDismiss} jobSummaries={jobSummaries}/>}
-        {tab==="detail"    && <JobDetail job={selectedJob} onBack={()=>setTab("dashboard")}/>}
+        {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} jobSummaries={jobSummaries} untagged={untagged} overhead={overhead} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType}/>}
+        {tab==="inbox"     && <ExpenseInbox untagged={untagged} tagged={tagged} onTag={handleTag} onDismiss={handleDismiss} onMarkOverhead={handleMarkOverhead} onRestore={handleRestore} overhead={overhead} dismissed={dismissed} jobSummaries={jobSummaries}/>}
+        {tab==="detail"    && <JobDetail job={selectedJob} onBack={()=>setTab("dashboard")} untagged={untagged}/>}
         {tab==="clients"   && <ClientScorecard jobSummaries={jobSummaries}/>}
         {tab==="reports"   && <Reports jobSummaries={jobSummaries}/>}
         {tab==="chat"      && <AIChat jobSummaries={jobSummaries}/>}
