@@ -402,8 +402,6 @@ function Dashboard({ onJobClick, jobSummaries, qbConnected, userId, clientType }
         </div>
       </div>
 
-    <div style={{ padding:"32px 36px", background:BG, minHeight:"100vh" }}>
-
       {/* Connect QuickBooks banner — shown for QB clients who haven't connected yet */}
       {clientType === "quickbooks" && !qbConnected && (
         <div style={{ marginBottom:24, padding:"16px 22px", borderRadius:6, border:`1px solid rgba(140,107,48,0.3)`, background:"rgba(140,107,48,0.05)", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
