@@ -925,59 +925,6 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
   );
 }
 
-// ─── DISMISSED SECTION (used inside ExpenseInbox) ────────────────────────────
-
-function DismissedSection({ dismissed, onRestore }) {
-  const [expanded, setExpanded] = useState(false);
-  const total = (dismissed||[]).reduce((s,d) => s + d.amount, 0);
-
-  return (
-    <div style={{ marginTop:36 }}>
-      <div
-        style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom: expanded ? 14 : 0, cursor:"pointer", userSelect:"none" }}
-        onClick={() => setExpanded(e => !e)}
-      >
-        <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",fontWeight:500 }}>
-          Dismissed — {(dismissed||[]).length} expense{(dismissed||[]).length!==1?"s":""} · {$(total)}
-        </div>
-        <div style={{ fontSize:11,color:DIM,fontFamily:"'DM Sans',sans-serif",display:"flex",alignItems:"center",gap:6 }}>
-          {expanded ? "Hide ▲" : "Show ▼"}
-        </div>
-      </div>
-      {expanded && (
-        <div className="card" style={{ overflow:"hidden" }}>
-          <table className="raw-table" style={{ width:"100%" }}>
-            <thead><tr>{["Date","Doc #","Vendor","Description","Amount",""].map(h=><th key={h}>{h}</th>)}</tr></thead>
-            <tbody>
-              {(dismissed||[]).map((d,i) => (
-                <tr key={i}>
-                  <td className="mono">{d.date}</td>
-                  <td className="mono">{d.docNumber}</td>
-                  <td style={{ color:DARK,fontWeight:500 }}>{d.vendor}</td>
-                  <td style={{ color:MID,maxWidth:240 }}>{d.description}</td>
-                  <td className="mono" style={{ color:DIM }}>–{$(d.amount)}</td>
-                  <td>
-                    <button
-                      className="btn"
-                      style={{ fontSize:10,padding:"3px 10px" }}
-                      onClick={() => onRestore(d.id)}
-                    >
-                      Restore
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div style={{ padding:"10px 20px",fontSize:11,color:DIM,fontFamily:"'DM Sans',sans-serif",fontStyle:"italic",borderTop:`1px solid ${BORDER}` }}>
-            Dismissed expenses are excluded from job costs and the Data Quality Score. Click Restore to move an expense back to the inbox.
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── TAB: EXPENSE INBOX ───────────────────────────────────────────────────────
 
 function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, tagged, jobSummaries, overhead, dismissed }) {
@@ -1007,10 +954,6 @@ function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, t
     const job = jobOptions.find(j => j.value === jobId);
     onTag(item, jobId, job?.label || "");
   }
-
-  const visibleUntagged = filter === "suggested"
-    ? untagged.filter(u => u.suggestedJob)
-    : untagged;
 
   const SYNC_STEPS = [
     {
@@ -1164,7 +1107,7 @@ function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, t
               <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM }}>{untagged.length} expense{untagged.length!==1?"s":""} need attention · {$(totalUntagged)} unallocated</div>
               <div style={{ display:"flex",gap:8 }}>
                 {[["all","All"],["suggested","Has Suggestion"]].map(([k,l]) => (
-                  <button key={k} className={`btn${(filter==="untagged"&&selections.__subfilter===k||(k==="all"&&!selections.__subfilter))?" act":""}`}
+                  <button key={k} className={`btn${((filter==="untagged" && selections.__subfilter===k) || (k==="all" && !selections.__subfilter))?" act":""}`}
                     onClick={()=>setSelections(prev=>({...prev,__subfilter:k==="all"?"":k}))}>{l}</button>
                 ))}
               </div>
