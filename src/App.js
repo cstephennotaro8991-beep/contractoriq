@@ -646,23 +646,23 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
           <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>all jobs billed</div>
         </div>
 
-        {/* 2. Total Expenses — two-row breakdown, no toggle needed */}
+        {/* 2. Total Expenses — mirrors the Gross/Net toggle on the Profit card */}
         <div className="kpi kpi-tooltip">
-          <span className="tooltip-text">Job Costs are expenses tagged to specific jobs. Fixed Costs are overhead expenses (rent, insurance, etc.) not tied to any job.</span>
-          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:12,fontWeight:500 }}>Total Expenses</div>
-          <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
-            <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center" }}>
-              <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM }}>Job Costs</span>
-              <span style={{ fontFamily:"'DM Mono',monospace",fontSize:14,fontWeight:500,color:MID }}>{$(totalCost)}</span>
-            </div>
-            <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center" }}>
-              <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM }}>Fixed Costs</span>
-              <span style={{ fontFamily:"'DM Mono',monospace",fontSize:14,fontWeight:500,color:totalOverhead>0?AMBER:DIM }}>{$(totalOverhead)}</span>
-            </div>
-            <div style={{ borderTop:`1px solid ${BORDER}`,paddingTop:8,display:"flex",justifyContent:"space-between",alignItems:"center" }}>
-              <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,fontWeight:500,color:MID }}>Total</span>
-              <span style={{ fontFamily:"'DM Mono',monospace",fontSize:15,fontWeight:600,color:DARK }}>{$(totalCost+totalOverhead)}</span>
-            </div>
+          <span className="tooltip-text">
+            {expenseView === "fixed"
+              ? `Total Job + Fixed Expenses = Job Costs (${$(totalCost)}) + Fixed Costs (${$(totalOverhead)}). Toggle the Profit card to Gross to see job costs only.`
+              : `Total Job Expenses = direct costs tagged to specific jobs in QuickBooks. Toggle the Profit card to Net to include fixed overhead.`}
+          </span>
+          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>
+            {expenseView === "fixed" ? "Total Job + Fixed Exp." : "Total Job Expenses"}
+          </div>
+          <div style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:MID,letterSpacing:"-0.01em" }}>
+            {expenseView === "fixed" ? $(totalCost + totalOverhead) : $(totalCost)}
+          </div>
+          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>
+            {expenseView === "fixed"
+              ? `job costs + ${$(totalOverhead)} fixed`
+              : `${typeFilteredJobs.reduce((s,j)=>s+j.purchases.length,0)} job-tagged expenses`}
           </div>
         </div>
 
