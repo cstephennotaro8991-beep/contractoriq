@@ -654,7 +654,7 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
               : `Total Job Expenses = direct costs tagged to specific jobs in QuickBooks. Toggle the Profit card to Net to include fixed overhead.`}
           </span>
           <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>
-            {expenseView === "fixed" ? "Total Job + Fixed Exp." : "Total Job Expenses"}
+            {expenseView === "fixed" ? "Total Job + Fixed Expenses" : "Total Job Expenses"}
           </div>
           <div style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:MID,letterSpacing:"-0.01em" }}>
             {expenseView === "fixed" ? $(totalCost + totalOverhead) : $(totalCost)}
@@ -696,11 +696,6 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
               <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>
                 {dispMargin}% {isNet ? "net" : "gross"} margin
               </div>
-              {isNet && (
-                <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,color:DIM,marginTop:5,fontStyle:"italic" }}>
-                  Rev − Job Costs − Fixed Costs
-                </div>
-              )}
             </div>
           );
         })()}
