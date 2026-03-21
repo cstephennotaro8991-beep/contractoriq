@@ -925,46 +925,6 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
   );
 }
 
-// ─── TUTORIAL MODAL ───────────────────────────────────────────────────────────
-
-const TUTORIAL_SLIDES = [
-  {
-    icon: "🌿",
-    title: "Welcome to Canopy",
-    subtitle: "Your job profitability dashboard",
-    body: "Canopy connects to your QuickBooks Online account and shows you exactly which jobs made money, which didn't, and why. Instead of digging through reports, you get a clear picture of your business profitability — updated every time you sync.",
-    tip: null,
-  },
-  {
-    icon: "📊",
-    title: "Your Dashboard",
-    subtitle: "Five numbers that matter",
-    body: "The top row shows your key metrics at a glance: total revenue, total expenses (toggle between job costs and fixed costs), gross or net profit, jobs in the green, and your Data Quality Score. Below that, the Profit by Job chart and Profitability Trend show you which jobs made money and whether things are improving over time.",
-    tip: "Toggle Expenses between 'Jobs' and 'Fixed' — the Profit card will update automatically to show Gross or Net profit.",
-  },
-  {
-    icon: "📥",
-    title: "Expense Inbox",
-    subtitle: "Keep your numbers accurate",
-    body: "When QuickBooks has expenses that aren't linked to a specific job, they land here. You can assign them to a job (which improves your cost accuracy), mark them as Fixed Costs (overhead like rent, insurance, or software), or dismiss them if they don't apply. Your Data Quality Score reflects how completely your expenses are accounted for.",
-    tip: "The higher your Data Quality Score, the more accurate your job profit numbers. Aim for 80%+.",
-  },
-  {
-    icon: "🔗",
-    title: "Connecting QuickBooks",
-    subtitle: "Where your data comes from",
-    body: "Canopy pulls your customers, jobs, invoices, and expenses from QuickBooks Online via a secure OAuth connection. Click 'Connect QuickBooks' on the dashboard to authorize access — you'll be redirected to Intuit's login page and back. Once connected, hit 'Sync Now' to load your data. You can re-sync any time.",
-    tip: "Your QuickBooks data is never modified by Canopy — we read only. Your bookkeeper's records stay exactly as they are.",
-  },
-  {
-    icon: "🤖",
-    title: "Reports & AI Analyst",
-    subtitle: "Go deeper when you need to",
-    body: "The Reports tab has four pre-built reports: most profitable job type, worst performing jobs, monthly trend, and client profitability ranking — each with a chart, data table, and a plain-English Canopy Insight. The AI Analyst tab lets you ask questions about your data in plain English and get direct answers.",
-    tip: "Try asking the AI Analyst: 'Which job type has the best margin?' or 'Why was March a weak month?'",
-  },
-];
-
 // ─── DISMISSED SECTION (used inside ExpenseInbox) ────────────────────────────
 
 function DismissedSection({ dismissed, onRestore }) {
