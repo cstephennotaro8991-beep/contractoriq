@@ -300,10 +300,23 @@ const css = `
   .suggestion-pill:hover { background:rgba(140,107,48,0.14); }
   @keyframes bounce { 0%,60%,100%{transform:translateY(0);opacity:0.3} 30%{transform:translateY(-5px);opacity:0.8} }
   @keyframes slideIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes fadeIn { from{opacity:0} to{opacity:1} }
   .slide-in { animation:slideIn 0.2s ease; }
   .kpi-tooltip { position:relative; }
   .kpi-tooltip .tooltip-text { visibility:hidden;opacity:0;position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);background:${DARK};color:#FDF8F0;font-size:10px;font-family:'DM Sans',sans-serif;padding:8px 12px;border-radius:4px;width:220px;line-height:1.5;text-align:center;z-index:200;transition:opacity 0.15s;pointer-events:none; }
   .kpi-tooltip:hover .tooltip-text { visibility:visible;opacity:1; }
+  .tutorial-overlay { position:fixed;inset:0;background:rgba(44,36,22,0.55);z-index:600;display:flex;align-items:center;justify-content:center;padding:24px;animation:fadeIn 0.2s ease; }
+  .tutorial-modal { background:${CARD};border:1px solid ${BORDER};border-radius:10px;width:100%;max-width:560px;box-shadow:0 24px 64px rgba(44,36,22,0.22);overflow:hidden; }
+  .tutorial-progress { display:flex;gap:6px;padding:24px 32px 0; }
+  .tutorial-progress-dot { height:3px;border-radius:2px;flex:1;transition:background 0.3s; }
+  .tutorial-body { padding:32px; }
+  .tutorial-icon { width:48px;height:48px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:20px; }
+  .tutorial-footer { padding:20px 32px;border-top:1px solid ${BORDER};display:flex;justify-content:space-between;align-items:center;background:${BG}; }
+  .help-btn { width:32px;height:32px;border-radius:50%;border:1px solid ${BORDER};background:${CARD};cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:${DIM};font-family:'DM Sans',sans-serif;transition:all 0.15s; }
+  .help-btn:hover { border-color:${ACCENT};color:${ACCENT}; }
+  .inbox-tab { cursor:pointer;padding:9px 18px;font-size:12px;font-weight:500;font-family:'DM Sans',sans-serif;border-radius:5px;border:1px solid transparent;transition:all 0.15s;color:${DIM}; }
+  .inbox-tab:hover { color:${MID}; }
+  .inbox-tab.active { background:${CARD};border-color:${BORDER};color:${DARK};box-shadow:0 1px 3px rgba(44,36,22,0.07); }
 `;
 
 // ─── CHART TOOLTIP ────────────────────────────────────────────────────────────
@@ -317,6 +330,109 @@ const ChartTip = ({ active, payload, label }) => {
     </div>
   );
 };
+
+// ─── TUTORIAL MODAL ──────────────────────────────────────────────────────────
+
+const TUTORIAL_SLIDES = [
+  {
+    icon: "🌿",
+    iconBg: "rgba(45,106,79,0.1)",
+    iconBorder: "rgba(45,106,79,0.2)",
+    title: "Welcome to Canopy",
+    body: "Canopy turns your QuickBooks data into a clear picture of job-level profitability. At a glance you'll know which jobs made money, which didn't, and where your expenses are going — without digging through spreadsheets or waiting on your accountant.",
+    sub: "Here's a quick walkthrough to get you oriented.",
+  },
+  {
+    icon: "📊",
+    iconBg: "rgba(45,106,79,0.1)",
+    iconBorder: "rgba(45,106,79,0.2)",
+    title: "Your Dashboard",
+    body: "The Dashboard is your home base. Five KPI cards sit at the top: Revenue, Expenses, Profit, Jobs Profitable, and a Data Quality Score. Toggle the Expenses card between Job Costs and Fixed Costs — the Profit card updates automatically to show Gross or Net Profit.",
+    sub: "The trend chart below shows running cumulative profit over time. Switch to 'By Month' to see revenue, costs, and a trend line month by month.",
+  },
+  {
+    icon: "📥",
+    iconBg: "rgba(140,107,48,0.1)",
+    iconBorder: "rgba(140,107,48,0.2)",
+    title: "The Expense Inbox",
+    body: "When QuickBooks expenses aren't linked to a specific job, they land in your Expense Inbox. From here you can assign them to a job (which updates your job costs immediately), mark them as Fixed Costs (overhead like rent, insurance, or subscriptions), or dismiss them.",
+    sub: "Your Data Quality Score rises as you clear the inbox — the higher the score, the more accurate your profitability numbers.",
+  },
+  {
+    icon: "🔗",
+    iconBg: "rgba(92,122,90,0.1)",
+    iconBorder: "rgba(92,122,90,0.2)",
+    title: "Connecting QuickBooks",
+    body: "Canopy syncs directly from your QuickBooks Online account via a secure OAuth connection. Click 'Connect QuickBooks' on the Dashboard to authorize access. Once connected, Canopy pulls your customers, jobs, invoices, and expenses automatically.",
+    sub: "Your data is read-only — Canopy never writes to QuickBooks. You can revoke access at any time from your Intuit account settings.",
+  },
+  {
+    icon: "✨",
+    iconBg: "rgba(92,122,90,0.1)",
+    iconBorder: "rgba(92,122,90,0.2)",
+    title: "Reports & AI Analyst",
+    body: "The Reports tab has four pre-built reports: Most Profitable Job Type, Worst Performing Jobs, Monthly Profit Trend, and Client Profitability Ranking — each with a chart, a data table, and a plain-English Canopy Insight. Export any report to PDF or Excel in one click.",
+    sub: "The AI Analyst tab gives you a chat interface powered by Claude. Ask anything — 'which job type is most profitable?', 'why was March rough?', 'who are my best clients?' — and get a direct, data-driven answer.",
+  },
+];
+
+function TutorialModal({ onClose, qbConnected }) {
+  const [slide, setSlide] = useState(0);
+  const current = TUTORIAL_SLIDES[slide];
+  const isLast  = slide === TUTORIAL_SLIDES.length - 1;
+
+  return (
+    <div className="tutorial-overlay" onClick={onClose}>
+      <div className="tutorial-modal" onClick={e => e.stopPropagation()}>
+
+        {/* Progress bar */}
+        <div className="tutorial-progress">
+          {TUTORIAL_SLIDES.map((_,i) => (
+            <div key={i} className="tutorial-progress-dot" style={{ background: i <= slide ? ACCENT2 : BORDER }} onClick={() => setSlide(i)}/>
+          ))}
+        </div>
+
+        {/* Body */}
+        <div className="tutorial-body">
+          <div className="tutorial-icon" style={{ background:current.iconBg, border:`1px solid ${current.iconBorder}` }}>
+            {current.icon}
+          </div>
+          <h2 style={{ fontFamily:"'Lora',serif",fontSize:20,fontWeight:500,color:DARK,marginBottom:14,letterSpacing:"-0.01em" }}>
+            {current.title}
+          </h2>
+          <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:MID,lineHeight:1.75,marginBottom:12 }}>
+            {current.body}
+          </p>
+          <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM,lineHeight:1.7,fontStyle:"italic" }}>
+            {/* Override slide 3 sub if already connected */}
+            {slide === 3 && qbConnected
+              ? "✓ Your QuickBooks account is already connected. Data syncs automatically."
+              : current.sub}
+          </p>
+        </div>
+
+        {/* Footer */}
+        <div className="tutorial-footer">
+          <div style={{ fontSize:11,color:DIM,fontFamily:"'DM Sans',sans-serif" }}>
+            {slide + 1} of {TUTORIAL_SLIDES.length}
+          </div>
+          <div style={{ display:"flex",gap:8 }}>
+            {slide > 0 && (
+              <button className="btn" onClick={() => setSlide(s => s - 1)}>← Back</button>
+            )}
+            {!isLast ? (
+              <button className="btn act" onClick={() => setSlide(s => s + 1)}>Next →</button>
+            ) : (
+              <button className="btn act" onClick={onClose} style={{ background:ACCENT2,borderColor:ACCENT2 }}>
+                Get started →
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── TAB: DASHBOARD ───────────────────────────────────────────────────────────
 
@@ -530,32 +646,27 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
           <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>all jobs billed</div>
         </div>
 
-        {/* 2. Total Expenses — toggleable, drives profit card */}
-        <div className="kpi kpi-tooltip" style={{ position:"relative" }}>
-          <span className="tooltip-text">
-            {expenseView==="job"
-              ? "Job Costs: direct expenses tagged to specific jobs in QuickBooks. Toggle to Fixed to include overhead in the profit calculation."
-              : "Fixed Costs: overhead expenses marked as fixed costs in the Expense Inbox. Not tied to any specific job. Toggle to Jobs to see gross profit only."}
-          </span>
-          <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10 }}>
-            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",fontWeight:500 }}>Total Expenses</div>
-            <div style={{ display:"flex",border:`1px solid ${BORDER}`,borderRadius:3,overflow:"hidden" }}>
-              {[["job","Jobs"],["fixed","Fixed"]].map(([k,l],i) => (
-                <button key={k} onClick={e=>{e.stopPropagation();setExpenseView(k);}} style={{ cursor:"pointer",padding:"2px 7px",fontSize:9,fontWeight:500,fontFamily:"'DM Sans',sans-serif",border:"none",borderRight:i===0?`1px solid ${BORDER}`:"none",background:expenseView===k?ACCENT:CARD,color:expenseView===k?CARD:DIM,transition:"all 0.15s" }}>{l}</button>
-              ))}
+        {/* 2. Total Expenses — two-row breakdown, no toggle needed */}
+        <div className="kpi kpi-tooltip">
+          <span className="tooltip-text">Job Costs are expenses tagged to specific jobs. Fixed Costs are overhead expenses (rent, insurance, etc.) not tied to any job.</span>
+          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:12,fontWeight:500 }}>Total Expenses</div>
+          <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
+            <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center" }}>
+              <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM }}>Job Costs</span>
+              <span style={{ fontFamily:"'DM Mono',monospace",fontSize:14,fontWeight:500,color:MID }}>{$(totalCost)}</span>
             </div>
-          </div>
-          <div style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:expenseView==="fixed"?AMBER:MID,letterSpacing:"-0.01em" }}>
-            {expenseView==="job" ? $(totalCost) : $(totalOverhead)}
-          </div>
-          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>
-            {expenseView==="job"
-              ? `${typeFilteredJobs.reduce((s,j)=>s+j.purchases.length,0)} job-tagged expenses`
-              : `${overheadInRange.length} fixed cost expense${overheadInRange.length!==1?"s":""}`}
+            <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center" }}>
+              <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM }}>Fixed Costs</span>
+              <span style={{ fontFamily:"'DM Mono',monospace",fontSize:14,fontWeight:500,color:totalOverhead>0?AMBER:DIM }}>{$(totalOverhead)}</span>
+            </div>
+            <div style={{ borderTop:`1px solid ${BORDER}`,paddingTop:8,display:"flex",justifyContent:"space-between",alignItems:"center" }}>
+              <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,fontWeight:500,color:MID }}>Total</span>
+              <span style={{ fontFamily:"'DM Mono',monospace",fontSize:15,fontWeight:600,color:DARK }}>{$(totalCost+totalOverhead)}</span>
+            </div>
           </div>
         </div>
 
-        {/* 3. Profit — updates dynamically with toggle */}
+        {/* 3. Profit — toggle between Gross and Net lives here */}
         {(() => {
           const isNet      = expenseView === "fixed";
           const netProfit  = totalProfit - totalOverhead;
@@ -566,11 +677,18 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
             <div className="kpi hi kpi-tooltip">
               <span className="tooltip-text">
                 {isNet
-                  ? `Net Profit = Revenue (${$(totalRev)}) − Job Costs (${$(totalCost)}) − Fixed Costs (${$(totalOverhead)}). This is your true bottom line after all known expenses.`
-                  : `Gross Profit = Revenue (${$(totalRev)}) − Job Costs (${$(totalCost)}). Toggle Expenses to "Fixed" to subtract overhead and see net profit.`}
+                  ? `Net Profit = Revenue (${$(totalRev)}) − Job Costs (${$(totalCost)}) − Fixed Costs (${$(totalOverhead)}). Your true bottom line after all known expenses.`
+                  : `Gross Profit = Revenue (${$(totalRev)}) − Job Costs (${$(totalCost)}). Switch to Net to subtract fixed overhead.`}
               </span>
-              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>
-                {isNet ? "Total Net Profit" : "Total Gross Profit"}
+              <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10 }}>
+                <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",fontWeight:500 }}>
+                  {isNet ? "Total Net Profit" : "Total Gross Profit"}
+                </div>
+                <div style={{ display:"flex",border:`1px solid ${BORDER}`,borderRadius:3,overflow:"hidden" }}>
+                  {[["job","Gross"],["fixed","Net"]].map(([k,l],i) => (
+                    <button key={k} onClick={e=>{e.stopPropagation();setExpenseView(k);}} style={{ cursor:"pointer",padding:"2px 8px",fontSize:9,fontWeight:500,fontFamily:"'DM Sans',sans-serif",border:"none",borderRight:i===0?`1px solid ${BORDER}`:"none",background:expenseView===k?ACCENT2:CARD,color:expenseView===k?CARD:DIM,transition:"all 0.15s" }}>{l}</button>
+                  ))}
+                </div>
               </div>
               <div style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:profitColor,letterSpacing:"-0.01em" }}>
                 {$(dispProfit)}
@@ -578,6 +696,11 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
               <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>
                 {dispMargin}% {isNet ? "net" : "gross"} margin
               </div>
+              {isNet && (
+                <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,color:DIM,marginTop:5,fontStyle:"italic" }}>
+                  Rev − Job Costs − Fixed Costs
+                </div>
+              )}
             </div>
           );
         })()}
@@ -802,6 +925,46 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
   );
 }
 
+// ─── TUTORIAL MODAL ───────────────────────────────────────────────────────────
+
+const TUTORIAL_SLIDES = [
+  {
+    icon: "🌿",
+    title: "Welcome to Canopy",
+    subtitle: "Your job profitability dashboard",
+    body: "Canopy connects to your QuickBooks Online account and shows you exactly which jobs made money, which didn't, and why. Instead of digging through reports, you get a clear picture of your business profitability — updated every time you sync.",
+    tip: null,
+  },
+  {
+    icon: "📊",
+    title: "Your Dashboard",
+    subtitle: "Five numbers that matter",
+    body: "The top row shows your key metrics at a glance: total revenue, total expenses (toggle between job costs and fixed costs), gross or net profit, jobs in the green, and your Data Quality Score. Below that, the Profit by Job chart and Profitability Trend show you which jobs made money and whether things are improving over time.",
+    tip: "Toggle Expenses between 'Jobs' and 'Fixed' — the Profit card will update automatically to show Gross or Net profit.",
+  },
+  {
+    icon: "📥",
+    title: "Expense Inbox",
+    subtitle: "Keep your numbers accurate",
+    body: "When QuickBooks has expenses that aren't linked to a specific job, they land here. You can assign them to a job (which improves your cost accuracy), mark them as Fixed Costs (overhead like rent, insurance, or software), or dismiss them if they don't apply. Your Data Quality Score reflects how completely your expenses are accounted for.",
+    tip: "The higher your Data Quality Score, the more accurate your job profit numbers. Aim for 80%+.",
+  },
+  {
+    icon: "🔗",
+    title: "Connecting QuickBooks",
+    subtitle: "Where your data comes from",
+    body: "Canopy pulls your customers, jobs, invoices, and expenses from QuickBooks Online via a secure OAuth connection. Click 'Connect QuickBooks' on the dashboard to authorize access — you'll be redirected to Intuit's login page and back. Once connected, hit 'Sync Now' to load your data. You can re-sync any time.",
+    tip: "Your QuickBooks data is never modified by Canopy — we read only. Your bookkeeper's records stay exactly as they are.",
+  },
+  {
+    icon: "🤖",
+    title: "Reports & AI Analyst",
+    subtitle: "Go deeper when you need to",
+    body: "The Reports tab has four pre-built reports: most profitable job type, worst performing jobs, monthly trend, and client profitability ranking — each with a chart, data table, and a plain-English Canopy Insight. The AI Analyst tab lets you ask questions about your data in plain English and get direct answers.",
+    tip: "Try asking the AI Analyst: 'Which job type has the best margin?' or 'Why was March a weak month?'",
+  },
+];
+
 // ─── DISMISSED SECTION (used inside ExpenseInbox) ────────────────────────────
 
 function DismissedSection({ dismissed, onRestore }) {
@@ -859,7 +1022,7 @@ function DismissedSection({ dismissed, onRestore }) {
 
 function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, tagged, jobSummaries, overhead, dismissed }) {
   const [selections, setSelections] = useState({});
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState("untagged");
   const [showSyncGuide, setShowSyncGuide] = useState(false);
 
   // Build job options from live data — fall back to mock if empty
@@ -929,8 +1092,6 @@ function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, t
       {showSyncGuide && (
         <div style={{ position:"fixed",inset:0,background:"rgba(44,36,22,0.45)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:24 }} onClick={()=>setShowSyncGuide(false)}>
           <div style={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:8,width:"100%",maxWidth:580,maxHeight:"85vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(44,36,22,0.2)" }} onClick={e=>e.stopPropagation()}>
-
-            {/* Modal header */}
             <div style={{ padding:"24px 28px",borderBottom:`1px solid ${BORDER}`,display:"flex",alignItems:"flex-start",justifyContent:"space-between" }}>
               <div>
                 <h2 style={{ fontFamily:"'Lora',serif",fontSize:18,fontWeight:500,color:DARK,letterSpacing:"-0.01em",marginBottom:4 }}>QuickBooks Sync Guide</h2>
@@ -938,14 +1099,10 @@ function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, t
               </div>
               <button onClick={()=>setShowSyncGuide(false)} style={{ background:"none",border:"none",cursor:"pointer",color:DIM,fontSize:20,lineHeight:1,padding:"2px 6px",fontFamily:"inherit" }}>×</button>
             </div>
-
-            {/* Why it matters callout */}
             <div style={{ margin:"20px 28px 0",padding:"14px 18px",borderRadius:5,background:"rgba(140,107,48,0.07)",border:`1px solid rgba(140,107,48,0.2)` }}>
               <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:AMBER,fontWeight:500,marginBottom:4 }}>Why bother updating QuickBooks?</div>
               <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:MID,lineHeight:1.6 }}>Tags you apply in Canopy update your dashboard instantly — but they live only here. Your accountant, tax preparer, and QuickBooks reports won't see them unless you update QB directly. It takes about 2 minutes per expense.</div>
             </div>
-
-            {/* Steps */}
             <div style={{ padding:"20px 28px",display:"flex",flexDirection:"column",gap:16 }}>
               {SYNC_STEPS.map((step,i) => (
                 <div key={i} style={{ display:"flex",gap:16,alignItems:"flex-start" }}>
@@ -957,20 +1114,18 @@ function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, t
                 </div>
               ))}
             </div>
-
-            {/* Pro tip */}
             <div style={{ margin:"0 28px 20px",padding:"14px 18px",borderRadius:5,background:BG2,border:`1px solid ${BORDER}` }}>
               <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:ACCENT,fontWeight:500,marginBottom:4 }}>Pro tip</div>
               <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:MID,lineHeight:1.6 }}>Batch your QB updates once a week rather than one at a time. Set aside 15 minutes every Monday to clear the previous week's untagged expenses in both Canopy and QuickBooks at the same time.</div>
             </div>
-
-            {/* Footer */}
             <div style={{ padding:"16px 28px",borderTop:`1px solid ${BORDER}`,display:"flex",justifyContent:"flex-end" }}>
               <button className="btn act" onClick={()=>setShowSyncGuide(false)}>Got it</button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Header */}
       <div style={{ marginBottom:28 }}>
         <h1 style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>Expense Inbox</h1>
         <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>Expenses without a job assigned in QuickBooks. Tag them to keep profit numbers accurate.</p>
@@ -1006,7 +1161,7 @@ function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, t
         <div style={{ marginBottom:24,padding:"16px 22px",borderRadius:5,border:`1px solid rgba(140,107,48,0.25)`,background:"rgba(140,107,48,0.05)",display:"flex",alignItems:"center",justifyContent:"space-between" }}>
           <div style={{ fontSize:13,color:AMBER,fontFamily:"'DM Sans',sans-serif" }}>
             <span style={{ fontWeight:500 }}>{tagged.length} expense{tagged.length!==1?"s":""} tagged in Canopy</span>
-            <span style={{ color:MID,marginLeft:8 }}>— these tags live here for now. Consider updating them in QuickBooks so your accountant sees clean books.</span>
+            <span style={{ color:MID,marginLeft:8 }}>— consider updating them in QuickBooks so your accountant sees clean books.</span>
           </div>
           <button className="btn" style={{ borderColor:"rgba(140,107,48,0.3)",color:AMBER,whiteSpace:"nowrap",marginLeft:16 }} onClick={()=>setShowSyncGuide(true)}>
             View QB Sync Guide →
@@ -1014,128 +1169,201 @@ function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, t
         </div>
       )}
 
-      {/* Untagged section */}
-      {untagged.length > 0 ? (
-        <div style={{ marginBottom:36 }}>
-          <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18 }}>
-            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",fontWeight:500 }}>Needs Your Attention — {untagged.length} items</div>
-            <div style={{ display:"flex",gap:8 }}>
-              {[["all","All"],["suggested","Has Suggestion"]].map(([k,l]) => (
-                <button key={k} className={`btn${filter===k?" act":""}`} onClick={()=>setFilter(k)}>{l}</button>
-              ))}
-            </div>
-          </div>
+      {/* ── Tab bar ── */}
+      <div style={{ display:"flex",alignItems:"center",gap:0,marginBottom:24,borderBottom:`1px solid ${BORDER}` }}>
+        {[
+          { key:"untagged", label:"Untagged",   count:untagged.length,            color:AMBER },
+          { key:"fixed",    label:"Fixed Costs", count:(overhead||[]).length,       color:ACCENT2 },
+          { key:"tagged",   label:"Tagged",      count:tagged.length,               color:ACCENT2 },
+          { key:"dismissed",label:"Dismissed",   count:(dismissed||[]).length,      color:DIM },
+        ].map(t => (
+          <button key={t.key} onClick={()=>setFilter(t.key)} style={{
+            cursor:"pointer", padding:"10px 20px", fontSize:12, fontWeight:500,
+            fontFamily:"'DM Sans',sans-serif", border:"none", borderBottom:`2px solid ${filter===t.key?ACCENT:BORDER}`,
+            background:"transparent", color:filter===t.key?DARK:DIM,
+            marginBottom:-1, transition:"all 0.15s",
+          }}>
+            {t.label}
+            {t.count > 0 && (
+              <span style={{ marginLeft:7, padding:"1px 7px", borderRadius:10, fontSize:10, fontWeight:600,
+                background: filter===t.key ? (t.key==="untagged"?`rgba(140,107,48,0.12)`:`rgba(92,122,90,0.12)`) : BG2,
+                color: filter===t.key ? t.color : DIM,
+              }}>{t.count}</span>
+            )}
+          </button>
+        ))}
+      </div>
 
-          <div style={{ display:"flex",flexDirection:"column",gap:12 }}>
-            {visibleUntagged.map(item => (
-              <div key={item.id} className="inbox-row slide-in">
-                <div style={{ display:"grid",gridTemplateColumns:"1fr auto",gap:20,alignItems:"start" }}>
-                  <div>
-                    <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:8,flexWrap:"wrap" }}>
-                      <span style={{ fontWeight:500,color:DARK,fontSize:13,fontFamily:"'DM Sans',sans-serif" }}>{item.vendor}</span>
-                      <span className="mono" style={{ fontSize:10,color:DIM }}>{item.docNumber}</span>
-                      <span className="mono" style={{ fontSize:10,color:DIM }}>{item.date}</span>
-                      <span className="tag">{item.paymentType}</span>
-                    </div>
-                    <div style={{ fontSize:12,color:MID,marginBottom:12,fontFamily:"'DM Sans',sans-serif" }}>{item.description}</div>
-                    {item.suggestedJob && (
-                      <div className="suggestion-pill" onClick={() => handleApplySuggestion(item)} title="Click to apply this suggestion">
-                        <span>→</span>
-                        <span>{item.suggestionReason} — click to apply</span>
+      {/* ── Tab content ── */}
+
+      {/* UNTAGGED tab */}
+      {filter === "untagged" && (
+        untagged.length > 0 ? (
+          <div>
+            <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18 }}>
+              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM }}>{untagged.length} expense{untagged.length!==1?"s":""} need attention · {$(totalUntagged)} unallocated</div>
+              <div style={{ display:"flex",gap:8 }}>
+                {[["all","All"],["suggested","Has Suggestion"]].map(([k,l]) => (
+                  <button key={k} className={`btn${(filter==="untagged"&&selections.__subfilter===k||(k==="all"&&!selections.__subfilter))?" act":""}`}
+                    onClick={()=>setSelections(prev=>({...prev,__subfilter:k==="all"?"":k}))}>{l}</button>
+                ))}
+              </div>
+            </div>
+            <div style={{ display:"flex",flexDirection:"column",gap:12 }}>
+              {(selections.__subfilter==="suggested" ? untagged.filter(u=>u.suggestedJob) : untagged).map(item => (
+                <div key={item.id} className="inbox-row slide-in">
+                  <div style={{ display:"grid",gridTemplateColumns:"1fr auto",gap:20,alignItems:"start" }}>
+                    <div>
+                      <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:8,flexWrap:"wrap" }}>
+                        <span style={{ fontWeight:500,color:DARK,fontSize:13,fontFamily:"'DM Sans',sans-serif" }}>{item.vendor}</span>
+                        <span className="mono" style={{ fontSize:10,color:DIM }}>{item.docNumber}</span>
+                        <span className="mono" style={{ fontSize:10,color:DIM }}>{item.date}</span>
+                        <span className="tag">{item.paymentType}</span>
                       </div>
-                    )}
-                  </div>
-                  <div style={{ display:"flex",flexDirection:"column",alignItems:"flex-end",gap:10,minWidth:280 }}>
-                    <div style={{ fontFamily:"'DM Mono',monospace",fontSize:18,fontWeight:500,color:RED }}>–{$(item.amount)}</div>
-                    <div style={{ display:"flex",gap:8,width:"100%" }}>
-                      <select className="job-select" value={selections[item.id] || ""} onChange={e => setSelections(prev => ({ ...prev, [item.id]: e.target.value }))}>
-                        <option value="">Assign to a job...</option>
-                        {jobOptions.map(j => (
-                          <option key={j.value} value={j.value}>{j.label} ({j.client})</option>
-                        ))}
-                      </select>
+                      <div style={{ fontSize:12,color:MID,marginBottom:12,fontFamily:"'DM Sans',sans-serif" }}>{item.description}</div>
+                      {item.suggestedJob && (
+                        <div className="suggestion-pill" onClick={() => handleApplySuggestion(item)} title="Click to apply this suggestion">
+                          <span>→</span>
+                          <span>{item.suggestionReason} — click to apply</span>
+                        </div>
+                      )}
                     </div>
-                    <div style={{ display:"flex",gap:8 }}>
-                      <button className="btn red" onClick={() => onDismiss(item.id)}>Dismiss</button>
-                      <button className="btn" onClick={() => onMarkOverhead(item)} style={{ borderColor:"rgba(140,107,48,0.3)", color:AMBER }} title="Mark as a fixed/overhead business expense not tied to any job">Fixed Cost</button>
-                      <button className={`btn${selections[item.id]?" act":""}`} onClick={() => handleConfirm(item)} disabled={!selections[item.id]} style={{ opacity:selections[item.id]?1:0.45 }}>Confirm →</button>
+                    <div style={{ display:"flex",flexDirection:"column",alignItems:"flex-end",gap:10,minWidth:280 }}>
+                      <div style={{ fontFamily:"'DM Mono',monospace",fontSize:18,fontWeight:500,color:RED }}>–{$(item.amount)}</div>
+                      <div style={{ display:"flex",gap:8,width:"100%" }}>
+                        <select className="job-select" value={selections[item.id] || ""} onChange={e => setSelections(prev => ({ ...prev, [item.id]: e.target.value }))}>
+                          <option value="">Assign to a job...</option>
+                          {jobOptions.map(j => (
+                            <option key={j.value} value={j.value}>{j.label} ({j.client})</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div style={{ display:"flex",gap:8 }}>
+                        <button className="btn red" onClick={() => onDismiss(item.id)}>Dismiss</button>
+                        <button className="btn" onClick={() => onMarkOverhead(item)} style={{ borderColor:"rgba(140,107,48,0.3)",color:AMBER }} title="Mark as fixed overhead cost">Fixed Cost</button>
+                        <button className={`btn${selections[item.id]?" act":""}`} onClick={() => handleConfirm(item)} disabled={!selections[item.id]} style={{ opacity:selections[item.id]?1:0.45 }}>Confirm →</button>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div style={{ textAlign:"center",padding:"60px 40px",background:CARD,borderRadius:6,border:`1px solid rgba(92,122,90,0.25)`,marginBottom:36,boxShadow:"0 1px 4px rgba(44,36,22,0.05)" }}>
-          <div style={{ fontFamily:"'Lora',serif",fontSize:20,color:ACCENT2,marginBottom:8 }}>All expenses accounted for</div>
-          <div style={{ fontSize:13,color:DIM,fontFamily:"'DM Sans',sans-serif" }}>Your profit numbers are fully accurate.</div>
-        </div>
-      )}
-
-      {/* Tagged section */}
-      {tagged.length > 0 && (
-        <div>
-          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:14,fontWeight:500 }}>Tagged This Session — {tagged.length} expense{tagged.length!==1?"s":""}, {$(totalTagged)} allocated</div>
-          <div className="card" style={{ overflow:"hidden" }}>
-            <table className="raw-table">
-              <thead><tr>{["Date","Doc #","Vendor","Description","Amount","Tagged To","Source"].map(h => <th key={h}>{h}</th>)}</tr></thead>
-              <tbody>
-                {tagged.map((t,i) => (
-                  <tr key={i}>
-                    <td className="mono">{t.date}</td>
-                    <td className="mono">{t.docNumber}</td>
-                    <td style={{ color:DARK,fontWeight:500 }}>{t.vendor}</td>
-                    <td style={{ color:MID,maxWidth:220 }}>{t.description}</td>
-                    <td className="mono" style={{ color:RED }}>–{$(t.amount)}</td>
-                    <td><span className="chip g">{t.taggedJobName}</span></td>
-                    <td><span style={{ fontSize:10,color:ACCENT,fontFamily:"'DM Sans',sans-serif" }}>Canopy</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div style={{ marginTop:10,fontSize:11,color:DIM,textAlign:"right",fontFamily:"'DM Sans',sans-serif",fontStyle:"italic" }}>
-            Dashboard and Job Detail update automatically as you tag expenses.
-          </div>
-        </div>
-      )}
-
-      {/* Fixed Costs section */}
-      {(overhead||[]).length > 0 && (
-        <div style={{ marginTop:36 }}>
-          <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14 }}>
-            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",fontWeight:500 }}>
-              Fixed Costs / Overhead — {(overhead||[]).length} expense{(overhead||[]).length!==1?"s":""}, {$(((overhead||[]).reduce((s,o)=>s+o.amount,0)))} total
+              ))}
             </div>
-            <div style={{ fontSize:11,color:DIM,fontFamily:"'DM Sans',sans-serif",fontStyle:"italic" }}>Not attributed to any job</div>
           </div>
-          <div className="card" style={{ overflow:"hidden" }}>
-            <table className="raw-table" style={{ width:"100%" }}>
-              <thead><tr>{["Date","Doc #","Vendor","Description","Amount"].map(h=><th key={h}>{h}</th>)}</tr></thead>
-              <tbody>
-                {(overhead||[]).map((o,i) => (
-                  <tr key={i}>
-                    <td className="mono">{o.date}</td>
-                    <td className="mono">{o.docNumber}</td>
-                    <td style={{ color:DARK,fontWeight:500 }}>{o.vendor}</td>
-                    <td style={{ color:MID,maxWidth:260 }}>{o.description}</td>
-                    <td className="mono" style={{ color:AMBER }}>–{$(o.amount)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        ) : (
+          <div style={{ textAlign:"center",padding:"60px 40px",background:CARD,borderRadius:6,border:`1px solid rgba(92,122,90,0.25)`,boxShadow:"0 1px 4px rgba(44,36,22,0.05)" }}>
+            <div style={{ fontFamily:"'Lora',serif",fontSize:20,color:ACCENT2,marginBottom:8 }}>All expenses accounted for</div>
+            <div style={{ fontSize:13,color:DIM,fontFamily:"'DM Sans',sans-serif" }}>Your profit numbers are fully accurate.</div>
           </div>
-          <div style={{ marginTop:10,fontSize:11,color:DIM,fontFamily:"'DM Sans',sans-serif",fontStyle:"italic",textAlign:"right" }}>
-            These expenses are included in your Data Quality Score but not allocated to individual jobs.
-          </div>
-        </div>
+        )
       )}
 
-      {/* Dismissed Expenses — collapsible */}
-      {(dismissed||[]).length > 0 && (
-        <DismissedSection dismissed={dismissed} onRestore={onRestore} />
+      {/* FIXED COSTS tab */}
+      {filter === "fixed" && (
+        (overhead||[]).length > 0 ? (
+          <div>
+            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM,marginBottom:16 }}>
+              {(overhead||[]).length} fixed cost expense{(overhead||[]).length!==1?"s":""} · {$(((overhead||[]).reduce((s,o)=>s+o.amount,0)))} total overhead
+            </div>
+            <div className="card" style={{ overflow:"hidden" }}>
+              <table className="raw-table" style={{ width:"100%" }}>
+                <thead><tr>{["Date","Doc #","Vendor","Description","Amount"].map(h=><th key={h}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {(overhead||[]).map((o,i) => (
+                    <tr key={i}>
+                      <td className="mono">{o.date}</td>
+                      <td className="mono">{o.docNumber}</td>
+                      <td style={{ color:DARK,fontWeight:500 }}>{o.vendor}</td>
+                      <td style={{ color:MID,maxWidth:260 }}>{o.description}</td>
+                      <td className="mono" style={{ color:AMBER }}>–{$(o.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ marginTop:10,fontSize:11,color:DIM,fontFamily:"'DM Sans',sans-serif",fontStyle:"italic",textAlign:"right" }}>
+              Fixed costs are included in your Data Quality Score and Net Profit calculation, but not allocated to any specific job.
+            </div>
+          </div>
+        ) : (
+          <div style={{ textAlign:"center",padding:"60px 40px",background:CARD,borderRadius:6,border:`1px solid ${BORDER}` }}>
+            <div style={{ fontFamily:"'Lora',serif",fontSize:18,color:MID,marginBottom:8,fontStyle:"italic" }}>No fixed costs tagged yet</div>
+            <div style={{ fontSize:13,color:DIM,fontFamily:"'DM Sans',sans-serif" }}>In the Untagged tab, use the "Fixed Cost" button to mark overhead expenses like rent, insurance, or software subscriptions.</div>
+          </div>
+        )
       )}
+
+      {/* TAGGED tab */}
+      {filter === "tagged" && (
+        tagged.length > 0 ? (
+          <div>
+            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM,marginBottom:16 }}>
+              {tagged.length} expense{tagged.length!==1?"s":""} tagged this session · {$(totalTagged)} allocated
+            </div>
+            <div className="card" style={{ overflow:"hidden" }}>
+              <table className="raw-table">
+                <thead><tr>{["Date","Doc #","Vendor","Description","Amount","Tagged To"].map(h => <th key={h}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {tagged.map((t,i) => (
+                    <tr key={i}>
+                      <td className="mono">{t.date}</td>
+                      <td className="mono">{t.docNumber}</td>
+                      <td style={{ color:DARK,fontWeight:500 }}>{t.vendor}</td>
+                      <td style={{ color:MID,maxWidth:220 }}>{t.description}</td>
+                      <td className="mono" style={{ color:RED }}>–{$(t.amount)}</td>
+                      <td><span className="chip g">{t.taggedJobName}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ marginTop:10,fontSize:11,color:DIM,textAlign:"right",fontFamily:"'DM Sans',sans-serif",fontStyle:"italic" }}>
+              Dashboard and Job Detail update automatically as you tag expenses.
+            </div>
+          </div>
+        ) : (
+          <div style={{ textAlign:"center",padding:"60px 40px",background:CARD,borderRadius:6,border:`1px solid ${BORDER}` }}>
+            <div style={{ fontFamily:"'Lora',serif",fontSize:18,color:MID,marginBottom:8,fontStyle:"italic" }}>No expenses tagged this session</div>
+            <div style={{ fontSize:13,color:DIM,fontFamily:"'DM Sans',sans-serif" }}>Head to the Untagged tab to start assigning expenses to jobs.</div>
+          </div>
+        )
+      )}
+
+      {/* DISMISSED tab */}
+      {filter === "dismissed" && (
+        (dismissed||[]).length > 0 ? (
+          <div>
+            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM,marginBottom:16 }}>
+              {(dismissed||[]).length} dismissed expense{(dismissed||[]).length!==1?"s":""} · {$(((dismissed||[]).reduce((s,d)=>s+d.amount,0)))} total
+            </div>
+            <div className="card" style={{ overflow:"hidden" }}>
+              <table className="raw-table" style={{ width:"100%" }}>
+                <thead><tr>{["Date","Doc #","Vendor","Description","Amount",""].map(h=><th key={h}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {(dismissed||[]).map((d,i) => (
+                    <tr key={i}>
+                      <td className="mono">{d.date}</td>
+                      <td className="mono">{d.docNumber}</td>
+                      <td style={{ color:DARK,fontWeight:500 }}>{d.vendor}</td>
+                      <td style={{ color:MID,maxWidth:240 }}>{d.description}</td>
+                      <td className="mono" style={{ color:DIM }}>–{$(d.amount)}</td>
+                      <td><button className="btn" style={{ fontSize:10,padding:"3px 10px" }} onClick={() => onRestore(d.id)}>Restore</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ marginTop:10,fontSize:11,color:DIM,fontFamily:"'DM Sans',sans-serif",fontStyle:"italic",borderTop:"none" }}>
+              Dismissed expenses are excluded from job costs and the Data Quality Score. Click Restore to return one to the Untagged tab.
+            </div>
+          </div>
+        ) : (
+          <div style={{ textAlign:"center",padding:"60px 40px",background:CARD,borderRadius:6,border:`1px solid ${BORDER}` }}>
+            <div style={{ fontFamily:"'Lora',serif",fontSize:18,color:MID,marginBottom:8,fontStyle:"italic" }}>No dismissed expenses</div>
+            <div style={{ fontSize:13,color:DIM,fontFamily:"'DM Sans',sans-serif" }}>Dismissed expenses will appear here so you can restore them if needed.</div>
+          </div>
+        )
+      )}
+
     </div>
   );
 }
@@ -2216,7 +2444,8 @@ export default function App() {
   const [selectedJob, setSelectedJob]   = useState(null);
   const [tagged, setTagged]             = useState([]);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
-  const [qbConnected, setQbConnected]   = useState(false);
+  const [showTutorial, setShowTutorial]     = useState(false);
+  const [qbConnected, setQbConnected]       = useState(false);
   const [qbError, setQbError]           = useState(null);
   const [syncing, setSyncing]           = useState(false);
 
@@ -2293,6 +2522,9 @@ export default function App() {
         }
         const dismissed = localStorage.getItem(`canopy_disclaimer_${s.user.id}`);
         if (!dismissed) setShowDisclaimer(true);
+        // Show tutorial on first login
+        const tutorialSeen = localStorage.getItem(`canopy_tutorial_${s.user.id}`);
+        if (!tutorialSeen) setShowTutorial(true);
       }
       setAuthLoading(false);
     });
@@ -2315,6 +2547,11 @@ export default function App() {
   function dismissDisclaimer() {
     if (session?.user?.id) localStorage.setItem(`canopy_disclaimer_${session.user.id}`, 'true');
     setShowDisclaimer(false);
+  }
+
+  function dismissTutorial() {
+    if (session?.user?.id) localStorage.setItem(`canopy_tutorial_${session.user.id}`, 'true');
+    setShowTutorial(false);
   }
 
   async function handleSignOut() {
@@ -2437,6 +2674,9 @@ export default function App() {
     <div style={{ fontFamily:"'DM Sans',sans-serif", background:BG, minHeight:"100vh", color:DARK, display:"flex", flexDirection:"column" }}>
       <style>{css}</style>
 
+      {/* ── Tutorial modal ── */}
+      {showTutorial && <TutorialModal onClose={dismissTutorial} qbConnected={qbConnected}/>}
+
       {/* ── First-login disclaimer modal ── */}
       {showDisclaimer && (
         <div style={{ position:"fixed", inset:0, background:"rgba(44,36,22,0.5)", zIndex:500, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
@@ -2477,7 +2717,7 @@ export default function App() {
               {t.key==="chat" && <span style={{ marginLeft:6, fontSize:9, padding:"2px 7px", borderRadius:3, background:"rgba(92,122,90,0.12)", color:ACCENT2, fontWeight:500 }}>AI</span>}
             </div>
           ))}
-          <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:16 }}>
+          <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:12 }}>
             {/* QB connection status indicator */}
             {clientType === "quickbooks" && (
               <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:10, fontFamily:"'DM Sans',sans-serif" }}>
@@ -2493,11 +2733,15 @@ export default function App() {
                 )}
               </div>
             )}
-            <div style={{ fontSize:11, color:DIM, fontFamily:"'DM Sans',sans-serif", display:"flex", alignItems:"center", gap:6, paddingLeft:16, borderLeft:`1px solid ${BORDER}` }}>
-              <div style={{ width:6, height:6, borderRadius:"50%", background:ACCENT2, opacity:0.7 }}/>
-              {contractorName}
+            <div style={{ display:"flex", alignItems:"center", gap:10, paddingLeft:12, borderLeft:`1px solid ${BORDER}` }}>
+              {/* ? Tutorial button */}
+              <button className="help-btn" onClick={() => setShowTutorial(true)} title="Open tutorial">?</button>
+              <div style={{ fontSize:11, color:DIM, fontFamily:"'DM Sans',sans-serif", display:"flex", alignItems:"center", gap:6 }}>
+                <div style={{ width:6, height:6, borderRadius:"50%", background:ACCENT2, opacity:0.7 }}/>
+                {contractorName}
+              </div>
+              <button className="btn" onClick={handleSignOut} style={{ fontSize:11, padding:"5px 12px", color:DIM }}>Sign Out</button>
             </div>
-            <button className="btn" onClick={handleSignOut} style={{ fontSize:11, padding:"5px 12px", color:DIM }}>Sign Out</button>
           </div>
         </div>
       </div>
