@@ -434,6 +434,320 @@ function TutorialModal({ onClose, qbConnected }) {
   );
 }
 
+// ─── KPI DRILLDOWN MODAL ──────────────────────────────────────────────────────
+
+function KpiModal({ type, expenseView, jobSummaries, allJobSummaries, overhead, untagged,
+                    totalRev, totalCost, totalOverhead, totalProfit, accountedFor, totalExpenses,
+                    onClose, onJobClick }) {
+
+  const isNet = expenseView === "fixed";
+
+  // Shared modal shell
+  function ModalShell({ title, subtitle, children }) {
+    return (
+      <div style={{ position:"fixed",inset:0,background:"rgba(44,36,22,0.52)",zIndex:550,display:"flex",alignItems:"center",justifyContent:"center",padding:24 }}
+        onClick={onClose}>
+        <div style={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:8,width:"100%",maxWidth:680,maxHeight:"85vh",overflowY:"auto",boxShadow:"0 24px 72px rgba(44,36,22,0.22)" }}
+          onClick={e=>e.stopPropagation()}>
+          {/* Header */}
+          <div style={{ padding:"22px 28px",borderBottom:`1px solid ${BORDER}`,display:"flex",alignItems:"flex-start",justifyContent:"space-between",position:"sticky",top:0,background:CARD,zIndex:1 }}>
+            <div>
+              <div style={{ fontFamily:"'Lora',serif",fontSize:18,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>{title}</div>
+              {subtitle && <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM,marginTop:3 }}>{subtitle}</div>}
+            </div>
+            <button onClick={onClose} style={{ background:"none",border:"none",cursor:"pointer",color:DIM,fontSize:22,lineHeight:1,padding:"2px 6px" }}>×</button>
+          </div>
+          {/* Body */}
+          <div style={{ padding:"24px 28px" }}>{children}</div>
+        </div>
+      </div>
+    );
+  }
+
+  function SectionLabel({ text }) {
+    return <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",fontWeight:500,marginBottom:12 }}>{text}</div>;
+  }
+
+  function MiniTable({ headers, rows, onRowClick }) {
+    return (
+      <table style={{ width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'DM Sans',sans-serif" }}>
+        <thead>
+          <tr style={{ borderBottom:`1px solid ${BORDER}` }}>
+            {headers.map((h,i) => (
+              <th key={i} style={{ padding:"6px 10px",textAlign:i>0?"right":"left",fontSize:9,letterSpacing:"0.08em",textTransform:"uppercase",color:DIM,fontWeight:500 }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row,i) => (
+            <tr key={i} onClick={()=>onRowClick&&onRowClick(row._job)}
+              style={{ borderBottom:`1px solid ${BORDER}`,cursor:onRowClick?"pointer":"default",transition:"background 0.1s" }}
+              onMouseOver={e=>{ if(onRowClick) e.currentTarget.style.background=BG2; }}
+              onMouseOut={e=>{ e.currentTarget.style.background="transparent"; }}>
+              {row.cells.map((cell,j) => (
+                <td key={j} style={{ padding:"9px 10px",textAlign:j>0?"right":"left",color:cell.color||MID,fontWeight:cell.bold?500:400,fontFamily:cell.mono?"'DM Mono',monospace":"'DM Sans',sans-serif",fontSize:cell.mono?11:12 }}>
+                  {cell.value}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  }
+
+  // ── REVENUE modal ──
+  if (type === 'revenue') {
+    const sorted = [...jobSummaries].sort((a,b) => b.revenue - a.revenue);
+    const barData = sorted.slice(0,8).map(j => ({ name: j.name.length>14?j.name.slice(0,14)+'…':j.name, revenue: j.revenue }));
+    const rows = sorted.map(j => ({
+      _job: j,
+      cells: [
+        { value: j.name, bold:true, color:DARK },
+        { value: j.clientName, color:DIM },
+        { value: $(j.revenue), mono:true, color:ACCENT2 },
+        { value: j.invoices.length + ' inv', color:DIM },
+        { value: j.outstanding > 0 ? $(j.outstanding) : '—', mono:true, color:j.outstanding>0?AMBER:DIM },
+      ]
+    }));
+    return (
+      <ModalShell title="Total Revenue" subtitle={`${sorted.length} jobs · ${$(totalRev)} billed`}>
+        <div style={{ marginBottom:24 }}>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={barData} margin={{ top:4,right:4,left:8,bottom:40 }}>
+              <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false}/>
+              <XAxis dataKey="name" interval={0} tick={({ x, y, payload }) => (
+                <g transform={`translate(${x},${y})`}>
+                  <text x={0} y={0} dy={4} textAnchor="end" fill={DIM} fontSize={9} fontFamily="DM Mono" transform="rotate(-35)">{payload.value}</text>
+                </g>
+              )} height={60}/>
+              <YAxis tick={{ fontSize:9,fill:DIM,fontFamily:"DM Mono" }} tickFormatter={$k} axisLine={false} tickLine={false} width={48}/>
+              <Tooltip formatter={v=>[$(v),'Revenue']} contentStyle={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:5,fontFamily:"'DM Mono',monospace",fontSize:11 }}/>
+              <Bar dataKey="revenue" fill={ACCENT2} radius={[3,3,0,0]} opacity={0.85}/>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <SectionLabel text="All jobs by revenue"/>
+        <MiniTable
+          headers={["Job","Client","Revenue","Invoices","Outstanding"]}
+          rows={rows}
+          onRowClick={onJobClick}
+        />
+        <div style={{ marginTop:14,paddingTop:12,borderTop:`1px solid ${BORDER}`,display:"flex",justifyContent:"space-between",fontSize:12,fontFamily:"'DM Sans',sans-serif",color:DIM }}>
+          <span>Click any row to open Job Detail</span>
+          <span style={{ fontWeight:500,color:DARK }}>{$(totalRev)} total</span>
+        </div>
+      </ModalShell>
+    );
+  }
+
+  // ── EXPENSES modal ──
+  if (type === 'expenses') {
+    const sorted = [...jobSummaries].sort((a,b) => b.costs - a.costs);
+    const barData = sorted.slice(0,8).map(j => ({ name: j.name.length>14?j.name.slice(0,14)+'…':j.name, costs: j.costs }));
+    const jobRows = sorted.map(j => ({
+      _job: j,
+      cells: [
+        { value: j.name, bold:true, color:DARK },
+        { value: j.clientName, color:DIM },
+        { value: $(j.costs), mono:true, color:RED },
+        { value: j.purchases.length + ' exp', color:DIM },
+        { value: totalRev > 0 ? ((j.costs/j.revenue*100).toFixed(0)+'%') : '—', color:DIM },
+      ]
+    }));
+    const overheadRows = (overhead||[]).map(o => ({
+      cells: [
+        { value: o.vendor, bold:true, color:DARK },
+        { value: o.description, color:DIM },
+        { value: o.date, color:DIM },
+        { value: $(o.amount), mono:true, color:AMBER },
+      ]
+    }));
+    return (
+      <ModalShell title={isNet ? "Total Job + Fixed Expenses" : "Total Job Expenses"}
+        subtitle={isNet ? `${$(totalCost)} job costs + ${$(totalOverhead)} fixed costs` : `${$(totalCost)} across ${sorted.length} jobs`}>
+        <div style={{ marginBottom:24 }}>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={barData} margin={{ top:4,right:4,left:8,bottom:40 }}>
+              <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false}/>
+              <XAxis dataKey="name" interval={0} tick={({ x, y, payload }) => (
+                <g transform={`translate(${x},${y})`}>
+                  <text x={0} y={0} dy={4} textAnchor="end" fill={DIM} fontSize={9} fontFamily="DM Mono" transform="rotate(-35)">{payload.value}</text>
+                </g>
+              )} height={60}/>
+              <YAxis tick={{ fontSize:9,fill:DIM,fontFamily:"DM Mono" }} tickFormatter={$k} axisLine={false} tickLine={false} width={48}/>
+              <Tooltip formatter={v=>[$(v),'Job Costs']} contentStyle={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:5,fontFamily:"'DM Mono',monospace",fontSize:11 }}/>
+              <Bar dataKey="costs" fill={RED} radius={[3,3,0,0]} opacity={0.75}/>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <SectionLabel text="Job costs by job"/>
+        <MiniTable headers={["Job","Client","Costs","Expenses","Cost %"]} rows={jobRows} onRowClick={onJobClick}/>
+        {isNet && overheadRows.length > 0 && (
+          <div style={{ marginTop:24 }}>
+            <SectionLabel text={`Fixed costs / overhead — ${$(totalOverhead)} total`}/>
+            <MiniTable headers={["Vendor","Description","Date","Amount"]} rows={overheadRows}/>
+          </div>
+        )}
+        <div style={{ marginTop:14,paddingTop:12,borderTop:`1px solid ${BORDER}`,display:"flex",justifyContent:"space-between",fontSize:12,fontFamily:"'DM Sans',sans-serif",color:DIM }}>
+          <span>Click any job row to open Job Detail</span>
+          <span style={{ fontWeight:500,color:DARK }}>{$(isNet ? totalCost+totalOverhead : totalCost)} total</span>
+        </div>
+      </ModalShell>
+    );
+  }
+
+  // ── PROFIT modal ──
+  if (type === 'profit') {
+    const netProfit  = totalProfit - totalOverhead;
+    const dispProfit = isNet ? netProfit : totalProfit;
+    const sorted     = [...jobSummaries].sort((a,b) => b.profit - a.profit);
+    const waterfallRows = [
+      { label:"Total Revenue",   value:totalRev,    color:ACCENT2,  indent:false },
+      { label:"− Job Costs",     value:-totalCost,  color:RED,      indent:true  },
+      { label:"= Gross Profit",  value:totalProfit, color:totalProfit>=0?ACCENT2:RED, indent:false, bold:true },
+      ...(isNet ? [
+        { label:"− Fixed Costs",   value:-totalOverhead, color:AMBER, indent:true },
+        { label:"= Net Profit",    value:netProfit,  color:netProfit>=0?ACCENT2:RED, indent:false, bold:true },
+      ] : []),
+    ];
+    const jobRows = sorted.map(j => ({
+      _job: j,
+      cells: [
+        { value: j.name, bold:true, color:DARK },
+        { value: j.clientName, color:DIM },
+        { value: $(j.revenue), mono:true, color:MID },
+        { value: $(j.costs), mono:true, color:MID },
+        { value: (j.profit>=0?'+':'')+$(j.profit), mono:true, color:j.profit>=0?ACCENT2:RED, bold:true },
+        { value: j.marginPct+'%', color:DIM },
+      ]
+    }));
+    return (
+      <ModalShell title={isNet ? "Total Net Profit" : "Total Gross Profit"}
+        subtitle={`${totalRev>0?((dispProfit/totalRev)*100).toFixed(1):'0.0'}% ${isNet?'net':'gross'} margin`}>
+        {/* Waterfall */}
+        <div style={{ marginBottom:24,padding:"18px 20px",borderRadius:6,background:BG2,border:`1px solid ${BORDER}` }}>
+          <SectionLabel text="How the number is calculated"/>
+          {waterfallRows.map((row,i) => (
+            <div key={i} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:i<waterfallRows.length-1?`1px solid ${BORDER}`:"none" }}>
+              <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:row.bold?DARK:DIM,fontWeight:row.bold?500:400,paddingLeft:row.indent?20:0 }}>{row.label}</span>
+              <span style={{ fontFamily:"'DM Mono',monospace",fontSize:13,fontWeight:row.bold?600:400,color:row.color }}>
+                {row.value >= 0 ? $(row.value) : `–${$(Math.abs(row.value))}`}
+              </span>
+            </div>
+          ))}
+        </div>
+        <SectionLabel text="Profit by job — click to open"/>
+        <MiniTable headers={["Job","Client","Revenue","Costs","Profit","Margin"]} rows={jobRows} onRowClick={onJobClick}/>
+      </ModalShell>
+    );
+  }
+
+  // ── JOBS PROFITABLE modal ──
+  if (type === 'jobs') {
+    const winners = jobSummaries.filter(j => j.profit > 0).sort((a,b) => b.profit - a.profit);
+    const losers  = jobSummaries.filter(j => j.profit <= 0).sort((a,b) => a.profit - b.profit);
+    function JobList({ jobs, color }) {
+      return jobs.length > 0 ? (
+        <MiniTable
+          headers={["Job","Client","Revenue","Profit","Margin"]}
+          rows={jobs.map(j => ({
+            _job: j,
+            cells: [
+              { value: j.name, bold:true, color:DARK },
+              { value: j.clientName, color:DIM },
+              { value: $(j.revenue), mono:true, color:MID },
+              { value: (j.profit>=0?'+':'')+$(j.profit), mono:true, color, bold:true },
+              { value: j.marginPct+'%', color:DIM },
+            ]
+          }))}
+          onRowClick={onJobClick}
+        />
+      ) : (
+        <div style={{ padding:"16px 0",fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,fontStyle:"italic" }}>None in this period</div>
+      );
+    }
+    return (
+      <ModalShell title="Jobs Profitable" subtitle={`${winners.length} profitable · ${losers.length} losing · click any row to open`}>
+        <div style={{ marginBottom:24 }}>
+          <SectionLabel text={`In the green — ${winners.length} job${winners.length!==1?'s':''} · ${$(winners.reduce((s,j)=>s+j.profit,0))} total profit`}/>
+          <JobList jobs={winners} color={ACCENT2}/>
+        </div>
+        {losers.length > 0 && (
+          <div>
+            <SectionLabel text={`In the red — ${losers.length} job${losers.length!==1?'s':''} · ${$(losers.reduce((s,j)=>s+j.profit,0))} total loss`}/>
+            <JobList jobs={losers} color={RED}/>
+          </div>
+        )}
+      </ModalShell>
+    );
+  }
+
+  // ── DATA QUALITY modal ──
+  if (type === 'quality') {
+    const taggedCount   = jobSummaries.reduce((s,j) => s + j.purchases.length, 0);
+    const overheadCount = (overhead||[]).length;
+    const untaggedCount = untagged.length;
+    const total         = taggedCount + overheadCount + untaggedCount;
+    const dqPct         = total > 0 ? Math.round((accountedFor / total) * 100) : 100;
+    function ScoreBar({ label, count, color, pct }) {
+      return (
+        <div style={{ marginBottom:14 }}>
+          <div style={{ display:"flex",justifyContent:"space-between",marginBottom:5 }}>
+            <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:MID }}>{label}</span>
+            <span style={{ fontFamily:"'DM Mono',monospace",fontSize:12,color }}>{count} ({pct}%)</span>
+          </div>
+          <div style={{ height:6,borderRadius:3,background:BG2,overflow:"hidden" }}>
+            <div style={{ height:"100%",width:`${pct}%`,background:color,borderRadius:3,transition:"width 0.4s ease" }}/>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <ModalShell title="Data Quality Score" subtitle={`${dqPct}% of expenses accounted for`}>
+        {/* Score bars */}
+        <div style={{ padding:"18px 20px",borderRadius:6,background:BG2,border:`1px solid ${BORDER}`,marginBottom:24 }}>
+          <ScoreBar label="Job-tagged expenses" count={taggedCount} color={ACCENT2} pct={total>0?Math.round(taggedCount/total*100):0}/>
+          <ScoreBar label="Fixed cost expenses" count={overheadCount} color={AMBER} pct={total>0?Math.round(overheadCount/total*100):0}/>
+          <ScoreBar label="Untagged expenses" count={untaggedCount} color={RED} pct={total>0?Math.round(untaggedCount/total*100):0}/>
+          <div style={{ borderTop:`1px solid ${BORDER}`,paddingTop:12,marginTop:4,display:"flex",justifyContent:"space-between" }}>
+            <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,fontWeight:500,color:DARK }}>Total accounted for</span>
+            <span style={{ fontFamily:"'DM Mono',monospace",fontSize:12,fontWeight:600,color:dqPct>=80?ACCENT2:dqPct>=50?AMBER:RED }}>{accountedFor}/{total} ({dqPct}%)</span>
+          </div>
+        </div>
+        {/* Untagged list */}
+        {untagged.length > 0 ? (
+          <>
+            <SectionLabel text={`Untagged expenses dragging the score — ${untagged.length} remaining`}/>
+            <MiniTable
+              headers={["Vendor","Description","Date","Amount"]}
+              rows={untagged.slice(0,10).map(u => ({
+                cells: [
+                  { value: u.vendor, bold:true, color:DARK },
+                  { value: u.description, color:DIM },
+                  { value: u.date, color:DIM },
+                  { value: $(u.amount), mono:true, color:RED },
+                ]
+              }))}
+            />
+            {untagged.length > 10 && (
+              <div style={{ marginTop:8,fontSize:11,color:DIM,fontFamily:"'DM Sans',sans-serif",fontStyle:"italic" }}>
+                + {untagged.length - 10} more in the Expense Inbox
+              </div>
+            )}
+          </>
+        ) : (
+          <div style={{ textAlign:"center",padding:"20px 0",fontFamily:"'Lora',serif",fontSize:16,color:ACCENT2,fontStyle:"italic" }}>
+            All expenses accounted for — perfect score!
+          </div>
+        )}
+      </ModalShell>
+    );
+  }
+
+  return null;
+}
+
 // ─── TAB: DASHBOARD ───────────────────────────────────────────────────────────
 
 function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, userId, clientType }) {
@@ -441,8 +755,9 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
   const [sortDir, setSortDir]       = useState("desc");
   const [dateRange, setDateRange]   = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
-  const [trendView, setTrendView]   = useState("cumulative");
+  const [trendView, setTrendView]     = useState("cumulative");
   const [expenseView, setExpenseView] = useState("job");
+  const [activeKpi, setActiveKpi]     = useState(null); // 'revenue' | 'expenses' | 'profit' | 'jobs' | 'quality'
 
   // Build monthly trend dynamically from live job summaries
   const dynamicTrend = useMemo(() => {
@@ -635,23 +950,43 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
         </div>
       )}
 
-      {/* KPI strip — 5 cards: Revenue | Expenses (toggle) | Profit (dynamic) | Jobs Profitable | Data Quality */}
+      {/* KPI Drilldown Modal */}
+      {activeKpi && (
+        <KpiModal
+          type={activeKpi}
+          expenseView={expenseView}
+          jobSummaries={typeFilteredJobs}
+          allJobSummaries={jobSummaries}
+          overhead={overhead}
+          untagged={untagged}
+          totalRev={totalRev}
+          totalCost={totalCost}
+          totalOverhead={totalOverhead}
+          totalProfit={totalProfit}
+          accountedFor={accountedFor}
+          totalExpenses={totalExpenses}
+          onClose={() => setActiveKpi(null)}
+          onJobClick={(job) => { setActiveKpi(null); onJobClick(job); }}
+        />
+      )}
+
+      {/* KPI strip — 5 cards: Revenue | Expenses | Profit | Jobs Profitable | Data Quality */}
       <div style={{ display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:14,marginBottom:28 }}>
 
         {/* 1. Total Revenue */}
-        <div className="kpi kpi-tooltip">
-          <span className="tooltip-text">Total revenue invoiced across all jobs in the selected period.</span>
+        <div className="kpi kpi-tooltip" onClick={()=>setActiveKpi('revenue')} style={{ cursor:"pointer" }}>
+          <span className="tooltip-text">Total revenue invoiced across all jobs in the selected period. Click to see full breakdown.</span>
           <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>Total Revenue</div>
           <div style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>{$(totalRev)}</div>
           <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>all jobs billed</div>
         </div>
 
-        {/* 2. Total Expenses — mirrors the Gross/Net toggle on the Profit card */}
-        <div className="kpi kpi-tooltip">
+        {/* 2. Total Expenses */}
+        <div className="kpi kpi-tooltip" onClick={()=>setActiveKpi('expenses')} style={{ cursor:"pointer" }}>
           <span className="tooltip-text">
             {expenseView === "fixed"
-              ? `Total Job + Fixed Expenses = Job Costs (${$(totalCost)}) + Fixed Costs (${$(totalOverhead)}). Toggle the Profit card to Gross to see job costs only.`
-              : `Total Job Expenses = direct costs tagged to specific jobs in QuickBooks. Toggle the Profit card to Net to include fixed overhead.`}
+              ? `Total Job + Fixed Expenses = Job Costs (${$(totalCost)}) + Fixed Costs (${$(totalOverhead)}). Click to see breakdown.`
+              : `Total Job Expenses = direct costs tagged to specific jobs. Click to see breakdown.`}
           </span>
           <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>
             {expenseView === "fixed" ? "Total Job + Fixed Expenses" : "Total Job Expenses"}
@@ -666,19 +1001,19 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
           </div>
         </div>
 
-        {/* 3. Profit — toggle between Gross and Net lives here */}
+        {/* 3. Profit — toggle lives here */}
         {(() => {
-          const isNet      = expenseView === "fixed";
-          const netProfit  = totalProfit - totalOverhead;
-          const dispProfit = isNet ? netProfit : totalProfit;
-          const dispMargin = totalRev > 0 ? ((dispProfit / totalRev) * 100).toFixed(1) : "0.0";
+          const isNet       = expenseView === "fixed";
+          const netProfit   = totalProfit - totalOverhead;
+          const dispProfit  = isNet ? netProfit : totalProfit;
+          const dispMargin  = totalRev > 0 ? ((dispProfit / totalRev) * 100).toFixed(1) : "0.0";
           const profitColor = dispProfit >= 0 ? ACCENT2 : RED;
           return (
-            <div className="kpi hi kpi-tooltip">
+            <div className="kpi hi kpi-tooltip" onClick={()=>setActiveKpi('profit')} style={{ cursor:"pointer" }}>
               <span className="tooltip-text">
                 {isNet
-                  ? `Net Profit = Revenue (${$(totalRev)}) − Job Costs (${$(totalCost)}) − Fixed Costs (${$(totalOverhead)}). Your true bottom line after all known expenses.`
-                  : `Gross Profit = Revenue (${$(totalRev)}) − Job Costs (${$(totalCost)}). Switch to Net to subtract fixed overhead.`}
+                  ? `Net Profit = Revenue (${$(totalRev)}) − Job Costs (${$(totalCost)}) − Fixed Costs (${$(totalOverhead)}). Click to see waterfall breakdown.`
+                  : `Gross Profit = Revenue (${$(totalRev)}) − Job Costs (${$(totalCost)}). Click to see breakdown.`}
               </span>
               <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10 }}>
                 <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",fontWeight:500 }}>
@@ -690,29 +1025,23 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
                   ))}
                 </div>
               </div>
-              <div style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:profitColor,letterSpacing:"-0.01em" }}>
-                {$(dispProfit)}
-              </div>
-              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>
-                {dispMargin}% {isNet ? "net" : "gross"} margin
-              </div>
+              <div style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:profitColor,letterSpacing:"-0.01em" }}>{$(dispProfit)}</div>
+              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>{dispMargin}% {isNet ? "net" : "gross"} margin</div>
             </div>
           );
         })()}
 
         {/* 4. Jobs Profitable */}
-        <div className="kpi kpi-tooltip">
-          <span className="tooltip-text">Number of jobs where revenue exceeded direct job costs. Does not account for fixed overhead allocation.</span>
+        <div className="kpi kpi-tooltip" onClick={()=>setActiveKpi('jobs')} style={{ cursor:"pointer" }}>
+          <span className="tooltip-text">Number of jobs where revenue exceeded direct job costs. Click to see winners and losers.</span>
           <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>Jobs Profitable</div>
           <div style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>{winners} of {typeFilteredJobs.length}</div>
           <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>in the green</div>
         </div>
 
         {/* 5. Data Quality Score */}
-        <div className="kpi kpi-tooltip">
-          <span className="tooltip-text">
-            Includes job-tagged expenses and fixed costs. Tag remaining untagged expenses in the Expense Inbox to improve this score. Data sourced from QuickBooks.
-          </span>
+        <div className="kpi kpi-tooltip" onClick={()=>setActiveKpi('quality')} style={{ cursor:"pointer" }}>
+          <span className="tooltip-text">Includes job-tagged and fixed cost expenses. Click to see what's driving the score.</span>
           <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>Data Quality Score</div>
           <div style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:dqColor,letterSpacing:"-0.01em" }}>{dataQuality}%</div>
           <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>{dqLabel} · {accountedFor}/{totalExpenses} accounted for</div>
