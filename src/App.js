@@ -2402,6 +2402,10 @@ export default function App() {
       setQbConnected(true);
       window.history.replaceState({}, '', window.location.pathname);
     }
+    if (params.get('qb_disconnected') === 'true') {
+      setQbConnected(false);
+      window.history.replaceState({}, '', window.location.pathname);
+    }
     if (params.get('qb_error')) {
       setQbError(params.get('qb_error'));
       window.history.replaceState({}, '', window.location.pathname);
@@ -2628,6 +2632,15 @@ export default function App() {
                 )}
                 {qbConnected && !syncing && dataSource === 'mock' && (
                   <span style={{ color:DIM, fontSize:9 }}>· demo data</span>
+                )}
+                {qbConnected && !syncing && (
+                  <a
+                    href={`/api/qb-disconnect?userId=${session?.user?.id}&redirect=true`}
+                    style={{ color:DIM, fontSize:9, marginLeft:2, textDecoration:"underline", cursor:"pointer" }}
+                    title="Disconnect QuickBooks"
+                  >
+                    disconnect
+                  </a>
                 )}
               </div>
             )}
