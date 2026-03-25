@@ -2136,7 +2136,6 @@ function doExcelExport(data, title) {
   const C_GREEN_DARK  = '1A3C2E';
   const C_GREEN_MID   = '2D6A4F';
   const C_GREEN_LIGHT = 'E8F0EC';
-  const C_AMBER       = 'F5F0E0';
   const C_GRAY        = 'F2EFE9';
   const C_WHITE       = 'FFFFFF';
   const C_DARK        = '2C2416';
