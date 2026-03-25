@@ -2049,27 +2049,204 @@ function exportToExcel(data, title) {
 
 function doExcelExport(data, title) {
   const XLSX = window.XLSX;
-  // Build header row with readable column names
-  const headers = Object.keys(data[0] || {}).map(k =>
-    k.charAt(0).toUpperCase() + k.slice(1).replace(/([A-Z])/g, ' $1')
-  );
-  // Build data rows — format numbers nicely
-  const rows = data.map(row =>
-    Object.entries(row).map(([k, v]) => {
-      if (typeof v === 'number') {
-        if (k === 'margin') return `${v}%`;
-        if (k === 'jobs')   return v;
-        return v; // keep raw numbers so Excel can format them
-      }
+  if (!data || data.length === 0) return;
+
+  const keys    = Object.keys(data[0]);
+  const headers = keys.map(k => k.charAt(0).toUpperCase() + k.slice(1).replace(/([A-Z])/g, ' $1').trim());
+  const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+  // ── Determine column types ──────────────────────────────────────────────────
+  function colType(key) {
+    if (key === 'margin') return 'pct';
+    if (key === 'jobs' || key === 'count') return 'int';
+    const sample = data.find(r => typeof r[key] === 'number');
+    if (sample && typeof sample[key] === 'number') return 'usd';
+    return 'text';
+  }
+  const types = keys.map(colType);
+
+  // ── Build rows ──────────────────────────────────────────────────────────────
+  // Title block: 4 rows before headers
+  const TITLE_ROWS = 4;
+  const HEADER_ROW = TITLE_ROWS;      // 0-indexed: row 4
+  const DATA_START  = TITLE_ROWS + 1; // row 5
+
+  // Data rows as raw values (numbers stay numbers for Excel formatting)
+  const dataRows = data.map(row =>
+    keys.map((k, i) => {
+      const v = row[k];
+      if (typeof v !== 'number') return v ?? '';
+      if (types[i] === 'pct') return v / 100; // Excel stores pct as decimal
       return v;
     })
   );
-  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-  // Set column widths
-  ws['!cols'] = headers.map(() => ({ wch: 20 }));
+
+  // Totals row
+  const totalsRow = keys.map((k, i) => {
+    if (types[i] === 'usd' || types[i] === 'int') {
+      return data.reduce((s, r) => s + (typeof r[k] === 'number' ? r[k] : 0), 0);
+    }
+    if (i === 0) return 'TOTAL';
+    return '';
+  });
+
+  // ── Create worksheet from AOA ───────────────────────────────────────────────
+  const aoa = [
+    ['Canopy Business Intelligence', ...Array(keys.length - 1).fill('')],
+    [title, ...Array(keys.length - 1).fill('')],
+    [`Generated: ${dateStr}`, ...Array(keys.length - 1).fill('')],
+    Array(keys.length).fill(''),  // spacer
+    headers,
+    ...dataRows,
+    totalsRow,
+  ];
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const totalDataRows = dataRows.length;
+  const totalsRowIdx  = DATA_START + totalDataRows; // 0-indexed
+
+  // ── Column widths ───────────────────────────────────────────────────────────
+  ws['!cols'] = types.map((t, i) => {
+    if (i === 0)       return { wch: 30 };
+    if (t === 'usd')   return { wch: 16 };
+    if (t === 'pct')   return { wch: 12 };
+    if (t === 'int')   return { wch: 10 };
+    return { wch: 22 };
+  });
+
+  // ── Merge title cells across all columns ───────────────────────────────────
+  ws['!merges'] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: keys.length - 1 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: keys.length - 1 } },
+    { s: { r: 2, c: 0 }, e: { r: 2, c: keys.length - 1 } },
+    { s: { r: 3, c: 0 }, e: { r: 3, c: keys.length - 1 } },
+  ];
+
+  // ── Cell styles helper ─────────────────────────────────────────────────────
+  function addr(r, c) {
+    return XLSX.utils.encode_cell({ r, c });
+  }
+
+  function setStyle(cellAddr, style) {
+    if (!ws[cellAddr]) ws[cellAddr] = { t: 'z', v: '' };
+    ws[cellAddr].s = style;
+  }
+
+  // Colors
+  const C_GREEN_DARK  = '1A3C2E';
+  const C_GREEN_MID   = '2D6A4F';
+  const C_GREEN_LIGHT = 'E8F0EC';
+  const C_AMBER       = 'F5F0E0';
+  const C_GRAY        = 'F2EFE9';
+  const C_WHITE       = 'FFFFFF';
+  const C_DARK        = '2C2416';
+  const C_DIM         = 'A89880';
+
+  // ── Title row styles ────────────────────────────────────────────────────────
+  // Row 0 — "Canopy Business Intelligence"
+  setStyle(addr(0, 0), {
+    font: { bold: true, sz: 16, color: { rgb: C_GREEN_DARK }, name: 'Arial' },
+    fill: { patternType: 'solid', fgColor: { rgb: C_WHITE } },
+    alignment: { vertical: 'center' }
+  });
+
+  // Row 1 — report title
+  setStyle(addr(1, 0), {
+    font: { bold: true, sz: 13, color: { rgb: C_DARK }, name: 'Arial' },
+    fill: { patternType: 'solid', fgColor: { rgb: C_WHITE } },
+  });
+
+  // Row 2 — date
+  setStyle(addr(2, 0), {
+    font: { italic: true, sz: 10, color: { rgb: C_DIM }, name: 'Arial' },
+    fill: { patternType: 'solid', fgColor: { rgb: C_WHITE } },
+  });
+
+  // ── Header row styles (row 4) ───────────────────────────────────────────────
+  keys.forEach((_, c) => {
+    setStyle(addr(HEADER_ROW, c), {
+      font: { bold: true, sz: 10, color: { rgb: C_WHITE }, name: 'Arial' },
+      fill: { patternType: 'solid', fgColor: { rgb: C_GREEN_DARK } },
+      alignment: { horizontal: c === 0 ? 'left' : 'right', vertical: 'center' },
+      border: {
+        bottom: { style: 'medium', color: { rgb: C_GREEN_MID } }
+      }
+    });
+  });
+
+  // ── Data row styles + number formats ───────────────────────────────────────
+  dataRows.forEach((row, ri) => {
+    const rowIdx = DATA_START + ri;
+    const isAlt  = ri % 2 === 1;
+    const bgColor = isAlt ? C_GRAY : C_WHITE;
+
+    keys.forEach((k, c) => {
+      const cellAddr = addr(rowIdx, c);
+      if (!ws[cellAddr]) ws[cellAddr] = { t: 'z', v: '' };
+
+      const baseStyle = {
+        font: { sz: 10, color: { rgb: C_DARK }, name: 'Arial' },
+        fill: { patternType: 'solid', fgColor: { rgb: bgColor } },
+        alignment: { horizontal: c === 0 ? 'left' : 'right', vertical: 'center' },
+        border: {
+          bottom: { style: 'thin', color: { rgb: 'DDD5C4' } }
+        }
+      };
+
+      if (types[c] === 'usd') {
+        ws[cellAddr].z = '$#,##0';
+        ws[cellAddr].t = 'n';
+      } else if (types[c] === 'pct') {
+        ws[cellAddr].z = '0.0%';
+        ws[cellAddr].t = 'n';
+      } else if (types[c] === 'int') {
+        ws[cellAddr].z = '#,##0';
+        ws[cellAddr].t = 'n';
+      }
+
+      ws[cellAddr].s = baseStyle;
+    });
+  });
+
+  // ── Totals row styles ───────────────────────────────────────────────────────
+  keys.forEach((k, c) => {
+    const cellAddr = addr(totalsRowIdx, c);
+    if (!ws[cellAddr]) ws[cellAddr] = { t: 'z', v: '' };
+
+    ws[cellAddr].s = {
+      font: { bold: true, sz: 10, color: { rgb: C_GREEN_DARK }, name: 'Arial' },
+      fill: { patternType: 'solid', fgColor: { rgb: C_GREEN_LIGHT } },
+      alignment: { horizontal: c === 0 ? 'left' : 'right', vertical: 'center' },
+      border: {
+        top: { style: 'medium', color: { rgb: C_GREEN_MID } }
+      }
+    };
+
+    if (types[c] === 'usd') {
+      ws[cellAddr].z = '$#,##0';
+      ws[cellAddr].t = 'n';
+    } else if (types[c] === 'pct') {
+      // Totals don't sum percentages — clear the value
+      ws[cellAddr].v = '';
+      ws[cellAddr].t = 'z';
+    } else if (types[c] === 'int') {
+      ws[cellAddr].z = '#,##0';
+      ws[cellAddr].t = 'n';
+    }
+  });
+
+  // ── Row heights ─────────────────────────────────────────────────────────────
+  ws['!rows'] = [];
+  ws['!rows'][0] = { hpt: 28 }; // title
+  ws['!rows'][1] = { hpt: 22 }; // report name
+  ws['!rows'][2] = { hpt: 16 }; // date
+  ws['!rows'][3] = { hpt: 8  }; // spacer
+  ws['!rows'][HEADER_ROW] = { hpt: 20 }; // headers
+
+  // ── Write file ──────────────────────────────────────────────────────────────
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, title.slice(0, 31));
-  XLSX.writeFile(wb, `Canopy - ${title} - ${new Date().toLocaleDateString('en-US')}.xlsx`);
+  XLSX.writeFile(wb, `Canopy - ${title} - ${dateStr}.xlsx`);
 }
 
 // PDF export — renders report content into a clean new window and prints it
