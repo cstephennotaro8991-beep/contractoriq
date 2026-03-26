@@ -1,8 +1,9 @@
 // api/qb-sync.js
-// Fetches data from QuickBooks API and writes it to Supabase
-// Can be triggered manually (GET /api/qb-sync?userId=xxx) or automatically after OAuth connect
+// Fetches data from QuickBooks API and writes it to Supabase.
+// Decrypts stored OAuth tokens before use.
 
 import { createClient } from '@supabase/supabase-js';
+import { decrypt, encrypt } from './_encrypt.js';
 
 const supabase = createClient(
   process.env.REACT_APP_SUPABASE_URL,
@@ -31,7 +32,7 @@ async function qbQuery(realmId, accessToken, entity, conditions = '') {
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`QB API error ${res.status}: ${text}`);
+    throw new Error(`QB API error ${res.status}: ${text.slice(0, 200)}`);
   }
 
   const data = await res.json();
@@ -42,15 +43,16 @@ async function qbQuery(realmId, accessToken, entity, conditions = '') {
 
 async function refreshTokenIfNeeded(contractor) {
   const expiry = new Date(contractor.qb_token_expiry);
-  const now    = new Date();
-  const fiveMinutesFromNow = new Date(now.getTime() + 5 * 60 * 1000);
+  const fiveMinutesFromNow = new Date(Date.now() + 5 * 60 * 1000);
 
-  // If token is still valid for more than 5 minutes, use it as-is
+  // Decrypt the stored access token
+  const currentAccessToken = decrypt(contractor.qb_access_token);
+
   if (expiry > fiveMinutesFromNow) {
-    return contractor.qb_access_token;
+    return currentAccessToken;
   }
 
-  // Refresh the token
+  // Token is expiring — refresh it
   const credentials = Buffer.from(
     `${process.env.REACT_APP_QB_CLIENT_ID}:${process.env.QB_CLIENT_SECRET}`
   ).toString('base64');
@@ -64,23 +66,24 @@ async function refreshTokenIfNeeded(contractor) {
     },
     body: new URLSearchParams({
       grant_type:    'refresh_token',
-      refresh_token: contractor.qb_refresh_token,
+      refresh_token: decrypt(contractor.qb_refresh_token),
     }),
   });
 
   const tokens = await tokenRes.json();
 
   if (!tokens.access_token) {
-    throw new Error('Token refresh failed: ' + JSON.stringify(tokens));
+    throw new Error('Token refresh failed');
   }
 
-  // Save new tokens to Supabase
   const newExpiry = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
+
+  // Re-encrypt and save new tokens
   await supabase
     .from('contractors')
     .update({
-      qb_access_token:  tokens.access_token,
-      qb_refresh_token: tokens.refresh_token || contractor.qb_refresh_token,
+      qb_access_token:  encrypt(tokens.access_token),
+      qb_refresh_token: encrypt(tokens.refresh_token || decrypt(contractor.qb_refresh_token)),
       qb_token_expiry:  newExpiry,
     })
     .eq('id', contractor.id);
@@ -114,7 +117,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 1. Fetch contractor record from Supabase
+    // Fetch contractor record
     const { data: contractor, error: contractorError } = await supabase
       .from('contractors')
       .select('*')
@@ -126,16 +129,16 @@ export default async function handler(req, res) {
     }
 
     if (!contractor.qb_realm_id || !contractor.qb_access_token) {
-      return res.status(400).json({ error: 'QuickBooks not connected for this contractor' });
+      return res.status(400).json({ error: 'QuickBooks not connected' });
     }
 
-    // 2. Refresh token if needed
+    // Decrypt realmId and refresh/get access token
+    const realmId     = decrypt(contractor.qb_realm_id);
     const accessToken = await refreshTokenIfNeeded(contractor);
-    const realmId     = contractor.qb_realm_id;
 
-    // 3. Fetch all data from QuickBooks
-    console.log(`Syncing QB data for contractor ${userId}, realm ${realmId}`);
+    console.log(`Syncing QB data for contractor — realm decrypted successfully`);
 
+    // Fetch from QuickBooks
     const [customerResponse, invoiceResponse, purchaseResponse] = await Promise.all([
       qbQuery(realmId, accessToken, 'Customer'),
       qbQuery(realmId, accessToken, 'Invoice'),
@@ -146,55 +149,49 @@ export default async function handler(req, res) {
     const invoices   = invoiceResponse?.Invoice    || [];
     const purchases  = purchaseResponse?.Purchase  || [];
 
-    console.log(`Fetched: ${customers.length} customers, ${invoices.length} invoices, ${purchases.length} purchases`);
+    console.log(`QB fetch complete: ${customers.length} customers, ${invoices.length} invoices, ${purchases.length} purchases`);
 
-    // 4. Build client ID map (parent customers)
-    const clientMap  = {};  // QB customer Id → display name
-    const jobMap     = {};  // QB job Id → job record
+    // Build client map and jobs
+    const clientMap    = {};
+    const jobMap       = {};
     const jobsToUpsert = [];
 
     customers.forEach(c => {
-      if (!c.Job) {
-        // Parent client
-        clientMap[c.Id] = c.DisplayName || c.FullyQualifiedName;
-      }
+      if (!c.Job) clientMap[c.Id] = c.DisplayName || c.FullyQualifiedName;
     });
 
     customers.forEach(c => {
       if (c.Job && c.ParentRef) {
         const clientName = clientMap[c.ParentRef.value] || '';
-        const jobRecord = {
-          id:             `${userId}_${c.Id}`,
-          contractor_id:  userId,
-          qb_job_id:      c.Id,
-          name:           c.DisplayName || c.FullyQualifiedName,
-          client_name:    clientName,
-          job_type:       guessJobType(c.DisplayName || ''),
-          status:         c.Active ? 'In Progress' : 'Complete',
+        const jobRecord  = {
+          id:            `${userId}_${c.Id}`,
+          contractor_id: userId,
+          qb_job_id:     c.Id,
+          name:          c.DisplayName || c.FullyQualifiedName,
+          client_name:   clientName,
+          job_type:      guessJobType(c.DisplayName || ''),
+          status:        c.Active ? 'In Progress' : 'Complete',
         };
         jobsToUpsert.push(jobRecord);
         jobMap[c.Id] = jobRecord;
       }
     });
 
-    // 5. Upsert jobs into Supabase
     if (jobsToUpsert.length > 0) {
       const { error: jobError } = await supabase
         .from('jobs')
         .upsert(jobsToUpsert, { onConflict: 'id' });
-      if (jobError) console.error('Jobs upsert error:', jobError);
+      if (jobError) console.error('Jobs upsert error:', jobError.message);
     }
 
-    // 6. Build transactions from invoices
+    // Build transactions from invoices
     const transactionsToUpsert = [];
-    const unbilledJobIds = new Set(jobsToUpsert.map(j => j.qb_job_id));
+    let purCounter = 1;
 
     invoices.forEach(inv => {
       const qbJobId = inv.CustomerRef?.value;
       const job     = jobMap[qbJobId];
       if (!job) return;
-
-      unbilledJobIds.delete(qbJobId); // has at least one invoice
 
       transactionsToUpsert.push({
         id:            `${userId}_${inv.Id}`,
@@ -209,9 +206,8 @@ export default async function handler(req, res) {
       });
     });
 
-    // 7. Build transactions from purchases
+    // Build transactions from purchases
     const inboxToUpsert = [];
-    let   purCounter    = 1;
 
     purchases.forEach(p => {
       const lines = p.Line || [];
@@ -238,45 +234,41 @@ export default async function handler(req, res) {
         }
       });
 
-      // If no lines were tagged to a job — goes to Expense Inbox
       if (!hasTaggedLine) {
-        const totalAmt = p.TotalAmt || lines.reduce((s, l) => s + (l.Amount || 0), 0);
+        const totalAmt = p.TotalAmt || lines.reduce((s,l) => s + (l.Amount||0), 0);
         if (totalAmt > 0) {
           inboxToUpsert.push({
-            id:               `${userId}_inbox_${p.Id}`,
-            contractor_id:    userId,
-            doc_number:       p.DocNumber || p.Id,
-            vendor:           p.EntityRef?.name || 'Unknown Vendor',
-            txn_date:         p.TxnDate,
-            amount:           totalAmt,
-            description:      lines[0]?.Description || 'Untagged expense',
-            payment_type:     p.PaymentType || 'Check',
-            suggested_job_id: null,
-            suggestion_reason:null,
-            tagged_job_id:    null,
-            status:           'pending',
+            id:                `${userId}_inbox_${p.Id}`,
+            contractor_id:     userId,
+            doc_number:        p.DocNumber || p.Id,
+            vendor:            p.EntityRef?.name || 'Unknown Vendor',
+            txn_date:          p.TxnDate,
+            amount:            totalAmt,
+            description:       lines[0]?.Description || 'Untagged expense',
+            payment_type:      p.PaymentType || 'Check',
+            suggested_job_id:  null,
+            suggestion_reason: null,
+            tagged_job_id:     null,
+            status:            'pending',
           });
         }
       }
     });
 
-    // 8. Upsert transactions
     if (transactionsToUpsert.length > 0) {
       const { error: txnError } = await supabase
         .from('transactions')
         .upsert(transactionsToUpsert, { onConflict: 'id' });
-      if (txnError) console.error('Transactions upsert error:', txnError);
+      if (txnError) console.error('Transactions upsert error:', txnError.message);
     }
 
-    // 9. Upsert inbox items (only insert new ones — don't overwrite tagged ones)
     if (inboxToUpsert.length > 0) {
       const { error: inboxError } = await supabase
         .from('inbox_tags')
         .upsert(inboxToUpsert, { onConflict: 'id', ignoreDuplicates: true });
-      if (inboxError) console.error('Inbox upsert error:', inboxError);
+      if (inboxError) console.error('Inbox upsert error:', inboxError.message);
     }
 
-    // 10. Update last synced timestamp on contractor
     await supabase
       .from('contractors')
       .update({ last_synced_at: new Date().toISOString() })
@@ -288,11 +280,11 @@ export default async function handler(req, res) {
       inbox:        inboxToUpsert.length,
     };
 
-    console.log('Sync complete:', summary);
+    console.log('Sync complete:', JSON.stringify(summary));
     res.status(200).json({ success: true, summary });
 
   } catch (err) {
-    console.error('Sync error:', err);
+    console.error('Sync error:', err.message);
     res.status(500).json({ error: err.message });
   }
-}
+    }
