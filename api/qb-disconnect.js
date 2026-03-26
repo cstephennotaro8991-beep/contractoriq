@@ -1,14 +1,10 @@
 // api/qb-disconnect.js
-// Called by Intuit when a user disconnects Canopy from within QuickBooks.
-// Also callable directly from the app to let a user disconnect from Canopy's UI.
-//
-// Intuit calls this endpoint with a POST containing the realmId (company ID).
-// We look up the contractor by realmId, revoke the token with Intuit, and
-// clear all QB credentials from Supabase.
-//
-// Disconnect URL to register with Intuit: https://app.canopybi.com/api/qb-disconnect
+// Called by Intuit when a user disconnects Canopy from within QuickBooks,
+// or directly from the app UI.
+// Decrypts tokens before revoking with Intuit, then clears credentials from Supabase.
 
 import { createClient } from '@supabase/supabase-js';
+import { decrypt } from './_encrypt.js';
 
 const supabase = createClient(
   process.env.REACT_APP_SUPABASE_URL,
@@ -16,8 +12,6 @@ const supabase = createClient(
 );
 
 export default async function handler(req, res) {
-  // Intuit sends a POST with realmId in the body.
-  // Direct app calls can send either realmId or userId as a query param.
   const userId  = req.query.userId;
   const realmId = req.query.realmId || req.body?.realmId;
 
@@ -26,22 +20,38 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 1. Find the contractor by userId or realmId
-    let query = supabase.from('contractors').select('*');
-    if (userId)  query = query.eq('id', userId);
-    else         query = query.eq('qb_realm_id', realmId);
+    // Find contractor by userId or encrypted realmId
+    let contractor = null;
 
-    const { data: contractor, error: lookupError } = await query.single();
+    if (userId) {
+      const { data } = await supabase
+        .from('contractors')
+        .select('*')
+        .eq('id', userId)
+        .single();
+      contractor = data;
+    } else {
+      // Intuit sends plain realmId — need to find by decrypting stored values
+      const { data: all } = await supabase
+        .from('contractors')
+        .select('*')
+        .not('qb_realm_id', 'is', null);
 
-    if (lookupError || !contractor) {
-      // Intuit expects a 200 even if we can't find the user — log and return ok
-      console.warn('Disconnect: contractor not found for', userId || realmId);
+      contractor = (all || []).find(c => {
+        try { return decrypt(c.qb_realm_id) === realmId; }
+        catch { return false; }
+      }) || null;
+    }
+
+    if (!contractor) {
+      console.warn('Disconnect: contractor not found');
       return res.status(200).json({ success: true, note: 'contractor not found' });
     }
 
-    // 2. Revoke the token with Intuit (best effort — don't fail if this errors)
+    // Revoke token with Intuit (best effort)
     if (contractor.qb_access_token) {
       try {
+        const accessToken = decrypt(contractor.qb_access_token);
         const credentials = Buffer.from(
           `${process.env.REACT_APP_QB_CLIENT_ID}:${process.env.QB_CLIENT_SECRET}`
         ).toString('base64');
@@ -50,18 +60,17 @@ export default async function handler(req, res) {
           method: 'POST',
           headers: {
             'Authorization': `Basic ${credentials}`,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
+            'Content-Type':  'application/json',
+            'Accept':        'application/json',
           },
-          body: JSON.stringify({ token: contractor.qb_access_token }),
+          body: JSON.stringify({ token: accessToken }),
         });
       } catch (revokeErr) {
-        // Non-fatal — we still want to clear the credentials from our side
         console.warn('Token revocation failed (non-fatal):', revokeErr.message);
       }
     }
 
-    // 3. Clear all QB credentials from Supabase
+    // Clear all QB credentials from Supabase
     const { error: updateError } = await supabase
       .from('contractors')
       .update({
@@ -74,13 +83,12 @@ export default async function handler(req, res) {
       .eq('id', contractor.id);
 
     if (updateError) {
-      console.error('Failed to clear QB credentials:', updateError);
+      console.error('Failed to clear QB credentials:', updateError.message);
       return res.status(500).json({ error: 'Failed to clear credentials' });
     }
 
-    console.log(`QB disconnected for contractor ${contractor.id}`);
+    console.log('QB disconnected successfully for contractor');
 
-    // 4. Respond — Intuit expects 200, app calls can redirect
     if (req.query.redirect === 'true') {
       return res.redirect('https://app.canopybi.com?qb_disconnected=true');
     }
@@ -88,8 +96,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true });
 
   } catch (err) {
-    console.error('Disconnect error:', err);
-    // Always return 200 to Intuit even on unexpected errors
+    console.error('Disconnect error:', err.message);
     return res.status(200).json({ success: false, error: err.message });
   }
 }
