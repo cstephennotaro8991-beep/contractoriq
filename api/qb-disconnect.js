@@ -32,6 +32,7 @@ export default async function handler(req, res) {
       contractor = data;
     } else {
       // Intuit sends plain realmId — need to find by decrypting stored values
+      // Fetch all contractors with a realm_id and find the matching one
       const { data: all } = await supabase
         .from('contractors')
         .select('*')
@@ -87,7 +88,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Failed to clear credentials' });
     }
 
-    console.log('QB disconnected successfully for contractor');
+    console.log('QB disconnected successfully for user');
 
     if (req.query.redirect === 'true') {
       return res.redirect('https://app.canopybi.com?qb_disconnected=true');
