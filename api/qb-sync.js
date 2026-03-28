@@ -30,9 +30,11 @@ async function qbQuery(realmId, accessToken, entity, conditions = '') {
     }
   });
 
+  const tid = res.headers.get('intuit_tid');
+
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`QB API error ${res.status}: ${text.slice(0, 200)}`);
+    throw new Error(`QB API error ${res.status} (tid: ${tid}): ${text.slice(0, 200)}`);
   }
 
   const data = await res.json();
@@ -136,7 +138,7 @@ export default async function handler(req, res) {
     const realmId     = decrypt(contractor.qb_realm_id);
     const accessToken = await refreshTokenIfNeeded(contractor);
 
-    console.log(`Syncing QB data for contractor — realm decrypted successfully`);
+    console.log(`Syncing QB data for user — realm decrypted successfully`);
 
     // Fetch from QuickBooks
     const [customerResponse, invoiceResponse, purchaseResponse] = await Promise.all([
@@ -260,31 +262,4 @@ export default async function handler(req, res) {
         .from('transactions')
         .upsert(transactionsToUpsert, { onConflict: 'id' });
       if (txnError) console.error('Transactions upsert error:', txnError.message);
-    }
-
-    if (inboxToUpsert.length > 0) {
-      const { error: inboxError } = await supabase
-        .from('inbox_tags')
-        .upsert(inboxToUpsert, { onConflict: 'id', ignoreDuplicates: true });
-      if (inboxError) console.error('Inbox upsert error:', inboxError.message);
-    }
-
-    await supabase
-      .from('contractors')
-      .update({ last_synced_at: new Date().toISOString() })
-      .eq('id', userId);
-
-    const summary = {
-      jobs:         jobsToUpsert.length,
-      transactions: transactionsToUpsert.length,
-      inbox:        inboxToUpsert.length,
-    };
-
-    console.log('Sync complete:', JSON.stringify(summary));
-    res.status(200).json({ success: true, summary });
-
-  } catch (err) {
-    console.error('Sync error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
     }
