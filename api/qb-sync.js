@@ -93,6 +93,20 @@ async function refreshTokenIfNeeded(contractor) {
 
   const tokens = await tokenRes.json();
 
+  if (tokens.error === 'invalid_grant') {
+    // Refresh token is expired or revoked — wipe QB connection so user must reconnect
+    await supabase
+      .from('contractors')
+      .update({
+        qb_access_token:  null,
+        qb_refresh_token: null,
+        qb_token_expiry:  null,
+        qb_realm_id:      null,
+      })
+      .eq('id', contractor.id);
+    throw new Error('QB_DISCONNECTED');
+  }
+
   if (!tokens.access_token) {
     throw new Error('Token refresh failed');
   }
