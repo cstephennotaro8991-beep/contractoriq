@@ -23,22 +23,41 @@ async function qbQuery(realmId, accessToken, entity, conditions = '') {
 
   const url = `${baseUrl}/v3/company/${realmId}/query?query=${encodeURIComponent(query)}&minorversion=65`;
 
-  const res = await fetch(url, {
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Accept': 'application/json',
+  const MAX_RETRIES = 3;
+  const RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const res = await fetch(url, { // eslint-disable-line no-await-in-loop
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json',
+      }
+    });
+
+    const tid = res.headers.get('intuit_tid');
+
+    if (res.ok) {
+      const data = await res.json(); // eslint-disable-line no-await-in-loop
+      return data.QueryResponse;
     }
-  });
 
-  const tid = res.headers.get('intuit_tid');
+    const text = await res.text(); // eslint-disable-line no-await-in-loop
 
-  if (!res.ok) {
-    const text = await res.text();
+    // Auth errors won't resolve on retry — fail immediately
+    if (res.status === 401 || res.status === 403) {
+      throw new Error(`QB API error ${res.status} (tid: ${tid}): ${text.slice(0, 200)}`);
+    }
+
+    // Retry on transient errors with exponential backoff
+    if (RETRY_STATUSES.has(res.status) && attempt < MAX_RETRIES) {
+      const delay = Math.pow(2, attempt) * 500; // 1s, 2s on attempts 1 and 2
+      console.warn(`QB API ${res.status} on attempt ${attempt} (tid: ${tid}) — retrying in ${delay}ms`);
+      await new Promise(r => setTimeout(r, delay)); // eslint-disable-line no-await-in-loop
+      continue;
+    }
+
     throw new Error(`QB API error ${res.status} (tid: ${tid}): ${text.slice(0, 200)}`);
   }
-
-  const data = await res.json();
-  return data.QueryResponse;
 }
 
 // ── Token refresh helper ──────────────────────────────────────────────────────
@@ -138,7 +157,7 @@ export default async function handler(req, res) {
     const realmId     = decrypt(contractor.qb_realm_id);
     const accessToken = await refreshTokenIfNeeded(contractor);
 
-    console.log(`Syncing QB data for user — realm decrypted successfully`);
+    console.log(`Syncing QB data for contractor — realm decrypted successfully`);
 
     // Fetch from QuickBooks
     const [customerResponse, invoiceResponse, purchaseResponse] = await Promise.all([
@@ -263,3 +282,30 @@ export default async function handler(req, res) {
         .upsert(transactionsToUpsert, { onConflict: 'id' });
       if (txnError) console.error('Transactions upsert error:', txnError.message);
     }
+
+    if (inboxToUpsert.length > 0) {
+      const { error: inboxError } = await supabase
+        .from('inbox_tags')
+        .upsert(inboxToUpsert, { onConflict: 'id', ignoreDuplicates: true });
+      if (inboxError) console.error('Inbox upsert error:', inboxError.message);
+    }
+
+    await supabase
+      .from('contractors')
+      .update({ last_synced_at: new Date().toISOString() })
+      .eq('id', userId);
+
+    const summary = {
+      jobs:         jobsToUpsert.length,
+      transactions: transactionsToUpsert.length,
+      inbox:        inboxToUpsert.length,
+    };
+
+    console.log('Sync complete:', JSON.stringify(summary));
+    res.status(200).json({ success: true, summary });
+
+  } catch (err) {
+    console.error('Sync error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+}
