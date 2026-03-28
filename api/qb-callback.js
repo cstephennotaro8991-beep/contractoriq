@@ -1,6 +1,7 @@
 // api/qb-callback.js
 // Exchanges the OAuth authorization code for tokens, encrypts them,
 // and stores them in Supabase.
+// Validates the CSRF state token before proceeding.
 
 import { createClient } from '@supabase/supabase-js';
 import { encrypt } from './_encrypt.js';
@@ -14,9 +15,32 @@ export default async function handler(req, res) {
   const { code, state, realmId, error } = req.query;
 
   if (error) return res.redirect('https://app.canopybi.com?qb_error=access_denied');
-  if (!code || !realmId) return res.redirect('https://app.canopybi.com?qb_error=missing_params');
+  if (!code || !realmId || !state) return res.redirect('https://app.canopybi.com?qb_error=missing_params');
 
   try {
+    // Validate CSRF state token
+    const { data: stateRecord, error: stateError } = await supabase
+      .from('oauth_states')
+      .select('user_id, expires_at')
+      .eq('state', state)
+      .single();
+
+    if (stateError || !stateRecord) {
+      console.error('OAuth state not found — possible CSRF attempt');
+      return res.redirect('https://app.canopybi.com?qb_error=invalid_state');
+    }
+
+    if (new Date(stateRecord.expires_at) < new Date()) {
+      console.error('OAuth state expired');
+      await supabase.from('oauth_states').delete().eq('state', state);
+      return res.redirect('https://app.canopybi.com?qb_error=state_expired');
+    }
+
+    const userId = stateRecord.user_id;
+
+    // Delete state record — one-time use only
+    await supabase.from('oauth_states').delete().eq('state', state);
+
     // Exchange authorization code for tokens
     const credentials = Buffer.from(
       `${process.env.REACT_APP_QB_CLIENT_ID}:${process.env.QB_CLIENT_SECRET}`
@@ -58,7 +82,7 @@ export default async function handler(req, res) {
         qb_realm_id:      encryptedRealmId,
         qb_token_expiry:  expiry,
       })
-      .eq('id', state);
+      .eq('id', userId);
 
     if (dbError) {
       console.error('Supabase update failed');
