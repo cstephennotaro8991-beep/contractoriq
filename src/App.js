@@ -2893,6 +2893,10 @@ export default function App() {
         await refreshData();
       } else {
         console.error('QB sync failed:', data.error);
+        if (data.error === 'QB_DISCONNECTED') {
+          setQbConnected(false);
+          setQbError('QB_TOKEN_EXPIRED');
+        }
       }
     } catch (err) {
       console.error('QB sync error:', err);
