@@ -3209,6 +3209,8 @@ export default function App() {
         </div>
         <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, whiteSpace:"nowrap" }}>
           Not financial advice · <span style={{ color:ACCENT, cursor:"pointer", textDecoration:"underline" }} onClick={() => setShowDisclaimer(true)}>View full notice</span>
+          {" · "}Need help?{" "}
+          <a href="mailto:support@canopybi.com" style={{ color:ACCENT, textDecoration:"underline" }}>support@canopybi.com</a>
         </div>
       </div>
 
