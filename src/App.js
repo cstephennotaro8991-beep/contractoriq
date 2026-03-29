@@ -128,13 +128,16 @@ const ACCENT = "#7A6B4E";   // warm walnut brown (primary action)
 const ACCENT2 = "#5C7A5A";  // sage green (profit / positive)
 const RED    = "#8C4040";   // muted terracotta red
 const AMBER  = "#8C6B30";   // burnished amber
-const BG     = "#E8DFD0";   // warm parchment
-const BG2    = "#DDD5C2";   // slightly deeper parchment
-const CARD   = "#F5F0E6";   // off-white card
-const BORDER = "#CEC5B0";   // warm taupe border
+const BG     = "#E8DFD0";   // deeper warm linen
+const BG2    = "#DDD5C2";   // rich taupe
+const CARD   = "#F5F0E6";   // warm cream card (lighter than BG for contrast)
+const BORDER = "#CEC5B0";   // deeper taupe border
 const DIM    = "#A89880";   // muted warm grey
 const MID    = "#6B5E4E";   // medium walnut
 const DARK   = "#2C2416";   // deep walnut text
+const SIDEBAR_BG   = "#231D13";  // near-black walnut sidebar
+const SIDEBAR_TEXT = "#C4B49A";  // warm parchment sidebar text
+const SIDEBAR_DIM  = "#6B5E4E";  // muted sidebar labels
 
 // ─── BUILD JOB SUMMARIES (reactive — takes extraCosts from tagged inbox items) ─
 
@@ -259,9 +262,10 @@ const css = `
   .nav-tab.active { color:${DARK}; border-bottom-color:${ACCENT}; font-weight:500; }
   .badge { display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;font-size:9px;font-weight:600;background:${AMBER};color:#FDF8F0;margin-left:7px;line-height:1;font-family:'DM Sans',sans-serif; }
   .badge.done { background:rgba(92,122,90,0.15);color:${ACCENT2}; }
-  .kpi { background:${CARD}; border:1px solid ${BORDER}; border-radius:6px; padding:22px 26px; box-shadow:0 1px 3px rgba(44,36,22,0.06); }
-  .kpi.hi { border-color:rgba(92,122,90,0.35); background:linear-gradient(135deg,${CARD},#F0F5EF); }
-  .chip { display:inline-flex;align-items:center;padding:3px 10px;border-radius:3px;font-size:11px;font-weight:500;font-family:'DM Sans',sans-serif;letter-spacing:0.02em; }
+  .kpi { background:${CARD}; border:1px solid ${BORDER}; border-radius:8px; padding:22px 26px; box-shadow:0 2px 8px rgba(44,36,22,0.08); transition:box-shadow 0.2s; }
+  .kpi:hover { box-shadow:0 4px 16px rgba(44,36,22,0.13); }
+  .kpi.hi { border-color:rgba(92,122,90,0.35); background:linear-gradient(135deg,${CARD},#EDF5EC); }
+  .chip { display:inline-flex;align-items:center;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:500;font-family:'DM Sans',sans-serif;letter-spacing:0.02em; }
   .chip.g { background:rgba(92,122,90,0.1);color:${ACCENT2}; }
   .chip.r { background:rgba(140,64,64,0.09);color:${RED}; }
   .chip.a { background:rgba(140,107,48,0.1);color:${AMBER}; }
@@ -269,13 +273,14 @@ const css = `
   .trow:hover { background:${BG2}; }
   .tcell { padding:14px 18px;font-size:13px;display:flex;align-items:center;font-family:'DM Sans',sans-serif; }
   .thead { display:grid;background:${BG2};border-bottom:1px solid ${BORDER}; }
-  .th { padding:10px 18px;font-size:9px;letter-spacing:0.12em;color:${DIM};text-transform:uppercase;font-family:'DM Sans',sans-serif;font-weight:500; }
-  .btn { cursor:pointer;padding:7px 16px;border-radius:4px;font-size:11px;font-weight:500;letter-spacing:0.04em;transition:all 0.15s;border:1px solid ${BORDER};color:${MID};background:${CARD};font-family:'DM Sans',sans-serif; }
+  .th { padding:10px 18px;font-size:10px;letter-spacing:0.1em;color:${DIM};text-transform:uppercase;font-family:'DM Sans',sans-serif;font-weight:600; }
+  .btn { cursor:pointer;padding:8px 16px;border-radius:6px;font-size:12px;font-weight:500;letter-spacing:0.02em;transition:all 0.15s;border:1px solid ${BORDER};color:${MID};background:${CARD};font-family:'DM Sans',sans-serif; }
   .btn:hover { border-color:${ACCENT};color:${ACCENT}; }
-  .btn.act { border-color:${ACCENT};color:${CARD};background:${ACCENT}; }
+  .btn.act { border-color:${ACCENT2};color:#fff;background:${ACCENT2}; }
+  .btn.act:hover { background:#4E6B4C;border-color:#4E6B4C; }
   .btn.red { border-color:rgba(140,64,64,0.3);color:${RED};background:transparent; }
   .btn.red:hover { border-color:${RED};background:rgba(140,64,64,0.06); }
-  .card { background:${CARD};border:1px solid ${BORDER};border-radius:6px;box-shadow:0 1px 4px rgba(44,36,22,0.05); }
+  .card { background:${CARD};border:1px solid ${BORDER};border-radius:8px;box-shadow:0 2px 8px rgba(44,36,22,0.07); }
   .mono { font-family:'DM Mono',monospace; }
   .chat-bubble-user { background:${BG2};border:1px solid ${BORDER};border-radius:12px 12px 3px 12px;padding:12px 16px;font-size:13px;color:${DARK};max-width:80%;align-self:flex-end;font-family:'DM Sans',sans-serif; }
   .chat-bubble-ai { background:${CARD};border:1px solid ${BORDER};border-radius:12px 12px 12px 3px;padding:14px 18px;font-size:13px;color:${MID};max-width:88%;align-self:flex-start;line-height:1.7;font-family:'DM Sans',sans-serif; }
@@ -317,6 +322,9 @@ const css = `
   .inbox-tab { cursor:pointer;padding:9px 18px;font-size:12px;font-weight:500;font-family:'DM Sans',sans-serif;border-radius:5px;border:1px solid transparent;transition:all 0.15s;color:${DIM}; }
   .inbox-tab:hover { color:${MID}; }
   .inbox-tab.active { background:${CARD};border-color:${BORDER};color:${DARK};box-shadow:0 1px 3px rgba(44,36,22,0.07); }
+  .si { display:flex;align-items:center;gap:10px;padding:11px 20px;cursor:pointer;font-size:13px;font-family:'DM Sans',sans-serif;border-left:2px solid transparent;transition:all 0.15s; }
+  .si:hover { background:rgba(245,239,227,0.06); }
+  .si.active { background:rgba(245,239,227,0.1);border-left-color:${ACCENT2}; }
 `;
 
 // ─── CHART TOOLTIP ────────────────────────────────────────────────────────────
@@ -465,7 +473,7 @@ function KpiModal({ type, expenseView, jobSummaries, allJobSummaries, overhead, 
   }
 
   function SectionLabel({ text }) {
-    return <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",fontWeight:500,marginBottom:12 }}>{text}</div>;
+    return <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",fontWeight:500,marginBottom:12 }}>{text}</div>;
   }
 
   function MiniTable({ headers, rows, onRowClick }) {
@@ -895,7 +903,7 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
       {/* Page title + date slicer */}
       <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:28 }}>
         <div>
-          <h1 style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>Job Profitability Overview</h1>
+          <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em" }}>Job Profitability Overview</h1>
           <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>{rangeLabel}</p>
         </div>
         <div style={{ display:"flex",alignItems:"center",gap:6,marginTop:4 }}>
@@ -974,24 +982,24 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
       <div style={{ display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:14,marginBottom:28 }}>
 
         {/* 1. Total Revenue */}
-        <div className="kpi kpi-tooltip" onClick={()=>setActiveKpi('revenue')} style={{ cursor:"pointer" }}>
+        <div className="kpi kpi-tooltip" onClick={()=>setActiveKpi('revenue')} style={{ cursor:"pointer", borderTop:`3px solid ${ACCENT}` }}>
           <span className="tooltip-text">Total revenue invoiced across all jobs in the selected period. Click to see full breakdown.</span>
-          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>Total Revenue</div>
-          <div style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>{$(totalRev)}</div>
+          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>Total Revenue</div>
+          <div style={{ fontFamily:"'Lora',serif",fontSize:28,fontWeight:600,color:DARK,letterSpacing:"-0.01em" }}>{$(totalRev)}</div>
           <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>all jobs billed</div>
         </div>
 
         {/* 2. Total Expenses */}
-        <div className="kpi kpi-tooltip" onClick={()=>setActiveKpi('expenses')} style={{ cursor:"pointer" }}>
+        <div className="kpi kpi-tooltip" onClick={()=>setActiveKpi('expenses')} style={{ cursor:"pointer", borderTop:`3px solid ${AMBER}` }}>
           <span className="tooltip-text">
             {expenseView === "fixed"
               ? `Total Job + Fixed Expenses = Job Costs (${$(totalCost)}) + Fixed Costs (${$(totalOverhead)}). Click to see breakdown.`
               : `Total Job Expenses = direct costs tagged to specific jobs. Click to see breakdown.`}
           </span>
-          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>
+          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>
             {expenseView === "fixed" ? "Total Job + Fixed Expenses" : "Total Job Expenses"}
           </div>
-          <div style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:MID,letterSpacing:"-0.01em" }}>
+          <div style={{ fontFamily:"'Lora',serif",fontSize:28,fontWeight:600,color:MID,letterSpacing:"-0.01em" }}>
             {expenseView === "fixed" ? $(totalCost + totalOverhead) : $(totalCost)}
           </div>
           <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>
@@ -1009,14 +1017,14 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
           const dispMargin  = totalRev > 0 ? ((dispProfit / totalRev) * 100).toFixed(1) : "0.0";
           const profitColor = dispProfit >= 0 ? ACCENT2 : RED;
           return (
-            <div className="kpi hi kpi-tooltip" onClick={()=>setActiveKpi('profit')} style={{ cursor:"pointer" }}>
+            <div className="kpi hi kpi-tooltip" onClick={()=>setActiveKpi('profit')} style={{ cursor:"pointer", borderTop:`3px solid ${ACCENT2}` }}>
               <span className="tooltip-text">
                 {isNet
                   ? `Net Profit = Revenue (${$(totalRev)}) − Job Costs (${$(totalCost)}) − Fixed Costs (${$(totalOverhead)}). Click to see waterfall breakdown.`
                   : `Gross Profit = Revenue (${$(totalRev)}) − Job Costs (${$(totalCost)}). Click to see breakdown.`}
               </span>
               <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10 }}>
-                <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",fontWeight:500 }}>
+                <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",fontWeight:500 }}>
                   {isNet ? "Total Net Profit" : "Total Gross Profit"}
                 </div>
                 <div style={{ display:"flex",border:`1px solid ${BORDER}`,borderRadius:3,overflow:"hidden" }}>
@@ -1025,25 +1033,25 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
                   ))}
                 </div>
               </div>
-              <div style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:profitColor,letterSpacing:"-0.01em" }}>{$(dispProfit)}</div>
+              <div style={{ fontFamily:"'Lora',serif",fontSize:28,fontWeight:600,color:profitColor,letterSpacing:"-0.01em" }}>{$(dispProfit)}</div>
               <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>{dispMargin}% {isNet ? "net" : "gross"} margin</div>
             </div>
           );
         })()}
 
         {/* 4. Jobs Profitable */}
-        <div className="kpi kpi-tooltip" onClick={()=>setActiveKpi('jobs')} style={{ cursor:"pointer" }}>
+        <div className="kpi kpi-tooltip" onClick={()=>setActiveKpi('jobs')} style={{ cursor:"pointer", borderTop:`3px solid ${ACCENT2}` }}>
           <span className="tooltip-text">Number of jobs where revenue exceeded direct job costs. Click to see winners and losers.</span>
-          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>Jobs Profitable</div>
-          <div style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>{winners} of {typeFilteredJobs.length}</div>
+          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>Jobs Profitable</div>
+          <div style={{ fontFamily:"'Lora',serif",fontSize:28,fontWeight:600,color:DARK,letterSpacing:"-0.01em" }}>{winners} of {typeFilteredJobs.length}</div>
           <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>in the green</div>
         </div>
 
         {/* 5. Data Quality Score */}
-        <div className="kpi kpi-tooltip" onClick={()=>setActiveKpi('quality')} style={{ cursor:"pointer" }}>
+        <div className="kpi kpi-tooltip" onClick={()=>setActiveKpi('quality')} style={{ cursor:"pointer", borderTop:`3px solid ${AMBER}` }}>
           <span className="tooltip-text">Includes job-tagged and fixed cost expenses. Click to see what's driving the score.</span>
-          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>Data Quality Score</div>
-          <div style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:dqColor,letterSpacing:"-0.01em" }}>{dataQuality}%</div>
+          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>Data Quality Score</div>
+          <div style={{ fontFamily:"'Lora',serif",fontSize:28,fontWeight:600,color:dqColor,letterSpacing:"-0.01em" }}>{dataQuality}%</div>
           <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>{dqLabel} · {accountedFor}/{totalExpenses} accounted for</div>
         </div>
 
@@ -1053,7 +1061,7 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
         <div className="card" style={{ padding:"22px 26px" }}>
           <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20 }}>
             <div>
-              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:5,fontWeight:500 }}>Profit by Job</div>
+              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:5,fontWeight:500 }}>Profit by Job</div>
               <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>Which jobs made money?</div>
             </div>
             <div style={{ display:"flex",gap:6 }}>
@@ -1096,7 +1104,7 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
         <div className="card" style={{ padding:"22px 26px" }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20 }}>
             <div>
-              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:5,fontWeight:500 }}>Profitability Trend</div>
+              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:5,fontWeight:500 }}>Profitability Trend</div>
               <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>
                 {trendView === "cumulative" ? "Running total profit over time" : "Monthly revenue, costs & profit"}
               </div>
@@ -1354,7 +1362,7 @@ function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, t
 
       {/* Header */}
       <div style={{ marginBottom:28 }}>
-        <h1 style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>Expense Inbox</h1>
+        <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em" }}>Expense Inbox</h1>
         <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>Expenses without a job assigned in QuickBooks. Tag them to keep profit numbers accurate.</p>
       </div>
 
@@ -1376,7 +1384,7 @@ function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, t
           ];
         })().map((k,i) => (
           <div key={i} className="kpi">
-            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:12,fontWeight:500 }}>{k.label}</div>
+            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:12,fontWeight:500 }}>{k.label}</div>
             <div style={{ fontFamily:"'Lora',serif",fontSize:28,fontWeight:500,color:k.color }}>{k.val}</div>
             <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>{k.sub}</div>
           </div>
@@ -1621,7 +1629,7 @@ function JobDetail({ job, onBack, untagged }) {
       <div style={{ display:"flex",alignItems:"center",gap:14,marginBottom: hasSuggestedUntagged || hasAnyUntagged ? 12 : 28 }}>
         <button className="btn" onClick={onBack}>← All Jobs</button>
         <div style={{ flex:1 }}>
-          <h1 style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>{job.name}</h1>
+          <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em" }}>{job.name}</h1>
           <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM,marginTop:3 }}>{job.clientName} · {job.type} · {job.status}</div>
         </div>
         <span className={`chip ${win?"g":"r"}`} style={{ fontSize:13,padding:"7px 18px" }}>
@@ -1652,15 +1660,15 @@ function JobDetail({ job, onBack, untagged }) {
           { label:"Outstanding", val:$(job.outstanding) },
         ].map((k,i) => (
           <div key={i} className="kpi">
-            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>{k.label}</div>
-            <div style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:i===2?(win?ACCENT2:RED):i===4&&job.outstanding>0?AMBER:DARK }}>{k.val}</div>
+            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>{k.label}</div>
+            <div style={{ fontFamily:"'Lora',serif",fontSize:28,fontWeight:600,color:i===2?(win?ACCENT2:RED):i===4&&job.outstanding>0?AMBER:DARK }}>{k.val}</div>
           </div>
         ))}
       </div>
 
       <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:18,marginBottom:24 }}>
         <div className="card" style={{ padding:"22px 26px" }}>
-          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:5,fontWeight:500 }}>Cost Breakdown by Vendor</div>
+          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:5,fontWeight:500 }}>Cost Breakdown by Vendor</div>
           <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,marginBottom:18,fontStyle:"italic" }}>Where did the money go?</div>
           <ResponsiveContainer width="100%" height={200}>
             <PieChart>
@@ -1673,7 +1681,7 @@ function JobDetail({ job, onBack, untagged }) {
           </ResponsiveContainer>
         </div>
         <div className="card" style={{ padding:"22px 26px" }}>
-          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:5,fontWeight:500 }}>Revenue vs Costs</div>
+          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:5,fontWeight:500 }}>Revenue vs Costs</div>
           <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,marginBottom:18,fontStyle:"italic" }}>Side by side comparison</div>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={[{ name:"This Job",revenue:job.revenue,costs:job.costs,profit:job.profit }]} margin={{ top:4,right:4,left:0,bottom:0 }}>
@@ -1788,7 +1796,7 @@ ${JSON.stringify(trend,null,2)}`;
   return (
     <div style={{ display:"flex",flexDirection:"column",height:"calc(100vh - 56px)",padding:"0 36px 28px",background:BG }}>
       <div style={{ paddingTop:28,paddingBottom:18,borderBottom:`1px solid ${BORDER}`,marginBottom:22 }}>
-        <h1 style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:DARK,letterSpacing:"-0.01em",marginBottom:4 }}>AI Business Analyst</h1>
+        <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em",marginBottom:4 }}>AI Business Analyst</h1>
         <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM }}>Ask anything about your jobs, margins, or trends — in plain English.</p>
       </div>
       {messages.length <= 1 && (
@@ -1854,7 +1862,7 @@ function RawData({ jobSummaries, dataSource }) {
   return (
     <div style={{ padding:"32px 36px", background:BG, minHeight:"100vh" }}>
       <div style={{ marginBottom:24 }}>
-        <h1 style={{ fontFamily:"'Lora',serif", fontSize:22, fontWeight:500, color:DARK, letterSpacing:"-0.01em", marginBottom:4 }}>
+        <h1 style={{ fontFamily:"'Lora',serif", fontSize:24, fontWeight:600, color:DARK, letterSpacing:"-0.02em", marginBottom:4 }}>
           Raw Data
         </h1>
         <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:13, color:DIM, marginBottom:18 }}>
@@ -1970,7 +1978,7 @@ function ClientScorecard({ jobSummaries }) {
   return (
     <div style={{ padding:"32px 36px", background:BG, minHeight:"100vh" }}>
       <div style={{ marginBottom:28 }}>
-        <h1 style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>Client Profitability</h1>
+        <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em" }}>Client Profitability</h1>
         <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>Which clients consistently bring your most profitable work?</p>
       </div>
 
@@ -1978,7 +1986,7 @@ function ClientScorecard({ jobSummaries }) {
       {topClient && (
         <div style={{ marginBottom:24,padding:"20px 24px",borderRadius:6,border:`1px solid rgba(92,122,90,0.3)`,background:"rgba(92,122,90,0.04)",display:"flex",alignItems:"center",gap:32 }}>
           <div>
-            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.12em",color:DIM,textTransform:"uppercase",marginBottom:6,fontWeight:500 }}>Top Client by Profit</div>
+            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:6,fontWeight:500 }}>Top Client by Profit</div>
             <div style={{ fontFamily:"'Lora',serif",fontSize:20,fontWeight:500,color:DARK }}>{topClient.name}</div>
           </div>
           {[
@@ -2495,7 +2503,7 @@ function Reports({ jobSummaries }) {
           <div style={{ display:"flex",alignItems:"center",gap:14 }}>
             <button className="btn no-print" onClick={()=>setActiveReport(null)}>← All Reports</button>
             <div>
-              <h1 style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>{report.title}</h1>
+              <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em" }}>{report.title}</h1>
               <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>{report.description}</p>
             </div>
           </div>
@@ -2585,7 +2593,7 @@ function Reports({ jobSummaries }) {
     <div style={{ padding:"32px 36px", background:BG, minHeight:"100vh" }}>
       <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:28 }}>
         <div>
-          <h1 style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>Report Library</h1>
+          <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em" }}>Report Library</h1>
           <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>Pre-built reports — open any report to view, export to PDF, or download as Excel.</p>
         </div>
       </div>
@@ -3072,17 +3080,17 @@ export default function App() {
   const inboxCount = untagged.length;
 
   const TABS = [
-    { key:"dashboard", label:"Dashboard" },
-    ...(clientType === "quickbooks" ? [{ key:"inbox", label:"Expense Inbox" }] : []),
-    { key:"detail",    label:"Job Detail" },
-    { key:"clients",   label:"Clients" },
-    { key:"reports",   label:"Reports" },
-    { key:"chat",      label:"AI Analyst" },
-    ...(clientType === "quickbooks" ? [{ key:"raw", label:"Raw Data" }] : []),
+    { key:"dashboard", label:"Dashboard",    icon:"⊡" },
+    ...(clientType === "quickbooks" ? [{ key:"inbox", label:"Expense Inbox", icon:"✉" }] : []),
+    { key:"detail",    label:"Job Detail",   icon:"◈" },
+    { key:"clients",   label:"Clients",      icon:"◉" },
+    { key:"reports",   label:"Reports",      icon:"≡" },
+    { key:"chat",      label:"AI Analyst",   icon:"◆" },
+    ...(clientType === "quickbooks" ? [{ key:"raw", label:"Raw Data",     icon:"⊞" }] : []),
   ];
 
   return (
-    <div style={{ fontFamily:"'DM Sans',sans-serif", background:BG, minHeight:"100vh", color:DARK, display:"flex", flexDirection:"column" }}>
+    <div style={{ fontFamily:"'DM Sans',sans-serif", background:BG, minHeight:"100vh", color:DARK, display:"flex", flexDirection:"row" }}>
       <style>{css}</style>
 
       {/* ── Tutorial modal ── */}
@@ -3112,59 +3120,61 @@ export default function App() {
         </div>
       )}
 
-      {/* ── Header ── */}
-      <div style={{ borderBottom:`1px solid ${BORDER}`, background:CARD, position:"sticky", top:0, zIndex:100, boxShadow:"0 1px 4px rgba(44,36,22,0.06)" }}>
-        <div style={{ padding:"0 36px", display:"flex", alignItems:"center", gap:0 }}>
-          <div style={{ marginRight:36, paddingTop:14, paddingBottom:14, borderRight:`1px solid ${BORDER}`, paddingRight:36 }}>
-            <div style={{ fontFamily:"'Lora',serif", fontSize:18, fontWeight:500, color:DARK, letterSpacing:"-0.01em" }}>Canopy</div>
-            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginTop:1 }}>Business Intelligence</div>
-          </div>
+      {/* ── Sidebar ── */}
+      <div style={{ width:220, flexShrink:0, background:SIDEBAR_BG, height:"100vh", position:"sticky", top:0, display:"flex", flexDirection:"column", overflowY:"auto", zIndex:100 }}>
+        {/* Logo */}
+        <div style={{ padding:"24px 20px 20px", borderBottom:"1px solid rgba(255,255,255,0.07)" }}>
+          <div style={{ fontFamily:"'Lora',serif", fontSize:18, fontWeight:500, color:"#F5EFE3", letterSpacing:"-0.01em" }}>Canopy</div>
+          <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, letterSpacing:"0.1em", color:SIDEBAR_DIM, textTransform:"uppercase", marginTop:2 }}>Business Intelligence</div>
+        </div>
+        {/* Nav items */}
+        <nav style={{ flex:1, padding:"12px 0" }}>
           {TABS.map(t => (
-            <div key={t.key} className={`nav-tab${tab===t.key?" active":""}`} onClick={()=>setTab(t.key)}>
-              {t.label}
+            <div key={t.key} className={`si${tab===t.key?" active":""}`} onClick={()=>setTab(t.key)}
+              style={{ color: tab===t.key ? "#F5EFE3" : SIDEBAR_TEXT }}>
+              <span style={{ fontSize:15, opacity:0.75, flexShrink:0 }}>{t.icon}</span>
+              <span style={{ flex:1 }}>{t.label}</span>
               {t.key==="inbox" && inboxCount > 0 && <span className="badge">{inboxCount}</span>}
               {t.key==="inbox" && inboxCount === 0 && tagged.length > 0 && <span className="badge done">✓</span>}
-              {t.key==="detail" && selectedJob && <span style={{ marginLeft:6, fontSize:10, color:DIM }}>· {selectedJob.name.split(" ")[0]}</span>}
-              {t.key==="chat" && <span style={{ marginLeft:6, fontSize:9, padding:"2px 7px", borderRadius:3, background:"rgba(92,122,90,0.12)", color:ACCENT2, fontWeight:500 }}>AI</span>}
+              {t.key==="detail" && selectedJob && <span style={{ fontSize:10, color:SIDEBAR_DIM }}>· {selectedJob.name.split(" ")[0]}</span>}
+              {t.key==="chat" && <span style={{ fontSize:9, padding:"2px 6px", borderRadius:3, background:"rgba(92,122,90,0.25)", color:ACCENT2, fontWeight:500 }}>AI</span>}
             </div>
           ))}
-          <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:12 }}>
-            {/* QB connection status indicator */}
-            {clientType === "quickbooks" && (
-              <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:10, fontFamily:"'DM Sans',sans-serif" }}>
-                <div style={{ width:6, height:6, borderRadius:"50%", background: qbConnected ? ACCENT2 : AMBER }}/>
-                <span style={{ color: qbConnected ? ACCENT2 : AMBER }}>
-                  {syncing ? "Syncing data…" : qbConnected ? "QuickBooks connected" : "QuickBooks not connected"}
-                </span>
-                {qbConnected && !syncing && dataSource === 'live' && (
-                  <span style={{ color:DIM, fontSize:9 }}>· live data</span>
-                )}
-                {qbConnected && !syncing && dataSource === 'mock' && (
-                  <span style={{ color:DIM, fontSize:9 }}>· demo data</span>
-                )}
-                {qbConnected && !syncing && (
-                  <a
-                    href={`/api/qb-disconnect?userId=${session?.user?.id}&redirect=true`}
-                    style={{ color:DIM, fontSize:9, marginLeft:2, textDecoration:"underline", cursor:"pointer" }}
-                    title="Disconnect QuickBooks"
-                  >
-                    disconnect
-                  </a>
-                )}
+        </nav>
+        {/* QB status */}
+        {clientType === "quickbooks" && (
+          <div style={{ padding:"14px 20px", borderTop:"1px solid rgba(255,255,255,0.07)" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+              <div style={{ width:6, height:6, borderRadius:"50%", background: qbConnected ? ACCENT2 : AMBER, flexShrink:0 }}/>
+              <span style={{ fontSize:11, fontFamily:"'DM Sans',sans-serif", color: qbConnected ? ACCENT2 : AMBER }}>
+                {syncing ? "Syncing…" : qbConnected ? "QuickBooks" : "Not connected"}
+              </span>
+            </div>
+            {qbConnected && !syncing && (
+              <div style={{ fontSize:10, color:SIDEBAR_DIM, fontFamily:"'DM Sans',sans-serif", marginTop:4, paddingLeft:13 }}>
+                {dataSource === 'live' ? "Live data" : "Demo data"}
+                {" · "}
+                <a href={`/api/qb-disconnect?userId=${session?.user?.id}&redirect=true`}
+                  style={{ color:SIDEBAR_DIM, textDecoration:"underline", cursor:"pointer" }}>disconnect</a>
               </div>
             )}
-            <div style={{ display:"flex", alignItems:"center", gap:10, paddingLeft:12, borderLeft:`1px solid ${BORDER}` }}>
-              {/* ? Tutorial button */}
-              <button className="help-btn" onClick={() => setShowTutorial(true)} title="Open tutorial">?</button>
-              <div style={{ fontSize:11, color:DIM, fontFamily:"'DM Sans',sans-serif", display:"flex", alignItems:"center", gap:6 }}>
-                <div style={{ width:6, height:6, borderRadius:"50%", background:ACCENT2, opacity:0.7 }}/>
-                {contractorName}
-              </div>
-              <button className="btn" onClick={handleSignOut} style={{ fontSize:11, padding:"5px 12px", color:DIM }}>Sign Out</button>
-            </div>
           </div>
+        )}
+        {/* User + controls */}
+        <div style={{ padding:"14px 20px", borderTop:"1px solid rgba(255,255,255,0.07)", display:"flex", alignItems:"center", gap:8 }}>
+          <div style={{ width:28, height:28, borderRadius:"50%", background:"rgba(245,239,227,0.12)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:600, color:"#F5EFE3", flexShrink:0 }}>
+            {(contractorName||"U")[0].toUpperCase()}
+          </div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:11, fontFamily:"'DM Sans',sans-serif", color:"#F5EFE3", fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{contractorName}</div>
+          </div>
+          <button className="help-btn" onClick={()=>setShowTutorial(true)} title="Tutorial" style={{ width:26, height:26, fontSize:11, flexShrink:0, background:"rgba(255,255,255,0.07)", borderColor:"rgba(255,255,255,0.12)", color:SIDEBAR_TEXT }}>?</button>
+          <button onClick={handleSignOut} style={{ background:"none", border:"none", cursor:"pointer", fontSize:10, color:SIDEBAR_DIM, fontFamily:"'DM Sans',sans-serif", padding:0, flexShrink:0 }}>Out</button>
         </div>
       </div>
+
+      {/* ── Right content wrapper ── */}
+      <div style={{ flex:1, display:"flex", flexDirection:"column", minWidth:0 }}>
 
       {/* ── QB error banner ── */}
       {qbError && (
@@ -3206,7 +3216,7 @@ export default function App() {
       </div>
 
       {/* ── Persistent footer disclaimer ── */}
-      <div style={{ background:BG2, borderTop:`1px solid ${BORDER}`, padding:"10px 36px", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8 }}>
+      <div style={{ background:BG2, borderTop:`1px solid ${BORDER}`, padding:"10px 32px", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8 }}>
         <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, lineHeight:1.6 }}>
           <span style={{ fontWeight:500, color:MID }}>Data disclaimer: </span>
           All figures are sourced directly from QuickBooks Online. Canopy does not verify or audit source data — accuracy depends on the completeness of your QuickBooks records.
@@ -3218,6 +3228,7 @@ export default function App() {
         </div>
       </div>
 
+      </div>{/* ── end right content wrapper ── */}
     </div>
   );
 }
