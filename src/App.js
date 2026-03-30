@@ -842,6 +842,15 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
     return (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
   }, [filteredTrend]);
 
+  // Period comparison — most recent month vs the one before it
+  const periodComparison = useMemo(() => {
+    if (filteredTrend.length < 2) return null;
+    const cur  = filteredTrend[filteredTrend.length - 1];
+    const prev = filteredTrend[filteredTrend.length - 2];
+    const pct  = (val, base) => base !== 0 ? Math.round(((val - base) / Math.abs(base)) * 100) : null;
+    return { profitPct: pct(cur.profit, prev.profit), revPct: pct(cur.revenue, prev.revenue), prevMonth: prev.month };
+  }, [filteredTrend]);
+
   // Job type filter
   const allTypes = ["all", ...Array.from(new Set(jobSummaries.map(j => j.type).filter(Boolean))).sort()];
   const typeFilteredJobs = typeFilter === "all" ? filteredJobs : filteredJobs.filter(j => j.type === typeFilter);
@@ -893,6 +902,12 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
     return cutoff ? new Date(o.date) >= cutoff : true;
   });
   const totalOverhead = overheadInRange.reduce((s, o) => s + (o.amount || 0), 0);
+
+  // Hero display values — profit, margin, color (depends on expenseView + totalOverhead)
+  const heroIsNet  = expenseView === "fixed";
+  const heroProfit = heroIsNet ? totalProfit - totalOverhead : totalProfit;
+  const heroMargin = totalRev > 0 ? ((heroProfit / totalRev) * 100).toFixed(1) : "0.0";
+  const heroColor  = heroProfit >= 0 ? ACCENT2 : RED;
 
   // Mid-job margin alerts
   const atRiskJobs = typeFilteredJobs.filter(j =>
@@ -995,75 +1010,92 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
         />
       )}
 
-      {/* ── P&L Summary Strip ── */}
-      <div style={{ display:"flex", background:CARD, border:`1px solid ${BORDER}`, borderRadius:8, marginBottom:28, overflow:"hidden", boxShadow:"0 2px 10px rgba(44,36,22,0.08)" }}>
+      {/* ── Asymmetric Hero Strip ── */}
+      <div style={{ display:"flex", background:CARD, border:`1px solid ${BORDER}`, borderRadius:8, marginBottom:28, overflow:"hidden", boxShadow:"0 2px 10px rgba(44,36,22,0.08)", minHeight:160 }}>
 
-        {/* Revenue */}
-        <div className="pls" onClick={()=>setActiveKpi('revenue')}
-          style={{ flex:1, padding:"24px 28px", cursor:"pointer", borderRight:`1px solid ${BORDER}`, borderTop:`3px solid ${ACCENT}` }}>
-          <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:10 }}>Revenue</div>
-          <div style={{ fontFamily:"'Lora',serif", fontSize:30, fontWeight:600, color:DARK, letterSpacing:"-0.02em", marginBottom:6 }}>{$(totalRev)}</div>
-          <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DIM }}>{typeFilteredJobs.length} job{typeFilteredJobs.length!==1?"s":""} billed</div>
-        </div>
-
-        {/* Expenses */}
-        <div className="pls" onClick={()=>setActiveKpi('expenses')}
-          style={{ flex:1, padding:"24px 28px", cursor:"pointer", borderRight:`1px solid ${BORDER}`, borderTop:`3px solid ${AMBER}` }}>
-          <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:10 }}>
-            {expenseView === "fixed" ? "Job + Fixed Expenses" : "Job Expenses"}
-          </div>
-          <div style={{ fontFamily:"'Lora',serif", fontSize:30, fontWeight:600, color:MID, letterSpacing:"-0.02em", marginBottom:6 }}>
-            {expenseView === "fixed" ? $(totalCost + totalOverhead) : $(totalCost)}
-          </div>
-          <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DIM }}>
-            {expenseView === "fixed"
-              ? `job costs + ${$(totalOverhead)} fixed`
-              : `${typeFilteredJobs.reduce((s,j)=>s+j.purchases.length,0)} job-tagged expenses`}
-          </div>
-        </div>
-
-        {/* Gross / Net Profit */}
-        {(() => {
-          const isNet      = expenseView === "fixed";
-          const netProfit  = totalProfit - totalOverhead;
-          const dispProfit = isNet ? netProfit : totalProfit;
-          const dispMargin = totalRev > 0 ? ((dispProfit / totalRev) * 100).toFixed(1) : "0.0";
-          const pColor     = dispProfit >= 0 ? ACCENT2 : RED;
-          return (
-            <div className="pls" onClick={()=>setActiveKpi('profit')}
-              style={{ flex:1.1, padding:"24px 28px", cursor:"pointer", borderRight:`1px solid ${BORDER}`, borderTop:`3px solid ${ACCENT2}` }}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-                <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase" }}>
-                  {isNet ? "Net Profit" : "Gross Profit"}
-                </div>
-                <div style={{ display:"flex", border:`1px solid ${BORDER}`, borderRadius:3, overflow:"hidden" }} onClick={e=>e.stopPropagation()}>
-                  {[["job","Gross"],["fixed","Net"]].map(([k,l],i) => (
-                    <button key={k} onClick={e=>{e.stopPropagation();setExpenseView(k);}}
-                      style={{ cursor:"pointer", padding:"2px 9px", fontSize:9, fontWeight:600, fontFamily:"'DM Sans',sans-serif", border:"none", borderRight:i===0?`1px solid ${BORDER}`:"none", background:expenseView===k?ACCENT2:CARD, color:expenseView===k?CARD:DIM, transition:"all 0.15s" }}>{l}</button>
-                  ))}
-                </div>
-              </div>
-              <div style={{ fontFamily:"'Lora',serif", fontSize:30, fontWeight:600, color:pColor, letterSpacing:"-0.02em", marginBottom:6 }}>{$(dispProfit)}</div>
-              <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DIM }}>{dispMargin}% {isNet ? "net" : "gross"} margin</div>
+        {/* LEFT — Profit hero (largest section) */}
+        <div className="pls" onClick={()=>setActiveKpi('profit')}
+          style={{ flex:1.5, padding:"28px 32px", cursor:"pointer", borderRight:`1px solid ${BORDER}`, borderTop:`3px solid ${heroColor}`, display:"flex", flexDirection:"column", justifyContent:"space-between" }}>
+          {/* Label + toggle */}
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase" }}>
+              {heroIsNet ? "Net Profit" : "Gross Profit"}
             </div>
-          );
-        })()}
+            <div style={{ display:"flex", border:`1px solid ${BORDER}`, borderRadius:3, overflow:"hidden" }} onClick={e=>e.stopPropagation()}>
+              {[["job","Gross"],["fixed","Net"]].map(([k,l],i) => (
+                <button key={k} onClick={e=>{e.stopPropagation();setExpenseView(k);}}
+                  style={{ cursor:"pointer", padding:"2px 10px", fontSize:9, fontWeight:600, fontFamily:"'DM Sans',sans-serif", border:"none", borderRight:i===0?`1px solid ${BORDER}`:"none", background:expenseView===k?ACCENT2:CARD, color:expenseView===k?CARD:DIM, transition:"all 0.15s" }}>{l}</button>
+              ))}
+            </div>
+          </div>
+          {/* Big number */}
+          <div style={{ fontFamily:"'Lora',serif", fontSize:44, fontWeight:600, color:heroColor, letterSpacing:"-0.03em", lineHeight:1.05, margin:"10px 0 6px" }}>{$(heroProfit)}</div>
+          {/* Delta or margin fallback */}
+          {periodComparison?.profitPct != null ? (
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color: periodComparison.profitPct >= 0 ? ACCENT2 : RED, display:"flex", alignItems:"center", gap:5 }}>
+              <span style={{ fontSize:14 }}>{periodComparison.profitPct >= 0 ? "↑" : "↓"}</span>
+              {Math.abs(periodComparison.profitPct)}% vs {periodComparison.prevMonth}
+              <span style={{ color:DIM, fontSize:10, marginLeft:4 }}>· {heroMargin}% {heroIsNet?"net":"gross"} margin</span>
+            </div>
+          ) : (
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:DIM }}>{heroMargin}% {heroIsNet ? "net" : "gross"} margin</div>
+          )}
+        </div>
 
-        {/* Jobs Profitable + Data Quality — stacked right panel */}
+        {/* CENTER — Revenue + Expenses stacked */}
+        <div style={{ flex:0.9, display:"flex", flexDirection:"column", borderRight:`1px solid ${BORDER}` }}>
+          <div className="pls" onClick={()=>setActiveKpi('revenue')}
+            style={{ flex:1, padding:"22px 24px", cursor:"pointer", borderBottom:`1px solid ${BORDER}`, borderTop:`3px solid ${ACCENT}` }}>
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:6 }}>Revenue</div>
+            <div style={{ display:"flex", alignItems:"baseline", gap:10 }}>
+              <span style={{ fontFamily:"'Lora',serif", fontSize:22, fontWeight:600, color:DARK }}>{$(totalRev)}</span>
+              {periodComparison?.revPct != null && (
+                <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color: periodComparison.revPct >= 0 ? ACCENT2 : RED }}>
+                  {periodComparison.revPct >= 0 ? "↑" : "↓"} {Math.abs(periodComparison.revPct)}%
+                </span>
+              )}
+            </div>
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, marginTop:4 }}>{typeFilteredJobs.length} job{typeFilteredJobs.length!==1?"s":""} billed</div>
+          </div>
+          <div className="pls" onClick={()=>setActiveKpi('expenses')}
+            style={{ flex:1, padding:"22px 24px", cursor:"pointer", borderTop:`3px solid ${AMBER}` }}>
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:6 }}>
+              {heroIsNet ? "Job + Fixed Expenses" : "Job Expenses"}
+            </div>
+            <div style={{ fontFamily:"'Lora',serif", fontSize:22, fontWeight:600, color:MID }}>
+              {heroIsNet ? $(totalCost + totalOverhead) : $(totalCost)}
+            </div>
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, marginTop:4 }}>
+              {heroIsNet ? `${$(totalCost)} job + ${$(totalOverhead)} fixed` : `${typeFilteredJobs.reduce((s,j)=>s+j.purchases.length,0)} job-tagged`}
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT — Sparkline + secondary stats */}
         <div style={{ flex:0.8, display:"flex", flexDirection:"column" }}>
+          {/* Mini sparkline */}
+          <div style={{ flex:1, padding:"16px 18px 8px", borderBottom:`1px solid ${BORDER}` }}>
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:6 }}>Profit Trend</div>
+            {filteredTrend.length > 1 ? (
+              <ResponsiveContainer width="100%" height={62}>
+                <LineChart data={filteredTrend} margin={{ top:4, right:4, left:4, bottom:4 }}>
+                  <Line type="monotone" dataKey="profit" stroke={heroColor} strokeWidth={2} dot={false}/>
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div style={{ height:62, display:"flex", alignItems:"center", fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontStyle:"italic" }}>not enough data</div>
+            )}
+          </div>
+          {/* Secondary stats */}
           <div className="pls" onClick={()=>setActiveKpi('jobs')}
-            style={{ flex:1, padding:"18px 22px", cursor:"pointer", borderBottom:`1px solid ${BORDER}`, borderTop:`3px solid ${ACCENT2}` }}>
-            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:8 }}>Profitable</div>
-            <div style={{ fontFamily:"'Lora',serif", fontSize:24, fontWeight:600, color:DARK }}>
-              {winners}<span style={{ fontSize:14, fontWeight:400, color:DIM, marginLeft:5 }}>of {typeFilteredJobs.length}</span>
-            </div>
-            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DIM, marginTop:4 }}>jobs in the green</div>
+            style={{ padding:"12px 18px", cursor:"pointer", borderBottom:`1px solid ${BORDER}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:600, color:DIM }}>Profitable</div>
+            <div style={{ fontFamily:"'DM Mono',monospace", fontSize:12, color:DARK, fontWeight:500 }}>{winners} / {typeFilteredJobs.length}</div>
           </div>
           <div className="pls" onClick={()=>setActiveKpi('quality')}
-            style={{ flex:1, padding:"18px 22px", cursor:"pointer", borderTop:`3px solid ${AMBER}` }}>
-            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:8 }}>Data Quality</div>
-            <div style={{ fontFamily:"'Lora',serif", fontSize:24, fontWeight:600, color:dqColor }}>{dataQuality}%</div>
-            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DIM, marginTop:4 }}>{accountedFor} of {totalExpenses} tagged</div>
+            style={{ padding:"12px 18px", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:600, color:DIM }}>Data Quality</div>
+            <div style={{ fontFamily:"'DM Mono',monospace", fontSize:12, color:dqColor, fontWeight:500 }}>{dataQuality}%</div>
           </div>
         </div>
 
