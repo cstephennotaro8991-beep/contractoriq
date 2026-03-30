@@ -1092,12 +1092,26 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
                   }}
                   onMouseEnter={e=>e.currentTarget.style.opacity="0.75"}
                   onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                  <div style={{ fontFamily:"'DM Mono',monospace", fontSize:18, fontWeight:700, color:badgeColor, lineHeight:1 }}>
-                    {dataQuality}%
+                  {/* Top: count (split-number) or clean state */}
+                  {hasIssues ? (
+                    <>
+                      <div style={{ fontFamily:"'DM Mono',monospace", fontSize:22, fontWeight:700, color:badgeColor, lineHeight:1 }}>
+                        {untaggedActive.length}
+                      </div>
+                      <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:700, letterSpacing:"0.06em", color:badgeColor, textTransform:"uppercase", marginTop:2 }}>
+                        untagged
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:700, color:badgeColor, letterSpacing:"0.04em" }}>
+                      ✓ All tagged
+                    </div>
+                  )}
+                  {/* Middle: DQ score */}
+                  <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:600, color:badgeColor, marginTop:6 }}>
+                    {hasIssues ? "⚠" : "✓"} Quality = {dataQuality}%
                   </div>
-                  <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:700, letterSpacing:"0.06em", color:badgeColor, textTransform:"uppercase", marginTop:3 }}>
-                    {hasIssues ? `⚠ ${untaggedActive.length} untagged` : "✓ All tagged"}
-                  </div>
+                  {/* Bottom: CTA */}
                   <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, color:badgeColor, opacity:0.7, marginTop:4 }}>
                     View quality →
                   </div>
