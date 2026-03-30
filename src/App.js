@@ -1024,13 +1024,13 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
           style={{ flex:1.5, padding:"28px 32px", cursor:"pointer", borderRight:`1px solid ${BORDER}`, borderTop:`3px solid ${heroColor}`, display:"flex", flexDirection:"column", justifyContent:"space-between" }}>
           {/* Label + toggle */}
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase" }}>
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:13, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase" }}>
               {heroIsNet ? "Net Profit" : "Gross Profit"}
             </div>
             <div style={{ display:"flex", border:`1px solid ${BORDER}`, borderRadius:3, overflow:"hidden" }} onClick={e=>e.stopPropagation()}>
               {[["job","Gross"],["fixed","Net"]].map(([k,l],i) => (
                 <button key={k} onClick={e=>{e.stopPropagation();setExpenseView(k);}}
-                  style={{ cursor:"pointer", padding:"2px 10px", fontSize:9, fontWeight:600, fontFamily:"'DM Sans',sans-serif", border:"none", borderRight:i===0?`1px solid ${BORDER}`:"none", background:expenseView===k?ACCENT2:CARD, color:expenseView===k?CARD:DIM, transition:"all 0.15s" }}>{l}</button>
+                  style={{ cursor:"pointer", padding:"4px 12px", fontSize:11, fontWeight:600, fontFamily:"'DM Sans',sans-serif", border:"none", borderRight:i===0?`1px solid ${BORDER}`:"none", background:expenseView===k?ACCENT2:CARD, color:expenseView===k?CARD:DIM, transition:"all 0.15s" }}>{l}</button>
               ))}
             </div>
           </div>
