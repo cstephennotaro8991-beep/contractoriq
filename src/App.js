@@ -768,6 +768,7 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
   const [trendView, setTrendView]     = useState("cumulative");
   const [expenseView, setExpenseView] = useState("job");
   const [activeKpi, setActiveKpi]     = useState(null); // 'revenue' | 'expenses' | 'profit' | 'jobs' | 'quality'
+  const [heroPanel, setHeroPanel]     = useState("best"); // 'best' | 'worst' | 'recv'
 
   // Build monthly trend dynamically from live job summaries
   const dynamicTrend = useMemo(() => {
@@ -880,11 +881,16 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
   const totalRev    = typeFilteredJobs.reduce((s,j) => s + j.revenue, 0);
   const totalCost   = typeFilteredJobs.reduce((s,j) => s + j.costs, 0);
   const totalProfit = totalRev - totalCost;
-  const winners     = typeFilteredJobs.filter(j => j.profit > 0).length;
   const barData     = sorted.map(j => ({ name: j.name, fullName:j.name, profit:j.profit, margin:parseFloat(j.marginPct), revenue:j.revenue }));
   const barMetric   = sort === "margin" ? "margin" : sort === "revenue" ? "revenue" : "profit";
   const barFormatter= sort === "margin" ? (v => `${v}%`) : $k;
   const barSubtitle = sort === "margin" ? "Jobs ranked by gross margin" : sort === "revenue" ? "Jobs ranked by revenue" : "Which jobs made money?";
+
+  // Hero panel — best/worst jobs, outstanding receivables
+  const bestJobs        = [...typeFilteredJobs].sort((a,b) => b.profit - a.profit).slice(0, 3);
+  const worstJobs       = [...typeFilteredJobs].sort((a,b) => a.profit - b.profit).slice(0, 3);
+  const outstandingJobs = typeFilteredJobs.filter(j => j.outstanding > 0).sort((a,b) => b.outstanding - a.outstanding);
+  const totalOutstanding = outstandingJobs.reduce((s,j) => s + j.outstanding, 0);
 
   // Data Quality Score — tagged + overhead both count as accounted for
   const totalTaggedExpenses   = jobSummaries.reduce((s,j) => s + j.purchases.length, 0);
@@ -1046,9 +1052,9 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
         <div style={{ flex:0.9, display:"flex", flexDirection:"column", borderRight:`1px solid ${BORDER}` }}>
           <div className="pls" onClick={()=>setActiveKpi('revenue')}
             style={{ flex:1, padding:"22px 24px", cursor:"pointer", borderBottom:`1px solid ${BORDER}`, borderTop:`3px solid ${ACCENT}` }}>
-            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:6 }}>Revenue</div>
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:6 }}>Revenue</div>
             <div style={{ display:"flex", alignItems:"baseline", gap:10 }}>
-              <span style={{ fontFamily:"'Lora',serif", fontSize:22, fontWeight:600, color:DARK }}>{$(totalRev)}</span>
+              <span style={{ fontFamily:"'Lora',serif", fontSize:28, fontWeight:600, color:DARK }}>{$(totalRev)}</span>
               {periodComparison?.revPct != null && (
                 <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color: periodComparison.revPct >= 0 ? ACCENT2 : RED }}>
                   {periodComparison.revPct >= 0 ? "↑" : "↓"} {Math.abs(periodComparison.revPct)}%
@@ -1059,43 +1065,108 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
           </div>
           <div className="pls" onClick={()=>setActiveKpi('expenses')}
             style={{ flex:1, padding:"22px 24px", cursor:"pointer", borderTop:`3px solid ${AMBER}` }}>
-            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:6 }}>
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:6 }}>
               {heroIsNet ? "Job + Fixed Expenses" : "Job Expenses"}
             </div>
-            <div style={{ fontFamily:"'Lora',serif", fontSize:22, fontWeight:600, color:MID }}>
+            <div style={{ fontFamily:"'Lora',serif", fontSize:28, fontWeight:600, color:MID }}>
               {heroIsNet ? $(totalCost + totalOverhead) : $(totalCost)}
             </div>
             <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, marginTop:4 }}>
               {heroIsNet ? `${$(totalCost)} job + ${$(totalOverhead)} fixed` : `${typeFilteredJobs.reduce((s,j)=>s+j.purchases.length,0)} job-tagged`}
             </div>
+            {(() => {
+              const untaggedActive = untagged.filter(u => u.status !== 'dismissed');
+              return (
+                <div style={{ marginTop:8, fontFamily:"'DM Sans',sans-serif", fontSize:10, color: dqColor, fontWeight:500 }}>
+                  {untaggedActive.length > 0
+                    ? `⚠ ${untaggedActive.length} untagged · ${dataQuality}% quality`
+                    : `✓ All expenses tagged · ${dataQuality}%`}
+                </div>
+              );
+            })()}
           </div>
         </div>
 
-        {/* RIGHT — Sparkline + secondary stats */}
+        {/* RIGHT — Toggleable panel: Best / Worst / Receivables */}
         <div style={{ flex:0.8, display:"flex", flexDirection:"column" }}>
-          {/* Mini sparkline */}
-          <div style={{ flex:1, padding:"16px 18px 8px", borderBottom:`1px solid ${BORDER}` }}>
-            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:6 }}>Profit Trend</div>
-            {filteredTrend.length > 1 ? (
-              <ResponsiveContainer width="100%" height={62}>
-                <LineChart data={filteredTrend} margin={{ top:4, right:4, left:4, bottom:4 }}>
-                  <Line type="monotone" dataKey="profit" stroke={heroColor} strokeWidth={2} dot={false}/>
-                </LineChart>
-              </ResponsiveContainer>
-            ) : (
-              <div style={{ height:62, display:"flex", alignItems:"center", fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontStyle:"italic" }}>not enough data</div>
+          {/* Toggle buttons */}
+          <div style={{ padding:"14px 16px 10px", borderBottom:`1px solid ${BORDER}`, display:"flex", gap:6 }}>
+            {[["best","Best Jobs"],["worst","Worst Jobs"],["recv","Receivables"]].map(([key, label]) => (
+              <button key={key}
+                onClick={() => setHeroPanel(key)}
+                style={{
+                  flex:1, padding:"5px 0", border:`1px solid ${heroPanel===key ? ACCENT2 : BORDER}`,
+                  borderRadius:3, background: heroPanel===key ? `${ACCENT2}18` : "transparent",
+                  color: heroPanel===key ? ACCENT2 : DIM,
+                  fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:600,
+                  cursor:"pointer", letterSpacing:"0.03em", transition:"all 0.15s"
+                }}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {/* Panel content */}
+          <div style={{ flex:1, padding:"14px 16px", overflowY:"auto" }}>
+            {heroPanel === "best" && (
+              <>
+                <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:10 }}>Top performers</div>
+                {bestJobs.length === 0
+                  ? <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DIM, fontStyle:"italic" }}>No jobs in period</div>
+                  : bestJobs.map((j, i) => (
+                    <div key={j.id || i} onClick={() => onJobClick && onJobClick(j)}
+                      style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 0",
+                        borderBottom: i < bestJobs.length - 1 ? `1px solid ${BORDER}` : "none", cursor: onJobClick ? "pointer" : "default" }}>
+                      <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DARK, fontWeight:500,
+                        maxWidth:"60%", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}
+                        title={j.name}>{j.name}</div>
+                      <div style={{ fontFamily:"'DM Mono',monospace", fontSize:11, color:j.profit >= 0 ? ACCENT2 : RED, fontWeight:600 }}>
+                        {j.profit >= 0 ? "+" : ""}{$k(j.profit)}
+                      </div>
+                    </div>
+                  ))}
+              </>
             )}
-          </div>
-          {/* Secondary stats */}
-          <div className="pls" onClick={()=>setActiveKpi('jobs')}
-            style={{ padding:"12px 18px", cursor:"pointer", borderBottom:`1px solid ${BORDER}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:600, color:DIM }}>Profitable</div>
-            <div style={{ fontFamily:"'DM Mono',monospace", fontSize:12, color:DARK, fontWeight:500 }}>{winners} / {typeFilteredJobs.length}</div>
-          </div>
-          <div className="pls" onClick={()=>setActiveKpi('quality')}
-            style={{ padding:"12px 18px", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:600, color:DIM }}>Data Quality</div>
-            <div style={{ fontFamily:"'DM Mono',monospace", fontSize:12, color:dqColor, fontWeight:500 }}>{dataQuality}%</div>
+            {heroPanel === "worst" && (
+              <>
+                <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:10 }}>Needs attention</div>
+                {worstJobs.length === 0
+                  ? <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DIM, fontStyle:"italic" }}>No jobs in period</div>
+                  : worstJobs.map((j, i) => (
+                    <div key={j.id || i} onClick={() => onJobClick && onJobClick(j)}
+                      style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 0",
+                        borderBottom: i < worstJobs.length - 1 ? `1px solid ${BORDER}` : "none", cursor: onJobClick ? "pointer" : "default" }}>
+                      <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DARK, fontWeight:500,
+                        maxWidth:"60%", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}
+                        title={j.name}>{j.name}</div>
+                      <div style={{ fontFamily:"'DM Mono',monospace", fontSize:11, color:j.profit >= 0 ? ACCENT2 : RED, fontWeight:600 }}>
+                        {j.profit >= 0 ? "+" : ""}{$k(j.profit)}
+                      </div>
+                    </div>
+                  ))}
+              </>
+            )}
+            {heroPanel === "recv" && (
+              <>
+                <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:6 }}>Outstanding</div>
+                {outstandingJobs.length === 0 ? (
+                  <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:ACCENT2, fontWeight:500 }}>✓ All invoices paid</div>
+                ) : (
+                  <>
+                    <div style={{ fontFamily:"'Lora',serif", fontSize:20, fontWeight:600, color:AMBER, marginBottom:10 }}>{$(totalOutstanding)}</div>
+                    {outstandingJobs.map((j, i) => (
+                      <div key={j.id || i} onClick={() => onJobClick && onJobClick(j)}
+                        style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"7px 0",
+                          borderBottom: i < outstandingJobs.length - 1 ? `1px solid ${BORDER}` : "none", cursor: onJobClick ? "pointer" : "default" }}>
+                        <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DARK, fontWeight:500,
+                          maxWidth:"60%", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}
+                          title={j.name}>{j.name}</div>
+                        <div style={{ fontFamily:"'DM Mono',monospace", fontSize:11, color:AMBER, fontWeight:600 }}>{$(j.outstanding)}</div>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </>
+            )}
           </div>
         </div>
 
