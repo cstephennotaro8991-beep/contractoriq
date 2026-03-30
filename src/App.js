@@ -1077,10 +1077,12 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
             {(() => {
               const untaggedActive = untagged.filter(u => u.status !== 'dismissed');
               return (
-                <div style={{ marginTop:8, fontFamily:"'DM Sans',sans-serif", fontSize:10, color: dqColor, fontWeight:500 }}>
+                <div onClick={e => { e.stopPropagation(); setActiveKpi('quality'); }}
+                  style={{ marginTop:8, display:"inline-flex", alignItems:"center", gap:5, fontFamily:"'DM Sans',sans-serif", fontSize:10, color: dqColor, fontWeight:500, cursor:"pointer" }}>
                   {untaggedActive.length > 0
                     ? `⚠ ${untaggedActive.length} untagged · ${dataQuality}% quality`
                     : `✓ All expenses tagged · ${dataQuality}%`}
+                  <span style={{ fontSize:9, opacity:0.7 }}>↗</span>
                 </div>
               );
             })()}
