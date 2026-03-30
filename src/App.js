@@ -273,7 +273,7 @@ const css = `
   .trow:hover { background:${BG2}; }
   .tcell { padding:14px 18px;font-size:13px;display:flex;align-items:center;font-family:'DM Sans',sans-serif; }
   .thead { display:grid;background:${BG2};border-bottom:1px solid ${BORDER}; }
-  .th { padding:10px 18px;font-size:10px;letter-spacing:0.1em;color:${DIM};text-transform:uppercase;font-family:'DM Sans',sans-serif;font-weight:600; }
+  .th { padding:10px 18px;font-size:11px;letter-spacing:0.08em;color:${MID};text-transform:uppercase;font-family:'DM Sans',sans-serif;font-weight:700; }
   .btn { cursor:pointer;padding:8px 16px;border-radius:6px;font-size:12px;font-weight:500;letter-spacing:0.02em;transition:all 0.15s;border:1px solid ${BORDER};color:${MID};background:${CARD};font-family:'DM Sans',sans-serif; }
   .btn:hover { border-color:${ACCENT};color:${ACCENT}; }
   .btn.act { border-color:${ACCENT2};color:#fff;background:${ACCENT2}; }
@@ -287,7 +287,7 @@ const css = `
   .chat-input { background:${CARD};border:1px solid ${BORDER};border-radius:5px;padding:12px 16px;color:${DARK};font-size:13px;width:100%;font-family:'DM Sans',sans-serif;outline:none;transition:border 0.15s; }
   .chat-input:focus { border-color:${ACCENT}; }
   .raw-table { width:100%;border-collapse:collapse; }
-  .raw-table th { padding:10px 16px;font-size:9px;letter-spacing:0.12em;color:${DIM};text-transform:uppercase;background:${BG2};border-bottom:1px solid ${BORDER};text-align:left;white-space:nowrap;font-family:'DM Sans',sans-serif;font-weight:500; }
+  .raw-table th { padding:10px 16px;font-size:9px;letter-spacing:0.12em;color:${MID};text-transform:uppercase;background:${BG2};border-bottom:1px solid ${BORDER};text-align:left;white-space:nowrap;font-family:'DM Sans',sans-serif;font-weight:700; }
   .raw-table td { padding:11px 16px;font-size:12px;color:${MID};border-bottom:1px solid ${BORDER};white-space:nowrap;font-family:'DM Sans',sans-serif; }
   .raw-table tr:hover td { background:${BG2}; }
   .raw-table td.mono { color:${ACCENT};font-size:11px; }
@@ -322,6 +322,8 @@ const css = `
   .inbox-tab { cursor:pointer;padding:9px 18px;font-size:12px;font-weight:500;font-family:'DM Sans',sans-serif;border-radius:5px;border:1px solid transparent;transition:all 0.15s;color:${DIM}; }
   .inbox-tab:hover { color:${MID}; }
   .inbox-tab.active { background:${CARD};border-color:${BORDER};color:${DARK};box-shadow:0 1px 3px rgba(44,36,22,0.07); }
+  .pls { transition:background 0.15s; }
+  .pls:hover { background:${BG2}; }
   .si { display:flex;align-items:center;gap:10px;padding:11px 20px;cursor:pointer;font-size:13px;font-family:'DM Sans',sans-serif;border-left:2px solid transparent;transition:all 0.15s; }
   .si:hover { background:rgba(245,239,227,0.06); }
   .si.active { background:rgba(245,239,227,0.1);border-left-color:${ACCENT2}; }
@@ -827,6 +829,19 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
     return filteredTrend.map((d, i) => ({ ...d, trend: Math.round(slope*i + intercept) }));
   }, [filteredTrend]);
 
+  // Regression slope ($/month) — used for "trending up/down" label
+  const trendSlope = useMemo(() => {
+    const n = filteredTrend.length;
+    if (n < 2) return 0;
+    const xs   = filteredTrend.map((_, i) => i);
+    const ys   = filteredTrend.map(d => d.profit);
+    const sumX  = xs.reduce((s, x) => s + x, 0);
+    const sumY  = ys.reduce((s, y) => s + y, 0);
+    const sumXY = xs.reduce((s, x, i) => s + x * ys[i], 0);
+    const sumX2 = xs.reduce((s, x) => s + x * x, 0);
+    return (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+  }, [filteredTrend]);
+
   // Job type filter
   const allTypes = ["all", ...Array.from(new Set(jobSummaries.map(j => j.type).filter(Boolean))).sort()];
   const typeFilteredJobs = typeFilter === "all" ? filteredJobs : filteredJobs.filter(j => j.type === typeFilter);
@@ -857,7 +872,10 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
   const totalCost   = typeFilteredJobs.reduce((s,j) => s + j.costs, 0);
   const totalProfit = totalRev - totalCost;
   const winners     = typeFilteredJobs.filter(j => j.profit > 0).length;
-  const barData     = sorted.map(j => ({ name: j.name, fullName:j.name, profit:j.profit }));
+  const barData     = sorted.map(j => ({ name: j.name, fullName:j.name, profit:j.profit, margin:parseFloat(j.marginPct), revenue:j.revenue }));
+  const barMetric   = sort === "margin" ? "margin" : sort === "revenue" ? "revenue" : "profit";
+  const barFormatter= sort === "margin" ? (v => `${v}%`) : $k;
+  const barSubtitle = sort === "margin" ? "Jobs ranked by gross margin" : sort === "revenue" ? "Jobs ranked by revenue" : "Which jobs made money?";
 
   // Data Quality Score — tagged + overhead both count as accounted for
   const totalTaggedExpenses   = jobSummaries.reduce((s,j) => s + j.purchases.length, 0);
@@ -867,7 +885,6 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
   const accountedFor   = totalTaggedExpenses + totalOverheadExpenses;
   const dataQuality    = totalExpenses > 0 ? Math.round((accountedFor / totalExpenses) * 100) : 100;
   const dqColor        = dataQuality >= 80 ? ACCENT2 : dataQuality >= 50 ? AMBER : RED;
-  const dqLabel        = dataQuality >= 80 ? "Good" : dataQuality >= 50 ? "Fair" : "Poor";
 
   // Overhead total — filtered to selected date range
   const overheadInRange = (overhead || []).filter(o => {
@@ -978,81 +995,76 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
         />
       )}
 
-      {/* KPI strip — 5 cards: Revenue | Expenses | Profit | Jobs Profitable | Data Quality */}
-      <div style={{ display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:14,marginBottom:28 }}>
+      {/* ── P&L Summary Strip ── */}
+      <div style={{ display:"flex", background:CARD, border:`1px solid ${BORDER}`, borderRadius:8, marginBottom:28, overflow:"hidden", boxShadow:"0 2px 10px rgba(44,36,22,0.08)" }}>
 
-        {/* 1. Total Revenue */}
-        <div className="kpi kpi-tooltip" onClick={()=>setActiveKpi('revenue')} style={{ cursor:"pointer", borderTop:`3px solid ${ACCENT}` }}>
-          <span className="tooltip-text">Total revenue invoiced across all jobs in the selected period. Click to see full breakdown.</span>
-          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>Total Revenue</div>
-          <div style={{ fontFamily:"'Lora',serif",fontSize:28,fontWeight:600,color:DARK,letterSpacing:"-0.01em" }}>{$(totalRev)}</div>
-          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>all jobs billed</div>
+        {/* Revenue */}
+        <div className="pls" onClick={()=>setActiveKpi('revenue')}
+          style={{ flex:1, padding:"24px 28px", cursor:"pointer", borderRight:`1px solid ${BORDER}`, borderTop:`3px solid ${ACCENT}` }}>
+          <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:10 }}>Revenue</div>
+          <div style={{ fontFamily:"'Lora',serif", fontSize:30, fontWeight:600, color:DARK, letterSpacing:"-0.02em", marginBottom:6 }}>{$(totalRev)}</div>
+          <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DIM }}>{typeFilteredJobs.length} job{typeFilteredJobs.length!==1?"s":""} billed</div>
         </div>
 
-        {/* 2. Total Expenses */}
-        <div className="kpi kpi-tooltip" onClick={()=>setActiveKpi('expenses')} style={{ cursor:"pointer", borderTop:`3px solid ${AMBER}` }}>
-          <span className="tooltip-text">
-            {expenseView === "fixed"
-              ? `Total Job + Fixed Expenses = Job Costs (${$(totalCost)}) + Fixed Costs (${$(totalOverhead)}). Click to see breakdown.`
-              : `Total Job Expenses = direct costs tagged to specific jobs. Click to see breakdown.`}
-          </span>
-          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>
-            {expenseView === "fixed" ? "Total Job + Fixed Expenses" : "Total Job Expenses"}
+        {/* Expenses */}
+        <div className="pls" onClick={()=>setActiveKpi('expenses')}
+          style={{ flex:1, padding:"24px 28px", cursor:"pointer", borderRight:`1px solid ${BORDER}`, borderTop:`3px solid ${AMBER}` }}>
+          <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:10 }}>
+            {expenseView === "fixed" ? "Job + Fixed Expenses" : "Job Expenses"}
           </div>
-          <div style={{ fontFamily:"'Lora',serif",fontSize:28,fontWeight:600,color:MID,letterSpacing:"-0.01em" }}>
+          <div style={{ fontFamily:"'Lora',serif", fontSize:30, fontWeight:600, color:MID, letterSpacing:"-0.02em", marginBottom:6 }}>
             {expenseView === "fixed" ? $(totalCost + totalOverhead) : $(totalCost)}
           </div>
-          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>
+          <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DIM }}>
             {expenseView === "fixed"
               ? `job costs + ${$(totalOverhead)} fixed`
               : `${typeFilteredJobs.reduce((s,j)=>s+j.purchases.length,0)} job-tagged expenses`}
           </div>
         </div>
 
-        {/* 3. Profit — toggle lives here */}
+        {/* Gross / Net Profit */}
         {(() => {
-          const isNet       = expenseView === "fixed";
-          const netProfit   = totalProfit - totalOverhead;
-          const dispProfit  = isNet ? netProfit : totalProfit;
-          const dispMargin  = totalRev > 0 ? ((dispProfit / totalRev) * 100).toFixed(1) : "0.0";
-          const profitColor = dispProfit >= 0 ? ACCENT2 : RED;
+          const isNet      = expenseView === "fixed";
+          const netProfit  = totalProfit - totalOverhead;
+          const dispProfit = isNet ? netProfit : totalProfit;
+          const dispMargin = totalRev > 0 ? ((dispProfit / totalRev) * 100).toFixed(1) : "0.0";
+          const pColor     = dispProfit >= 0 ? ACCENT2 : RED;
           return (
-            <div className="kpi hi kpi-tooltip" onClick={()=>setActiveKpi('profit')} style={{ cursor:"pointer", borderTop:`3px solid ${ACCENT2}` }}>
-              <span className="tooltip-text">
-                {isNet
-                  ? `Net Profit = Revenue (${$(totalRev)}) − Job Costs (${$(totalCost)}) − Fixed Costs (${$(totalOverhead)}). Click to see waterfall breakdown.`
-                  : `Gross Profit = Revenue (${$(totalRev)}) − Job Costs (${$(totalCost)}). Click to see breakdown.`}
-              </span>
-              <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10 }}>
-                <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",fontWeight:500 }}>
-                  {isNet ? "Total Net Profit" : "Total Gross Profit"}
+            <div className="pls" onClick={()=>setActiveKpi('profit')}
+              style={{ flex:1.1, padding:"24px 28px", cursor:"pointer", borderRight:`1px solid ${BORDER}`, borderTop:`3px solid ${ACCENT2}` }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+                <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase" }}>
+                  {isNet ? "Net Profit" : "Gross Profit"}
                 </div>
-                <div style={{ display:"flex",border:`1px solid ${BORDER}`,borderRadius:3,overflow:"hidden" }}>
+                <div style={{ display:"flex", border:`1px solid ${BORDER}`, borderRadius:3, overflow:"hidden" }} onClick={e=>e.stopPropagation()}>
                   {[["job","Gross"],["fixed","Net"]].map(([k,l],i) => (
-                    <button key={k} onClick={e=>{e.stopPropagation();setExpenseView(k);}} style={{ cursor:"pointer",padding:"2px 8px",fontSize:9,fontWeight:500,fontFamily:"'DM Sans',sans-serif",border:"none",borderRight:i===0?`1px solid ${BORDER}`:"none",background:expenseView===k?ACCENT2:CARD,color:expenseView===k?CARD:DIM,transition:"all 0.15s" }}>{l}</button>
+                    <button key={k} onClick={e=>{e.stopPropagation();setExpenseView(k);}}
+                      style={{ cursor:"pointer", padding:"2px 9px", fontSize:9, fontWeight:600, fontFamily:"'DM Sans',sans-serif", border:"none", borderRight:i===0?`1px solid ${BORDER}`:"none", background:expenseView===k?ACCENT2:CARD, color:expenseView===k?CARD:DIM, transition:"all 0.15s" }}>{l}</button>
                   ))}
                 </div>
               </div>
-              <div style={{ fontFamily:"'Lora',serif",fontSize:28,fontWeight:600,color:profitColor,letterSpacing:"-0.01em" }}>{$(dispProfit)}</div>
-              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>{dispMargin}% {isNet ? "net" : "gross"} margin</div>
+              <div style={{ fontFamily:"'Lora',serif", fontSize:30, fontWeight:600, color:pColor, letterSpacing:"-0.02em", marginBottom:6 }}>{$(dispProfit)}</div>
+              <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DIM }}>{dispMargin}% {isNet ? "net" : "gross"} margin</div>
             </div>
           );
         })()}
 
-        {/* 4. Jobs Profitable */}
-        <div className="kpi kpi-tooltip" onClick={()=>setActiveKpi('jobs')} style={{ cursor:"pointer", borderTop:`3px solid ${ACCENT2}` }}>
-          <span className="tooltip-text">Number of jobs where revenue exceeded direct job costs. Click to see winners and losers.</span>
-          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>Jobs Profitable</div>
-          <div style={{ fontFamily:"'Lora',serif",fontSize:28,fontWeight:600,color:DARK,letterSpacing:"-0.01em" }}>{winners} of {typeFilteredJobs.length}</div>
-          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>in the green</div>
-        </div>
-
-        {/* 5. Data Quality Score */}
-        <div className="kpi kpi-tooltip" onClick={()=>setActiveKpi('quality')} style={{ cursor:"pointer", borderTop:`3px solid ${AMBER}` }}>
-          <span className="tooltip-text">Includes job-tagged and fixed cost expenses. Click to see what's driving the score.</span>
-          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>Data Quality Score</div>
-          <div style={{ fontFamily:"'Lora',serif",fontSize:28,fontWeight:600,color:dqColor,letterSpacing:"-0.01em" }}>{dataQuality}%</div>
-          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>{dqLabel} · {accountedFor}/{totalExpenses} accounted for</div>
+        {/* Jobs Profitable + Data Quality — stacked right panel */}
+        <div style={{ flex:0.8, display:"flex", flexDirection:"column" }}>
+          <div className="pls" onClick={()=>setActiveKpi('jobs')}
+            style={{ flex:1, padding:"18px 22px", cursor:"pointer", borderBottom:`1px solid ${BORDER}`, borderTop:`3px solid ${ACCENT2}` }}>
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:8 }}>Profitable</div>
+            <div style={{ fontFamily:"'Lora',serif", fontSize:24, fontWeight:600, color:DARK }}>
+              {winners}<span style={{ fontSize:14, fontWeight:400, color:DIM, marginLeft:5 }}>of {typeFilteredJobs.length}</span>
+            </div>
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DIM, marginTop:4 }}>jobs in the green</div>
+          </div>
+          <div className="pls" onClick={()=>setActiveKpi('quality')}
+            style={{ flex:1, padding:"18px 22px", cursor:"pointer", borderTop:`3px solid ${AMBER}` }}>
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:8 }}>Data Quality</div>
+            <div style={{ fontFamily:"'Lora',serif", fontSize:24, fontWeight:600, color:dqColor }}>{dataQuality}%</div>
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DIM, marginTop:4 }}>{accountedFor} of {totalExpenses} tagged</div>
+          </div>
         </div>
 
       </div>
@@ -1062,7 +1074,7 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
           <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20 }}>
             <div>
               <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:5,fontWeight:500 }}>Profit by Job</div>
-              <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>Which jobs made money?</div>
+              <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>{barSubtitle}</div>
             </div>
             <div style={{ display:"flex",gap:6 }}>
               {[["profit","$ Profit"],["margin","% Margin"],["revenue","Revenue"]].map(([k,l]) => (
@@ -1081,18 +1093,23 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
                     </text>
                   </g>
                 )}/>
-                <YAxis tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} tickFormatter={$k} axisLine={false} tickLine={false} width={52}/>
+                <YAxis tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} tickFormatter={barFormatter} axisLine={false} tickLine={false} width={52}/>
                 <Tooltip content={({ active,payload }) => {
                   if (!active||!payload?.length) return null;
                   const d = payload[0].payload;
+                  const valDisplay = barMetric === "margin"
+                    ? <div style={{ color:d.profit>=0?ACCENT2:RED,fontSize:14,fontWeight:600 }}>{d.margin.toFixed(1)}% margin</div>
+                    : barMetric === "revenue"
+                      ? <div style={{ color:ACCENT,fontSize:14,fontWeight:600 }}>{$(d.revenue)}</div>
+                      : <div style={{ color:d.profit>=0?ACCENT2:RED,fontSize:14,fontWeight:600 }}>{d.profit>=0?"+":""}{$(d.profit)}</div>;
                   return <div style={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:5,padding:"10px 14px",fontFamily:"'DM Mono',monospace",fontSize:11,boxShadow:"0 4px 12px rgba(44,36,22,0.12)" }}>
                     <div style={{ color:DIM,marginBottom:4,fontFamily:"'DM Sans',sans-serif",fontSize:10 }}>{d.fullName}</div>
-                    <div style={{ color:d.profit>=0?ACCENT2:RED,fontSize:14,fontWeight:600 }}>{d.profit>=0?"+":"-"}{$(d.profit)}</div>
+                    {valDisplay}
                   </div>;
                 }}/>
                 <ReferenceLine y={0} stroke={BORDER}/>
-                <Bar dataKey="profit" radius={[3,3,0,0]}>
-                  {barData.map((e,i) => <Cell key={i} fill={e.profit>=0?ACCENT2:RED} opacity={0.85}/>)}
+                <Bar dataKey={barMetric} radius={[3,3,0,0]}>
+                  {barData.map((e,i) => <Cell key={i} fill={barMetric==="revenue"?ACCENT:e.profit>=0?ACCENT2:RED} opacity={0.85}/>)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -1120,7 +1137,7 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
           {trendView === "monthly" ? (
             <>
               <ResponsiveContainer width="100%" height={260}>
-                <LineChart data={filteredTrend} margin={{ top:4,right:16,left:12,bottom:0 }}>
+                <LineChart data={filteredTrend} margin={{ top:4,right:16,left:12,bottom:20 }}>
                   <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false}/>
                   <XAxis dataKey="month" tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} axisLine={false} tickLine={false} height={40}/>
                   <YAxis tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} tickFormatter={$k} axisLine={false} tickLine={false} width={52}/>
@@ -1147,7 +1164,7 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
           ) : (
             <>
               <ResponsiveContainer width="100%" height={260}>
-                <LineChart data={cumulativeData} margin={{ top:4,right:16,left:12,bottom:0 }}>
+                <LineChart data={cumulativeData} margin={{ top:4,right:16,left:12,bottom:20 }}>
                   <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false}/>
                   <XAxis dataKey="month" tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} axisLine={false} tickLine={false} height={40}/>
                   <YAxis tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} tickFormatter={$k} axisLine={false} tickLine={false} width={52}/>
@@ -1168,12 +1185,10 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
               </ResponsiveContainer>
               <div style={{ display:"flex",gap:20,marginTop:12,justifyContent:"space-between",alignItems:"center" }}>
                 <div style={{ fontSize:11,color:DIM,fontFamily:"'DM Sans',sans-serif",fontStyle:"italic" }}>
-                  {cumulativeData.length > 0 && (() => {
-                    const last = cumulativeData[cumulativeData.length-1];
-                    const first = cumulativeData[0];
-                    const isUp = last.cumulativeProfit > first.cumulativeProfit;
+                  {filteredTrend.length > 1 && (() => {
+                    const isUp = trendSlope >= 0;
                     return <span style={{ color: isUp ? ACCENT2 : RED }}>
-                      {isUp ? "↑" : "↓"} {isUp ? "Trending up" : "Trending down"} — {$(Math.abs(last.cumulativeProfit - first.cumulativeProfit))} {isUp ? "gained" : "lost"} over this period
+                      {isUp ? "↑" : "↓"} Monthly profit {isUp ? "trending up" : "trending down"} — {isUp ? "growing" : "declining"} ~{$k(Math.abs(trendSlope))}/month on average
                     </span>;
                   })()}
                 </div>
