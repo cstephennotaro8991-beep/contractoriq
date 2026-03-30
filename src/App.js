@@ -1064,25 +1064,43 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
             <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, marginTop:4 }}>{typeFilteredJobs.length} job{typeFilteredJobs.length!==1?"s":""} billed</div>
           </div>
           <div className="pls" onClick={()=>setActiveKpi('expenses')}
-            style={{ flex:1, padding:"16px 22px", cursor:"pointer", borderTop:`3px solid ${AMBER}` }}>
-            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:6 }}>
-              {heroIsNet ? "Job + Fixed Expenses" : "Job Expenses"}
+            style={{ flex:1, padding:"16px 22px", cursor:"pointer", borderTop:`3px solid ${AMBER}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            {/* Left — expense totals */}
+            <div>
+              <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:6 }}>
+                {heroIsNet ? "Job + Fixed Expenses" : "Job Expenses"}
+              </div>
+              <div style={{ fontFamily:"'Lora',serif", fontSize:28, fontWeight:600, color:MID }}>
+                {heroIsNet ? $(totalCost + totalOverhead) : $(totalCost)}
+              </div>
+              <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, marginTop:4 }}>
+                {heroIsNet ? `${$(totalCost)} job + ${$(totalOverhead)} fixed` : `${typeFilteredJobs.reduce((s,j)=>s+j.purchases.length,0)} job-tagged`}
+              </div>
             </div>
-            <div style={{ fontFamily:"'Lora',serif", fontSize:28, fontWeight:600, color:MID }}>
-              {heroIsNet ? $(totalCost + totalOverhead) : $(totalCost)}
-            </div>
-            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, marginTop:4 }}>
-              {heroIsNet ? `${$(totalCost)} job + ${$(totalOverhead)} fixed` : `${typeFilteredJobs.reduce((s,j)=>s+j.purchases.length,0)} job-tagged`}
-            </div>
+            {/* Right — DQ badge button */}
             {(() => {
               const untaggedActive = untagged.filter(u => u.status !== 'dismissed');
+              const hasIssues = untaggedActive.length > 0;
+              const badgeColor = dqColor;
+              const bgTint = hasIssues ? `${AMBER}18` : `${ACCENT2}18`;
               return (
                 <div onClick={e => { e.stopPropagation(); setActiveKpi('quality'); }}
-                  style={{ marginTop:8, display:"inline-flex", alignItems:"center", gap:5, fontFamily:"'DM Sans',sans-serif", fontSize:10, color: dqColor, fontWeight:500, cursor:"pointer" }}>
-                  {untaggedActive.length > 0
-                    ? `⚠ ${untaggedActive.length} untagged · ${dataQuality}% quality`
-                    : `✓ All expenses tagged · ${dataQuality}%`}
-                  <span style={{ fontSize:9, opacity:0.7 }}>↗</span>
+                  style={{
+                    border:`1.5px solid ${badgeColor}`, borderRadius:6, background:bgTint,
+                    padding:"10px 14px", cursor:"pointer", textAlign:"center", minWidth:90,
+                    flexShrink:0, transition:"opacity 0.15s"
+                  }}
+                  onMouseEnter={e=>e.currentTarget.style.opacity="0.75"}
+                  onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                  <div style={{ fontFamily:"'DM Mono',monospace", fontSize:18, fontWeight:700, color:badgeColor, lineHeight:1 }}>
+                    {dataQuality}%
+                  </div>
+                  <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:700, letterSpacing:"0.06em", color:badgeColor, textTransform:"uppercase", marginTop:3 }}>
+                    {hasIssues ? `⚠ ${untaggedActive.length} untagged` : "✓ All tagged"}
+                  </div>
+                  <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, color:badgeColor, opacity:0.7, marginTop:4 }}>
+                    View quality →
+                  </div>
                 </div>
               );
             })()}
