@@ -120,7 +120,7 @@ const $ = n => `$${Math.abs(n).toLocaleString()}`;
 const $k = n => {
   const sign = n < 0 ? "-" : "";
   const abs = Math.abs(n);
-  return abs >= 1000 ? `${sign}$${(abs/1000).toFixed(1)}k` : `${sign}$${abs}`;
+  return abs >= 1000 ? `${sign}$${(abs/1000).toFixed(1)}k` : `${sign}$${Math.round(abs)}`;
 };
 
 // Earth-tone palette — warm, professional, non-tech
