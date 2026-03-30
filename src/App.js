@@ -1017,11 +1017,11 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
       )}
 
       {/* ── Asymmetric Hero Strip ── */}
-      <div style={{ display:"flex", background:CARD, border:`1px solid ${BORDER}`, borderRadius:8, marginBottom:28, overflow:"hidden", boxShadow:"0 2px 10px rgba(44,36,22,0.08)", minHeight:160 }}>
+      <div style={{ display:"flex", background:CARD, border:`1px solid ${BORDER}`, borderRadius:8, marginBottom:28, overflow:"hidden", boxShadow:"0 2px 10px rgba(44,36,22,0.08)" }}>
 
         {/* LEFT — Profit hero (largest section) */}
         <div className="pls" onClick={()=>setActiveKpi('profit')}
-          style={{ flex:1.5, padding:"28px 32px", cursor:"pointer", borderRight:`1px solid ${BORDER}`, borderTop:`3px solid ${heroColor}`, display:"flex", flexDirection:"column", justifyContent:"space-between" }}>
+          style={{ flex:1.5, padding:"18px 28px", cursor:"pointer", borderRight:`1px solid ${BORDER}`, borderTop:`3px solid ${heroColor}`, display:"flex", flexDirection:"column", justifyContent:"space-between" }}>
           {/* Label + toggle */}
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
             <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:13, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase" }}>
@@ -1035,7 +1035,7 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
             </div>
           </div>
           {/* Big number */}
-          <div style={{ fontFamily:"'Lora',serif", fontSize:44, fontWeight:600, color:heroColor, letterSpacing:"-0.03em", lineHeight:1.05, margin:"10px 0 6px" }}>{$(heroProfit)}</div>
+          <div style={{ fontFamily:"'Lora',serif", fontSize:44, fontWeight:600, color:heroColor, letterSpacing:"-0.03em", lineHeight:1.05, margin:"6px 0 4px" }}>{$(heroProfit)}</div>
           {/* Delta or margin fallback */}
           {periodComparison?.profitPct != null ? (
             <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color: periodComparison.profitPct >= 0 ? ACCENT2 : RED, display:"flex", alignItems:"center", gap:5 }}>
@@ -1051,7 +1051,7 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
         {/* CENTER — Revenue + Expenses stacked */}
         <div style={{ flex:0.9, display:"flex", flexDirection:"column", borderRight:`1px solid ${BORDER}` }}>
           <div className="pls" onClick={()=>setActiveKpi('revenue')}
-            style={{ flex:1, padding:"22px 24px", cursor:"pointer", borderBottom:`1px solid ${BORDER}`, borderTop:`3px solid ${ACCENT}` }}>
+            style={{ flex:1, padding:"16px 22px", cursor:"pointer", borderBottom:`1px solid ${BORDER}`, borderTop:`3px solid ${ACCENT}` }}>
             <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:6 }}>Revenue</div>
             <div style={{ display:"flex", alignItems:"baseline", gap:10 }}>
               <span style={{ fontFamily:"'Lora',serif", fontSize:28, fontWeight:600, color:DARK }}>{$(totalRev)}</span>
@@ -1064,7 +1064,7 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
             <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, marginTop:4 }}>{typeFilteredJobs.length} job{typeFilteredJobs.length!==1?"s":""} billed</div>
           </div>
           <div className="pls" onClick={()=>setActiveKpi('expenses')}
-            style={{ flex:1, padding:"22px 24px", cursor:"pointer", borderTop:`3px solid ${AMBER}` }}>
+            style={{ flex:1, padding:"16px 22px", cursor:"pointer", borderTop:`3px solid ${AMBER}` }}>
             <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:6 }}>
               {heroIsNet ? "Job + Fixed Expenses" : "Job Expenses"}
             </div>
