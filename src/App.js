@@ -139,6 +139,10 @@ const SIDEBAR_BG   = "#231D13";  // near-black walnut sidebar
 const SIDEBAR_TEXT = "#C4B49A";  // warm parchment sidebar text
 const SIDEBAR_DIM  = "#6B5E4E";  // muted sidebar labels
 
+// Bump this string whenever Privacy Policy or EULA changes materially.
+// Existing users with a different version will be shown the consent gate again.
+const CONSENT_VERSION = "2026-03";
+
 // ─── BUILD JOB SUMMARIES (reactive — takes extraCosts from tagged inbox items) ─
 
 function buildJobSummaries(extraCostsByJob = {}) {
@@ -2778,6 +2782,107 @@ function Reports({ jobSummaries }) {
   );
 }
 
+// ─── CONSENT GATE ─────────────────────────────────────────────────────────────
+// Shown after login whenever consent_accepted_at is null or on an old version.
+// On self-serve signup (future): move checkboxes into signup form and retire this gate.
+
+function ConsentGate({ userId, onConsent }) {
+  const [required, setRequired] = useState(false);
+  const [optIn,    setOptIn]    = useState(false);
+  const [saving,   setSaving]   = useState(false);
+  const [error,    setError]    = useState("");
+
+  async function handleAccept() {
+    if (!required) return;
+    setSaving(true);
+    setError("");
+    const { error: err } = await supabase
+      .from("contractors")
+      .update({
+        consent_accepted_at:      new Date().toISOString(),
+        consent_version:          CONSENT_VERSION,
+        data_aggregation_consent: optIn,
+      })
+      .eq("id", userId);
+    if (err) {
+      setError("Something went wrong saving your response. Please try again.");
+      setSaving(false);
+      return;
+    }
+    onConsent({ consent_accepted_at: new Date().toISOString(), consent_version: CONSENT_VERSION, data_aggregation_consent: optIn });
+  }
+
+  return (
+    <div style={{ minHeight:"100vh", background:BG, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
+      <style>{css}</style>
+      <div style={{ background:CARD, border:`1px solid ${BORDER}`, borderRadius:10, padding:"44px 48px", maxWidth:520, width:"100%", boxShadow:"0 4px 24px rgba(44,36,22,0.13)" }}>
+        {/* Logo / wordmark */}
+        <div style={{ fontFamily:"'Lora',serif", fontSize:22, fontWeight:700, color:DARK, marginBottom:6, letterSpacing:"-0.01em" }}>Canopy</div>
+        <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:600, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:32 }}>Business Intelligence</div>
+
+        <div style={{ fontFamily:"'Lora',serif", fontSize:18, color:DARK, marginBottom:10 }}>Before you continue</div>
+        <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:13, color:MID, lineHeight:1.6, marginBottom:32 }}>
+          Please review and accept our terms to use Canopy. This only takes a moment.
+        </div>
+
+        {/* Required checkbox */}
+        <label style={{ display:"flex", gap:12, alignItems:"flex-start", cursor:"pointer", marginBottom:20 }}>
+          <input
+            type="checkbox"
+            checked={required}
+            onChange={e => setRequired(e.target.checked)}
+            style={{ marginTop:3, accentColor:ACCENT2, width:15, height:15, flexShrink:0, cursor:"pointer" }}
+          />
+          <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:13, color:DARK, lineHeight:1.6 }}>
+            I have read and agree to the{" "}
+            <a href="https://canopybi.com/privacy" target="_blank" rel="noopener noreferrer"
+              style={{ color:ACCENT2, textDecoration:"underline" }}>Privacy Policy</a>
+            {" "}and{" "}
+            <a href="https://canopybi.com/terms" target="_blank" rel="noopener noreferrer"
+              style={{ color:ACCENT2, textDecoration:"underline" }}>Terms of Use</a>.
+            {" "}<span style={{ color:RED, fontSize:11 }}>Required</span>
+          </span>
+        </label>
+
+        {/* Optional checkbox */}
+        <label style={{ display:"flex", gap:12, alignItems:"flex-start", cursor:"pointer", marginBottom:36, padding:"14px 16px", background:BG, borderRadius:6, border:`1px solid ${BORDER}` }}>
+          <input
+            type="checkbox"
+            checked={optIn}
+            onChange={e => setOptIn(e.target.checked)}
+            style={{ marginTop:3, accentColor:ACCENT2, width:15, height:15, flexShrink:0, cursor:"pointer" }}
+          />
+          <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:MID, lineHeight:1.6 }}>
+            <strong style={{ color:DARK }}>Optional:</strong> I consent to my anonymized, aggregated financial performance data being used to generate industry benchmarks and improve Canopy. No personally identifiable information is ever shared.
+          </span>
+        </label>
+
+        {error && (
+          <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:RED, marginBottom:16 }}>{error}</div>
+        )}
+
+        <button
+          onClick={handleAccept}
+          disabled={!required || saving}
+          style={{
+            width:"100%", padding:"13px 0", borderRadius:5, border:"none",
+            background: required ? DARK : BORDER,
+            color: required ? CARD : DIM,
+            fontFamily:"'DM Sans',sans-serif", fontSize:13, fontWeight:600,
+            cursor: required ? "pointer" : "not-allowed", letterSpacing:"0.04em",
+            transition:"background 0.15s"
+          }}>
+          {saving ? "Saving…" : "Continue to Canopy →"}
+        </button>
+
+        <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DIM, marginTop:16, textAlign:"center", lineHeight:1.6 }}>
+          You can review our policies at any time from the Help menu.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── LOGIN SCREEN ─────────────────────────────────────────────────────────────
 
 function Login({ onLogin }) {
@@ -3142,6 +3247,17 @@ export default function App() {
   }
 
   if (!session) return <Login onLogin={handleLogin} />;
+
+  // Consent gate — shown if user has never consented, or consented to an older policy version
+  const needsConsent = !profile?.consent_accepted_at || profile?.consent_version !== CONSENT_VERSION;
+  if (needsConsent) {
+    return (
+      <ConsentGate
+        userId={session.user.id}
+        onConsent={(fields) => setProfile(p => ({ ...p, ...fields }))}
+      />
+    );
+  }
 
   const clientType     = profile?.client_type || "quickbooks";
   const contractorName = profile?.name || session?.user?.email || "Your Account";
