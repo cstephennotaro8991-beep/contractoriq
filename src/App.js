@@ -2782,6 +2782,116 @@ function Reports({ jobSummaries }) {
   );
 }
 
+// ─── ONBOARDING GATE ──────────────────────────────────────────────────────────
+// Shown once after consent when industry is null. Captures industry + revenue_range
+// for longitudinal benchmarking. Both fields are optional — user can skip.
+// On self-serve signup (future): move these fields into the signup/onboarding flow.
+
+const INDUSTRY_OPTIONS = [
+  "Flooring", "HVAC", "Plumbing", "Electrical", "Landscaping",
+  "Painting", "General Contracting", "Roofing", "Renovation / Remodeling", "Other",
+];
+
+const REVENUE_OPTIONS = [
+  "Under $250k", "$250k – $500k", "$500k – $1M", "$1M – $5M", "Over $5M",
+];
+
+function OnboardingGate({ userId, onComplete }) {
+  const [industry,     setIndustry]     = useState("");
+  const [revenueRange, setRevenueRange] = useState("");
+  const [saving,       setSaving]       = useState(false);
+  const [error,        setError]        = useState("");
+
+  async function handleSave(skip = false) {
+    setSaving(true);
+    setError("");
+    const update = skip
+      ? { industry: "skipped", revenue_range: "skipped" }
+      : { industry: industry || "skipped", revenue_range: revenueRange || "skipped" };
+    const { error: err } = await supabase
+      .from("contractors")
+      .update(update)
+      .eq("id", userId);
+    if (err) {
+      setError("Something went wrong. Please try again.");
+      setSaving(false);
+      return;
+    }
+    onComplete(update);
+  }
+
+  const selectStyle = {
+    width:"100%", padding:"10px 12px", borderRadius:5, border:`1px solid ${BORDER}`,
+    background:CARD, fontFamily:"'DM Sans',sans-serif", fontSize:13, color:DARK,
+    cursor:"pointer", appearance:"none", backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23A89880' d='M1 1l5 5 5-5'/%3E%3C/svg%3E\")",
+    backgroundRepeat:"no-repeat", backgroundPosition:"right 12px center",
+  };
+
+  return (
+    <div style={{ minHeight:"100vh", background:BG, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
+      <style>{css}</style>
+      <div style={{ background:CARD, border:`1px solid ${BORDER}`, borderRadius:10, padding:"44px 48px", maxWidth:520, width:"100%", boxShadow:"0 4px 24px rgba(44,36,22,0.13)" }}>
+        <div style={{ fontFamily:"'Lora',serif", fontSize:22, fontWeight:700, color:DARK, marginBottom:6, letterSpacing:"-0.01em" }}>Canopy</div>
+        <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:600, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:32 }}>Business Intelligence</div>
+
+        <div style={{ fontFamily:"'Lora',serif", fontSize:18, color:DARK, marginBottom:8 }}>One quick question</div>
+        <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:13, color:MID, lineHeight:1.6, marginBottom:32 }}>
+          Help us tailor Canopy to your business. This takes 15 seconds and helps us build better benchmarks for your industry. Both fields are optional.
+        </div>
+
+        {/* Industry */}
+        <div style={{ marginBottom:20 }}>
+          <label style={{ display:"block", fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:600, letterSpacing:"0.08em", color:DIM, textTransform:"uppercase", marginBottom:8 }}>
+            What type of business do you run?
+          </label>
+          <select value={industry} onChange={e => setIndustry(e.target.value)} style={selectStyle}>
+            <option value="">Select an industry…</option>
+            {INDUSTRY_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+        </div>
+
+        {/* Revenue range */}
+        <div style={{ marginBottom:36 }}>
+          <label style={{ display:"block", fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:600, letterSpacing:"0.08em", color:DIM, textTransform:"uppercase", marginBottom:8 }}>
+            Annual revenue (approximate)
+          </label>
+          <select value={revenueRange} onChange={e => setRevenueRange(e.target.value)} style={selectStyle}>
+            <option value="">Select a range…</option>
+            {REVENUE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+        </div>
+
+        {error && (
+          <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:RED, marginBottom:16 }}>{error}</div>
+        )}
+
+        <button
+          onClick={() => handleSave(false)}
+          disabled={saving}
+          style={{
+            width:"100%", padding:"13px 0", borderRadius:5, border:"none",
+            background:DARK, color:CARD, fontFamily:"'DM Sans',sans-serif",
+            fontSize:13, fontWeight:600, cursor:"pointer", letterSpacing:"0.04em",
+            marginBottom:12, transition:"opacity 0.15s",
+          }}>
+          {saving ? "Saving…" : "Continue to Canopy →"}
+        </button>
+
+        <button
+          onClick={() => handleSave(true)}
+          disabled={saving}
+          style={{
+            width:"100%", padding:"10px 0", borderRadius:5, border:`1px solid ${BORDER}`,
+            background:"transparent", color:DIM, fontFamily:"'DM Sans',sans-serif",
+            fontSize:12, cursor:"pointer", letterSpacing:"0.03em",
+          }}>
+          Skip for now
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── CONSENT GATE ─────────────────────────────────────────────────────────────
 // Shown after login whenever consent_accepted_at is null or on an old version.
 // On self-serve signup (future): move checkboxes into signup form and retire this gate.
@@ -3255,6 +3365,17 @@ export default function App() {
       <ConsentGate
         userId={session.user.id}
         onConsent={(fields) => setProfile(p => ({ ...p, ...fields }))}
+      />
+    );
+  }
+
+  // Onboarding gate — shown once when industry is null (captures industry + revenue_range)
+  const needsOnboarding = !profile?.industry;
+  if (needsOnboarding) {
+    return (
+      <OnboardingGate
+        userId={session.user.id}
+        onComplete={(fields) => setProfile(p => ({ ...p, ...fields }))}
       />
     );
   }
