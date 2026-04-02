@@ -764,7 +764,7 @@ function KpiModal({ type, expenseView, jobSummaries, allJobSummaries, overhead, 
 
 // ─── TAB: DASHBOARD ───────────────────────────────────────────────────────────
 
-function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, userId, clientType }) {
+function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, qbConnected, userId, clientType }) {
   const [sort, setSort]             = useState("profit");
   const [sortDir, setSortDir]       = useState("desc");
   const [dateRange, setDateRange]   = useState("all");
@@ -1346,8 +1346,18 @@ function Dashboard({ onJobClick, jobSummaries, untagged, overhead, qbConnected, 
       {/* Job table with Job Type filter */}
       <div className="card" style={{ overflow:"hidden" }}>
         <div style={{ padding:"18px 20px",borderBottom:`1px solid ${BORDER}`,display:"flex",justifyContent:"space-between",alignItems:"center",background:BG,flexWrap:"wrap",gap:12 }}>
-          <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>
-            {typeFilteredJobs.length > 0 ? `${typeFilteredJobs.length} job${typeFilteredJobs.length!==1?"s":""} — click any row to see the full breakdown` : "No jobs in this period"}
+          <div style={{ display:"flex",alignItems:"center",gap:14 }}>
+            <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>
+              {typeFilteredJobs.length > 0 ? `${typeFilteredJobs.length} job${typeFilteredJobs.length!==1?"s":""} — click any row to see the full breakdown` : "No jobs in this period"}
+            </div>
+            {onEstimate && (
+              <button onClick={onEstimate}
+                style={{ cursor:"pointer",padding:"5px 14px",borderRadius:4,fontSize:11,fontWeight:500,fontFamily:"'DM Sans',sans-serif",border:`1px solid ${ACCENT}`,background:`${ACCENT}10`,color:ACCENT,transition:"all 0.15s",whiteSpace:"nowrap" }}
+                onMouseEnter={e=>{e.currentTarget.style.background=ACCENT;e.currentTarget.style.color=CARD;}}
+                onMouseLeave={e=>{e.currentTarget.style.background=`${ACCENT}10`;e.currentTarget.style.color=ACCENT;}}>
+                ◇ Price a Job
+              </button>
+            )}
           </div>
           <div style={{ display:"flex",alignItems:"center",gap:8,flexWrap:"wrap" }}>
             {/* Job type filter pills */}
@@ -2796,6 +2806,514 @@ const REVENUE_OPTIONS = [
   "Under $250k", "$250k – $500k", "$500k – $1M", "$1M – $5M", "Over $5M",
 ];
 
+// ─── TAB: JOB ESTIMATOR ──────────────────────────────────────────────────────
+
+const COST_CATEGORIES = ["Materials", "Labor", "Subcontractor", "Other"];
+
+function JobEstimator({ jobSummaries, userId }) {
+  // ── Saved estimates state
+  const [estimates, setEstimates]         = useState([]);
+  const [loadingEstimates, setLoadingEstimates] = useState(true);
+  const [activeEstimateId, setActiveEstimateId] = useState(null);
+
+  // ── Form state
+  const [name, setName]                   = useState("");
+  const [jobType, setJobType]             = useState("");
+  const [expectedRevenue, setExpectedRevenue] = useState("");
+  const [costLines, setCostLines]         = useState([{ description: "", category: "Materials", amount: "" }]);
+  const [notes, setNotes]                 = useState("");
+  const [saving, setSaving]               = useState(false);
+  const [dirty, setDirty]                 = useState(false);
+
+  // ── AI state
+  const [aiLoading, setAiLoading]         = useState(false);
+  const [aiResponse, setAiResponse]       = useState("");
+
+  // ── Derive job types from existing data
+  const jobTypes = useMemo(() => {
+    const types = [...new Set(jobSummaries.map(j => j.type).filter(Boolean))];
+    return types.sort();
+  }, [jobSummaries]);
+
+  // ── Load saved estimates on mount
+  useEffect(() => {
+    if (!userId) { setLoadingEstimates(false); return; }
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from("estimates")
+          .select("*")
+          .eq("contractor_id", userId)
+          .order("updated_at", { ascending: false });
+        if (data) setEstimates(data);
+      } catch (e) {
+        console.error("Error loading estimates:", e.message);
+      }
+      setLoadingEstimates(false);
+    })();
+  }, [userId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Calculations
+  const totalCosts = costLines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
+  const rev = parseFloat(expectedRevenue) || 0;
+  const grossProfit = rev - totalCosts;
+  const grossMargin = rev > 0 ? ((grossProfit / rev) * 100).toFixed(1) : "0.0";
+
+  // ── Historical benchmark for selected job type
+  const benchmark = useMemo(() => {
+    const pool = jobType
+      ? jobSummaries.filter(j => j.type === jobType && j.revenue > 0)
+      : jobSummaries.filter(j => j.revenue > 0);
+    if (pool.length === 0) return null;
+    const totalRev   = pool.reduce((s, j) => s + j.revenue, 0);
+    const totalCost  = pool.reduce((s, j) => s + j.costs, 0);
+    const avgMargin  = totalRev > 0 ? (((totalRev - totalCost) / totalRev) * 100).toFixed(1) : "0.0";
+    const avgRevenue = Math.round(totalRev / pool.length);
+    const avgCost    = Math.round(totalCost / pool.length);
+    return { avgMargin, avgRevenue, avgCost, count: pool.length, label: jobType || "All Jobs" };
+  }, [jobType, jobSummaries]);
+
+  // ── Cost line helpers
+  function addCostLine() {
+    setCostLines([...costLines, { description: "", category: "Materials", amount: "" }]);
+    setDirty(true);
+  }
+  function removeCostLine(idx) {
+    if (costLines.length <= 1) return;
+    setCostLines(costLines.filter((_, i) => i !== idx));
+    setDirty(true);
+  }
+  function updateCostLine(idx, field, value) {
+    setCostLines(costLines.map((l, i) => i === idx ? { ...l, [field]: value } : l));
+    setDirty(true);
+  }
+
+  // ── Clear form
+  function clearForm() {
+    setName(""); setJobType(""); setExpectedRevenue(""); setNotes("");
+    setCostLines([{ description: "", category: "Materials", amount: "" }]);
+    setActiveEstimateId(null); setDirty(false); setAiResponse("");
+  }
+
+  // ── Load an estimate into the form
+  function loadEstimate(est) {
+    setName(est.name || "");
+    setJobType(est.job_type || "");
+    setExpectedRevenue(est.expected_revenue ? String(est.expected_revenue) : "");
+    setNotes(est.notes || "");
+    setCostLines(est.cost_lines && est.cost_lines.length > 0
+      ? est.cost_lines.map(l => ({ description: l.description || "", category: l.category || "Materials", amount: l.amount ? String(l.amount) : "" }))
+      : [{ description: "", category: "Materials", amount: "" }]);
+    setActiveEstimateId(est.id);
+    setDirty(false);
+    setAiResponse("");
+  }
+
+  // ── Save estimate (create or update)
+  async function saveEstimate() {
+    if (!userId || !name.trim()) return;
+    setSaving(true);
+    const payload = {
+      contractor_id: userId,
+      name: name.trim(),
+      job_type: jobType || null,
+      expected_revenue: parseFloat(expectedRevenue) || 0,
+      cost_lines: costLines.map(l => ({ description: l.description, category: l.category, amount: parseFloat(l.amount) || 0 })),
+      notes: notes || null,
+      updated_at: new Date().toISOString(),
+    };
+    try {
+      if (activeEstimateId) {
+        // Update
+        const { error } = await supabase.from("estimates").update(payload).eq("id", activeEstimateId);
+        if (error) throw error;
+        setEstimates(prev => prev.map(e => e.id === activeEstimateId ? { ...e, ...payload } : e));
+      } else {
+        // Create
+        const { data, error } = await supabase.from("estimates").insert(payload).select().single();
+        if (error) throw error;
+        setEstimates(prev => [data, ...prev]);
+        setActiveEstimateId(data.id);
+      }
+      setDirty(false);
+    } catch (e) {
+      console.error("Error saving estimate:", e.message);
+    }
+    setSaving(false);
+  }
+
+  // ── Delete estimate
+  async function deleteEstimate(id) {
+    try {
+      await supabase.from("estimates").delete().eq("id", id);
+      setEstimates(prev => prev.filter(e => e.id !== id));
+      if (activeEstimateId === id) clearForm();
+    } catch (e) {
+      console.error("Error deleting estimate:", e.message);
+    }
+  }
+
+  // ── Duplicate estimate
+  function duplicateEstimate(est) {
+    setName(est.name + " (copy)");
+    setJobType(est.job_type || "");
+    setExpectedRevenue(est.expected_revenue ? String(est.expected_revenue) : "");
+    setNotes(est.notes || "");
+    setCostLines(est.cost_lines && est.cost_lines.length > 0
+      ? est.cost_lines.map(l => ({ description: l.description || "", category: l.category || "Materials", amount: l.amount ? String(l.amount) : "" }))
+      : [{ description: "", category: "Materials", amount: "" }]);
+    setActiveEstimateId(null);
+    setDirty(true);
+    setAiResponse("");
+  }
+
+  // ── AI: Get Canopy's Take
+  async function getCanopyTake() {
+    if (aiLoading || rev <= 0) return;
+    setAiLoading(true); setAiResponse("");
+    const costBreakdown = costLines.filter(l => parseFloat(l.amount) > 0).map(l => `${l.category}: ${l.description || "unnamed"} — $${parseFloat(l.amount).toLocaleString()}`).join("\n");
+    const benchmarkInfo = benchmark
+      ? `Historical benchmark for ${benchmark.label} (${benchmark.count} completed jobs): average margin ${benchmark.avgMargin}%, average revenue ${$(benchmark.avgRevenue)}, average cost ${$(benchmark.avgCost)}.`
+      : "No historical data available for comparison.";
+    const prompt = `You are a sharp financial advisor for a small business. The user is pricing out a potential job. Analyze this estimate and give them actionable advice in 3-4 sentences. Be direct and specific with numbers.
+
+ESTIMATE:
+Job Name: ${name || "Unnamed"}
+Job Type: ${jobType || "Not specified"}
+Expected Revenue: ${$(rev)}
+Total Estimated Costs: ${$(totalCosts)}
+Gross Profit: ${$(grossProfit)}
+Gross Margin: ${grossMargin}%
+
+COST BREAKDOWN:
+${costBreakdown || "No cost lines entered."}
+
+${benchmarkInfo}
+
+Give a short, direct assessment: Is the margin healthy? How does it compare to their history? Any specific cost lines that look unusual? Should they raise the price? Keep it under 100 words.`;
+
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 500, system: "You are a concise financial analyst for a small business owner. Be direct and actionable.", messages: [{ role: "user", content: prompt }] })
+      });
+      const data = await res.json();
+      setAiResponse(data.content?.map(b => b.text || "").join("") || "Couldn't get a response.");
+    } catch (e) {
+      setAiResponse("Error connecting to AI. Please try again.");
+    }
+    setAiLoading(false);
+  }
+
+  // ── Margin color
+  const marginNum = parseFloat(grossMargin);
+  const marginColor = marginNum >= 30 ? ACCENT2 : marginNum >= 15 ? AMBER : RED;
+
+  // ── Cost breakdown by category for mini chart
+  const categoryTotals = useMemo(() => {
+    const map = {};
+    costLines.forEach(l => {
+      const amt = parseFloat(l.amount) || 0;
+      if (amt > 0) map[l.category] = (map[l.category] || 0) + amt;
+    });
+    return COST_CATEGORIES.map(c => ({ name: c, value: map[c] || 0 })).filter(c => c.value > 0);
+  }, [costLines]);
+  const catColors = { Materials: ACCENT, Labor: ACCENT2, Subcontractor: AMBER, Other: MID };
+
+  return (
+    <div style={{ padding: "32px 36px", background: BG, minHeight: "100vh" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
+        <div>
+          <h1 style={{ fontFamily: "'Lora',serif", fontSize: 24, fontWeight: 600, color: DARK, letterSpacing: "-0.02em", marginBottom: 4 }}>
+            Job Estimator
+          </h1>
+          <p style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: DIM }}>
+            Price out a job, see your projected margin, and compare to your real history.
+          </p>
+        </div>
+        <button className="btn act" onClick={clearForm} style={{ fontSize: 12, padding: "9px 18px" }}>
+          + New Estimate
+        </button>
+      </div>
+
+      <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
+
+        {/* ── Left: Saved estimates list ── */}
+        <div style={{ width: 240, flexShrink: 0 }}>
+          <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 600, color: DIM, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
+            Saved Estimates
+          </div>
+          {loadingEstimates ? (
+            <div style={{ fontSize: 12, color: DIM, fontFamily: "'DM Sans',sans-serif" }}>Loading...</div>
+          ) : estimates.length === 0 ? (
+            <div style={{ fontSize: 12, color: DIM, fontFamily: "'DM Sans',sans-serif", padding: "16px 0" }}>
+              No saved estimates yet. Build one on the right and hit Save.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {estimates.map(est => {
+                const estCosts = (est.cost_lines || []).reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
+                const estRev = parseFloat(est.expected_revenue) || 0;
+                const estProfit = estRev - estCosts;
+                const estMargin = estRev > 0 ? (((estRev - estCosts) / estRev) * 100).toFixed(1) : "0.0";
+                const isActive = activeEstimateId === est.id;
+                return (
+                  <div key={est.id}
+                    onClick={() => loadEstimate(est)}
+                    style={{
+                      padding: "12px 14px", borderRadius: 6, cursor: "pointer",
+                      background: isActive ? CARD : "transparent",
+                      border: `1px solid ${isActive ? ACCENT : BORDER}`,
+                      transition: "all 0.15s",
+                    }}
+                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = `${CARD}`; }}
+                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
+                  >
+                    <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, fontWeight: 500, color: DARK, marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {est.name || "Untitled"}
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 11, color: MID }}>{$(estRev)}</span>
+                      <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 11, color: parseFloat(estMargin) >= 30 ? ACCENT2 : parseFloat(estMargin) >= 15 ? AMBER : RED, fontWeight: 600 }}>
+                        {estMargin}%
+                      </span>
+                    </div>
+                    {est.job_type && <div style={{ fontSize: 10, color: DIM, fontFamily: "'DM Sans',sans-serif", marginTop: 4 }}>{est.job_type}</div>}
+                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                      <button onClick={e => { e.stopPropagation(); duplicateEstimate(est); }}
+                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: 10, color: DIM, fontFamily: "'DM Sans',sans-serif", padding: 0, textDecoration: "underline" }}>
+                        Duplicate
+                      </button>
+                      <button onClick={e => { e.stopPropagation(); deleteEstimate(est.id); }}
+                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: 10, color: RED, fontFamily: "'DM Sans',sans-serif", padding: 0, textDecoration: "underline" }}>
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* ── Center: Estimate form ── */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="card" style={{ padding: "28px 32px" }}>
+            {/* Job name + type row */}
+            <div style={{ display: "flex", gap: 16, marginBottom: 20 }}>
+              <div style={{ flex: 2 }}>
+                <label style={{ display: "block", fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 600, color: DIM, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>
+                  Job / Project Name
+                </label>
+                <input value={name} onChange={e => { setName(e.target.value); setDirty(true); }}
+                  placeholder="e.g. Smith Kitchen Remodel"
+                  style={{ width: "100%", padding: "10px 14px", borderRadius: 5, border: `1px solid ${BORDER}`, background: BG, fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: DARK, outline: "none", boxSizing: "border-box" }}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: "block", fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 600, color: DIM, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>
+                  Job Type
+                </label>
+                <select value={jobType} onChange={e => { setJobType(e.target.value); setDirty(true); }}
+                  style={{ width: "100%", padding: "10px 14px", borderRadius: 5, border: `1px solid ${BORDER}`, background: BG, fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: DARK, outline: "none", boxSizing: "border-box" }}>
+                  <option value="">Select type</option>
+                  {jobTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {/* Revenue */}
+            <div style={{ marginBottom: 24 }}>
+              <label style={{ display: "block", fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 600, color: DIM, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>
+                Expected Revenue
+              </label>
+              <div style={{ position: "relative", maxWidth: 260 }}>
+                <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", fontFamily: "'DM Mono',monospace", fontSize: 14, color: DIM }}>$</span>
+                <input type="number" value={expectedRevenue} onChange={e => { setExpectedRevenue(e.target.value); setDirty(true); }}
+                  placeholder="0"
+                  style={{ width: "100%", padding: "10px 14px 10px 28px", borderRadius: 5, border: `1px solid ${BORDER}`, background: BG, fontFamily: "'DM Mono',monospace", fontSize: 14, color: DARK, outline: "none", boxSizing: "border-box" }}
+                />
+              </div>
+            </div>
+
+            {/* Cost lines */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <label style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 600, color: DIM, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                  Estimated Costs
+                </label>
+                <button onClick={addCostLine}
+                  style={{ background: "none", border: `1px solid ${BORDER}`, borderRadius: 4, cursor: "pointer", padding: "5px 12px", fontSize: 11, color: ACCENT, fontFamily: "'DM Sans',sans-serif", fontWeight: 500 }}>
+                  + Add Line
+                </button>
+              </div>
+              {/* Header row */}
+              <div style={{ display: "flex", gap: 10, marginBottom: 6 }}>
+                <div style={{ flex: 2, fontSize: 10, color: DIM, fontFamily: "'DM Sans',sans-serif", fontWeight: 500 }}>Description</div>
+                <div style={{ flex: 1, fontSize: 10, color: DIM, fontFamily: "'DM Sans',sans-serif", fontWeight: 500 }}>Category</div>
+                <div style={{ width: 130, fontSize: 10, color: DIM, fontFamily: "'DM Sans',sans-serif", fontWeight: 500 }}>Amount</div>
+                <div style={{ width: 30 }}/>
+              </div>
+              {costLines.map((line, idx) => (
+                <div key={idx} style={{ display: "flex", gap: 10, marginBottom: 8, alignItems: "center" }}>
+                  <input value={line.description} onChange={e => updateCostLine(idx, "description", e.target.value)}
+                    placeholder="e.g. Oak hardwood materials"
+                    style={{ flex: 2, padding: "9px 12px", borderRadius: 4, border: `1px solid ${BORDER}`, background: BG, fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: DARK, outline: "none", boxSizing: "border-box" }}
+                  />
+                  <select value={line.category} onChange={e => updateCostLine(idx, "category", e.target.value)}
+                    style={{ flex: 1, padding: "9px 12px", borderRadius: 4, border: `1px solid ${BORDER}`, background: BG, fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: DARK, outline: "none", boxSizing: "border-box" }}>
+                    {COST_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <div style={{ position: "relative", width: 130 }}>
+                    <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontFamily: "'DM Mono',monospace", fontSize: 12, color: DIM }}>$</span>
+                    <input type="number" value={line.amount} onChange={e => updateCostLine(idx, "amount", e.target.value)}
+                      placeholder="0"
+                      style={{ width: "100%", padding: "9px 12px 9px 24px", borderRadius: 4, border: `1px solid ${BORDER}`, background: BG, fontFamily: "'DM Mono',monospace", fontSize: 12, color: DARK, outline: "none", boxSizing: "border-box" }}
+                    />
+                  </div>
+                  <button onClick={() => removeCostLine(idx)}
+                    style={{ width: 30, height: 30, borderRadius: 4, border: `1px solid ${BORDER}`, background: "none", cursor: costLines.length > 1 ? "pointer" : "default", color: costLines.length > 1 ? RED : DIM, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", opacity: costLines.length > 1 ? 1 : 0.3, flexShrink: 0 }}>
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Notes */}
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: "block", fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 600, color: DIM, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>
+                Notes (optional)
+              </label>
+              <textarea value={notes} onChange={e => { setNotes(e.target.value); setDirty(true); }}
+                placeholder="Any notes about this estimate..."
+                rows={2}
+                style={{ width: "100%", padding: "10px 14px", borderRadius: 5, border: `1px solid ${BORDER}`, background: BG, fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: DARK, outline: "none", boxSizing: "border-box", resize: "vertical" }}
+              />
+            </div>
+
+            {/* Save button */}
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <button className="btn act" onClick={saveEstimate} disabled={saving || !name.trim()}
+                style={{ padding: "10px 24px", fontSize: 12, opacity: (!name.trim()) ? 0.4 : 1 }}>
+                {saving ? "Saving..." : activeEstimateId ? "Update Estimate" : "Save Estimate"}
+              </button>
+              {dirty && <span style={{ fontSize: 11, color: AMBER, fontFamily: "'DM Sans',sans-serif" }}>Unsaved changes</span>}
+              {!dirty && activeEstimateId && <span style={{ fontSize: 11, color: ACCENT2, fontFamily: "'DM Sans',sans-serif" }}>Saved</span>}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Right: Results panel ── */}
+        <div style={{ width: 300, flexShrink: 0, display: "flex", flexDirection: "column", gap: 16 }}>
+
+          {/* Gross profit card */}
+          <div className="card" style={{ padding: "24px 24px", textAlign: "center" }}>
+            <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 600, color: DIM, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>
+              Projected Gross Profit
+            </div>
+            <div style={{ fontFamily: "'Lora',serif", fontSize: 36, fontWeight: 600, color: grossProfit >= 0 ? ACCENT2 : RED, letterSpacing: "-0.02em" }}>
+              {grossProfit >= 0 ? "" : "-"}{$(Math.abs(grossProfit))}
+            </div>
+            <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 22, fontWeight: 600, color: marginColor, marginTop: 4 }}>
+              {grossMargin}% margin
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16, padding: "12px 0 0", borderTop: `1px solid ${BORDER}` }}>
+              <div>
+                <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 14, color: ACCENT2, fontWeight: 600 }}>{$(rev)}</div>
+                <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 10, color: DIM }}>Revenue</div>
+              </div>
+              <div>
+                <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 14, color: RED, fontWeight: 600 }}>{$(totalCosts)}</div>
+                <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 10, color: DIM }}>Total Costs</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Cost breakdown */}
+          {categoryTotals.length > 0 && (
+            <div className="card" style={{ padding: "20px 24px" }}>
+              <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 600, color: DIM, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 14 }}>
+                Cost Breakdown
+              </div>
+              {categoryTotals.map(cat => {
+                const pct = totalCosts > 0 ? ((cat.value / totalCosts) * 100).toFixed(0) : 0;
+                return (
+                  <div key={cat.name} style={{ marginBottom: 10 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                      <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: MID }}>{cat.name}</span>
+                      <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 11, color: DARK }}>{$(cat.value)} ({pct}%)</span>
+                    </div>
+                    <div style={{ height: 6, background: BORDER, borderRadius: 3, overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${pct}%`, background: catColors[cat.name] || MID, borderRadius: 3, transition: "width 0.3s" }}/>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Benchmark comparison */}
+          {benchmark && rev > 0 && (
+            <div className="card" style={{ padding: "20px 24px" }}>
+              <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 600, color: DIM, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>
+                vs. Your History ({benchmark.label})
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 18, fontWeight: 600, color: marginColor }}>{grossMargin}%</div>
+                  <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 10, color: DIM }}>This Estimate</div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 18, fontWeight: 600, color: MID }}>{benchmark.avgMargin}%</div>
+                  <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 10, color: DIM }}>Avg ({benchmark.count} jobs)</div>
+                </div>
+              </div>
+              {/* Visual bar comparison */}
+              <div style={{ display: "flex", gap: 6, alignItems: "flex-end", height: 40, marginTop: 8 }}>
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
+                  <div style={{ width: "100%", background: marginColor, borderRadius: "3px 3px 0 0", height: `${Math.min(Math.max(marginNum / 50 * 40, 4), 40)}px`, transition: "height 0.3s" }}/>
+                  <span style={{ fontSize: 9, color: DIM, fontFamily: "'DM Sans',sans-serif", marginTop: 4 }}>Estimate</span>
+                </div>
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
+                  <div style={{ width: "100%", background: `${MID}60`, borderRadius: "3px 3px 0 0", height: `${Math.min(Math.max(parseFloat(benchmark.avgMargin) / 50 * 40, 4), 40)}px`, transition: "height 0.3s" }}/>
+                  <span style={{ fontSize: 9, color: DIM, fontFamily: "'DM Sans',sans-serif", marginTop: 4 }}>Average</span>
+                </div>
+              </div>
+              {parseFloat(grossMargin) < parseFloat(benchmark.avgMargin) && (
+                <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 5, background: `${AMBER}12`, border: `1px solid ${AMBER}30`, fontFamily: "'DM Sans',sans-serif", fontSize: 11, color: AMBER, lineHeight: 1.5 }}>
+                  This estimate is {(parseFloat(benchmark.avgMargin) - parseFloat(grossMargin)).toFixed(1)} points below your average. Consider adjusting pricing or reviewing costs.
+                </div>
+              )}
+              {parseFloat(grossMargin) >= parseFloat(benchmark.avgMargin) && (
+                <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 5, background: `${ACCENT2}12`, border: `1px solid ${ACCENT2}30`, fontFamily: "'DM Sans',sans-serif", fontSize: 11, color: ACCENT2, lineHeight: 1.5 }}>
+                  This estimate is {(parseFloat(grossMargin) - parseFloat(benchmark.avgMargin)).toFixed(1)} points above your average — healthy margin.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* AI: Get Canopy's Take */}
+          {rev > 0 && (
+            <div className="card" style={{ padding: "20px 24px" }}>
+              <button onClick={getCanopyTake} disabled={aiLoading}
+                className="btn act" style={{ width: "100%", padding: "11px 18px", fontSize: 12, marginBottom: aiResponse ? 14 : 0 }}>
+                {aiLoading ? "Analyzing..." : "Get Canopy's Take"}
+                {!aiLoading && <span style={{ marginLeft: 6, fontSize: 9, padding: "2px 6px", borderRadius: 3, background: "rgba(92,122,90,0.25)", color: ACCENT2, fontWeight: 500 }}>AI</span>}
+              </button>
+              {aiResponse && (
+                <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: MID, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
+                  {aiResponse}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OnboardingGate({ userId, onComplete }) {
   const [industry,     setIndustry]     = useState("");
   const [revenueRange, setRevenueRange] = useState("");
@@ -3473,6 +3991,7 @@ export default function App() {
     ...(clientType === "quickbooks" ? [{ key:"inbox", label:"Expense Inbox", icon:"✉" }] : []),
     { key:"detail",    label:"Job Detail",   icon:"◈" },
     { key:"clients",   label:"Clients",      icon:"◉" },
+    { key:"estimator", label:"Job Estimator", icon:"◇" },
     { key:"reports",   label:"Reports",      icon:"≡" },
     { key:"chat",      label:"AI Analyst",   icon:"◆" },
     ...(clientType === "quickbooks" ? [{ key:"raw", label:"Raw Data",     icon:"⊞" }] : []),
@@ -3595,10 +4114,11 @@ export default function App() {
 
       {/* ── Content ── */}
       <div style={{ flex:1 }}>
-        {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} jobSummaries={jobSummaries} untagged={untagged} overhead={overhead} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType}/>}
+        {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} onEstimate={()=>setTab("estimator")} jobSummaries={jobSummaries} untagged={untagged} overhead={overhead} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType}/>}
         {tab==="inbox"     && <ExpenseInbox untagged={untagged} tagged={tagged} onTag={handleTag} onDismiss={handleDismiss} onMarkOverhead={handleMarkOverhead} onRestore={handleRestore} overhead={overhead} dismissed={dismissed} jobSummaries={jobSummaries}/>}
         {tab==="detail"    && <JobDetail job={selectedJob} onBack={()=>setTab("dashboard")} untagged={untagged}/>}
         {tab==="clients"   && <ClientScorecard jobSummaries={jobSummaries}/>}
+        {tab==="estimator" && <JobEstimator jobSummaries={jobSummaries} userId={session?.user?.id}/>}
         {tab==="reports"   && <Reports jobSummaries={jobSummaries}/>}
         {tab==="chat"      && <AIChat jobSummaries={jobSummaries}/>}
         {tab==="raw"       && <RawData jobSummaries={jobSummaries} dataSource={dataSource}/>}
