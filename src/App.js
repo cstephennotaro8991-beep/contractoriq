@@ -2829,6 +2829,9 @@ function JobEstimator({ jobSummaries, userId }) {
   const [aiLoading, setAiLoading]         = useState(false);
   const [aiResponse, setAiResponse]       = useState("");
 
+  // ── New Estimate confirmation
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+
   // ── Derive job types from existing data
   const jobTypes = useMemo(() => {
     const types = [...new Set(jobSummaries.map(j => j.type).filter(Boolean))];
@@ -3023,6 +3026,31 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
 
   return (
     <div style={{ padding: "32px 36px", background: BG, minHeight: "100vh" }}>
+
+      {/* ── New Estimate confirmation modal ── */}
+      {showClearConfirm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(44,36,22,0.45)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 8, width: "100%", maxWidth: 400, padding: "28px 32px", boxShadow: "0 20px 60px rgba(44,36,22,0.2)" }}>
+            <h3 style={{ fontFamily: "'Lora',serif", fontSize: 17, fontWeight: 600, color: DARK, marginBottom: 10 }}>Start a new estimate?</h3>
+            <p style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: MID, lineHeight: 1.6, marginBottom: 22 }}>
+              {activeEstimateId ? "Your current estimate has been saved. Starting a new one will clear the form." : "You have unsaved changes. Starting a new estimate will discard them."}
+            </p>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button className="btn" onClick={() => setShowClearConfirm(false)} style={{ fontSize: 12 }}>Cancel</button>
+              {!activeEstimateId && (
+                <button className="btn act" onClick={async () => { setShowClearConfirm(false); await saveEstimate(); clearForm(); }} style={{ fontSize: 12 }} disabled={!name.trim()}>
+                  Save &amp; New
+                </button>
+              )}
+              <button className="btn" onClick={() => { setShowClearConfirm(false); clearForm(); }}
+                style={{ fontSize: 12, borderColor: RED, color: RED }}>
+                {activeEstimateId ? "Start New" : "Discard &amp; New"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
         <div>
           <h1 style={{ fontFamily: "'Lora',serif", fontSize: 24, fontWeight: 600, color: DARK, letterSpacing: "-0.02em", marginBottom: 4 }}>
@@ -3032,7 +3060,7 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
             Price out a job, see your projected margin, and compare to your real history.
           </p>
         </div>
-        <button className="btn act" onClick={clearForm} style={{ fontSize: 12, padding: "9px 18px" }}>
+        <button className="btn act" onClick={() => { if (name.trim() || expectedRevenue || costLines.some(l => l.amount || l.description)) { setShowClearConfirm(true); } else { clearForm(); } }} style={{ fontSize: 12, padding: "9px 18px" }}>
           + New Estimate
         </button>
       </div>
@@ -3102,7 +3130,7 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
             {/* Job name + type row */}
             <div style={{ display: "flex", gap: 16, marginBottom: 20 }}>
               <div style={{ flex: 2 }}>
-                <label style={{ display: "block", fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 600, color: DIM, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>
+                <label style={{ display: "block", fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 700, color: DARK, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>
                   Job / Project Name
                 </label>
                 <input value={name} onChange={e => { setName(e.target.value); setDirty(true); }}
@@ -3111,7 +3139,7 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
                 />
               </div>
               <div style={{ flex: 1 }}>
-                <label style={{ display: "block", fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 600, color: DIM, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>
+                <label style={{ display: "block", fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 700, color: DARK, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>
                   Job Type
                 </label>
                 <select value={jobType} onChange={e => { setJobType(e.target.value); setDirty(true); }}
@@ -3124,7 +3152,7 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
 
             {/* Revenue */}
             <div style={{ marginBottom: 24 }}>
-              <label style={{ display: "block", fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 600, color: DIM, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>
+              <label style={{ display: "block", fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 700, color: DARK, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>
                 Expected Revenue
               </label>
               <div style={{ position: "relative", maxWidth: 260 }}>
@@ -3139,7 +3167,7 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
             {/* Cost lines */}
             <div style={{ marginBottom: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                <label style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 600, color: DIM, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                <label style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 700, color: DARK, textTransform: "uppercase", letterSpacing: "0.04em" }}>
                   Estimated Costs
                 </label>
                 <button onClick={addCostLine}
@@ -3181,7 +3209,7 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
 
             {/* Notes */}
             <div style={{ marginBottom: 20 }}>
-              <label style={{ display: "block", fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 600, color: DIM, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>
+              <label style={{ display: "block", fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 700, color: DARK, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>
                 Notes (optional)
               </label>
               <textarea value={notes} onChange={e => { setNotes(e.target.value); setDirty(true); }}
@@ -3211,10 +3239,10 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
             <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 600, color: DIM, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>
               Projected Gross Profit
             </div>
-            <div style={{ fontFamily: "'Lora',serif", fontSize: 36, fontWeight: 600, color: grossProfit >= 0 ? ACCENT2 : RED, letterSpacing: "-0.02em" }}>
+            <div style={{ fontFamily: "'Lora',serif", fontSize: 26, fontWeight: 600, color: grossProfit >= 0 ? ACCENT2 : RED, letterSpacing: "-0.02em" }}>
               {grossProfit >= 0 ? "" : "-"}{$(Math.abs(grossProfit))}
             </div>
-            <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 22, fontWeight: 600, color: marginColor, marginTop: 4 }}>
+            <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 16, fontWeight: 600, color: marginColor, marginTop: 4 }}>
               {grossMargin}% margin
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16, padding: "12px 0 0", borderTop: `1px solid ${BORDER}` }}>
@@ -3260,11 +3288,11 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
                 <div>
-                  <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 18, fontWeight: 600, color: marginColor }}>{grossMargin}%</div>
+                  <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 14, fontWeight: 600, color: marginColor }}>{grossMargin}%</div>
                   <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 10, color: DIM }}>This Estimate</div>
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 18, fontWeight: 600, color: MID }}>{benchmark.avgMargin}%</div>
+                  <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 14, fontWeight: 600, color: MID }}>{benchmark.avgMargin}%</div>
                   <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 10, color: DIM }}>Avg ({benchmark.count} jobs)</div>
                 </div>
               </div>
@@ -3281,12 +3309,12 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
               </div>
               {parseFloat(grossMargin) < parseFloat(benchmark.avgMargin) && (
                 <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 5, background: `${AMBER}12`, border: `1px solid ${AMBER}30`, fontFamily: "'DM Sans',sans-serif", fontSize: 11, color: AMBER, lineHeight: 1.5 }}>
-                  This estimate is {(parseFloat(benchmark.avgMargin) - parseFloat(grossMargin)).toFixed(1)} points below your average. Consider adjusting pricing or reviewing costs.
+                  Your margin on this job ({grossMargin}%) is below your {benchmark.label} average ({benchmark.avgMargin}%). Consider adjusting your price or reviewing costs.
                 </div>
               )}
               {parseFloat(grossMargin) >= parseFloat(benchmark.avgMargin) && (
                 <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 5, background: `${ACCENT2}12`, border: `1px solid ${ACCENT2}30`, fontFamily: "'DM Sans',sans-serif", fontSize: 11, color: ACCENT2, lineHeight: 1.5 }}>
-                  This estimate is {(parseFloat(grossMargin) - parseFloat(benchmark.avgMargin)).toFixed(1)} points above your average — healthy margin.
+                  Your margin on this job ({grossMargin}%) is above your {benchmark.label} average ({benchmark.avgMargin}%) — healthy pricing.
                 </div>
               )}
             </div>
