@@ -3055,7 +3055,6 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
               {estimates.map(est => {
                 const estCosts = (est.cost_lines || []).reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
                 const estRev = parseFloat(est.expected_revenue) || 0;
-                const estProfit = estRev - estCosts;
                 const estMargin = estRev > 0 ? (((estRev - estCosts) / estRev) * 100).toFixed(1) : "0.0";
                 const isActive = activeEstimateId === est.id;
                 return (
