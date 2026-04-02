@@ -3299,13 +3299,17 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
               {/* Visual bar comparison */}
               <div style={{ display: "flex", gap: 6, alignItems: "flex-end", height: 40, marginTop: 8 }}>
                 <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
-                  <div style={{ width: "100%", background: marginColor, borderRadius: "3px 3px 0 0", height: `${Math.min(Math.max(marginNum / 50 * 40, 4), 40)}px`, transition: "height 0.3s" }}/>
-                  <span style={{ fontSize: 9, color: DIM, fontFamily: "'DM Sans',sans-serif", marginTop: 4 }}>Estimate</span>
+                  <span style={{ fontSize: 9, fontFamily: "'DM Mono',monospace", color: marginColor, fontWeight: 600, marginBottom: 2 }}>{grossMargin}%</span>
+                  <div style={{ width: "100%", background: marginColor, borderRadius: "3px 3px 0 0", height: `${Math.min(Math.max(marginNum / 50 * 32, 4), 32)}px`, transition: "height 0.3s" }}/>
                 </div>
                 <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
-                  <div style={{ width: "100%", background: `${MID}60`, borderRadius: "3px 3px 0 0", height: `${Math.min(Math.max(parseFloat(benchmark.avgMargin) / 50 * 40, 4), 40)}px`, transition: "height 0.3s" }}/>
-                  <span style={{ fontSize: 9, color: DIM, fontFamily: "'DM Sans',sans-serif", marginTop: 4 }}>Average</span>
+                  <span style={{ fontSize: 9, fontFamily: "'DM Mono',monospace", color: MID, fontWeight: 600, marginBottom: 2 }}>{benchmark.avgMargin}%</span>
+                  <div style={{ width: "100%", background: `${MID}60`, borderRadius: "3px 3px 0 0", height: `${Math.min(Math.max(parseFloat(benchmark.avgMargin) / 50 * 32, 4), 32)}px`, transition: "height 0.3s" }}/>
                 </div>
+              </div>
+              <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                <div style={{ flex: 1, textAlign: "center", fontSize: 9, color: DIM, fontFamily: "'DM Sans',sans-serif" }}>Estimate</div>
+                <div style={{ flex: 1, textAlign: "center", fontSize: 9, color: DIM, fontFamily: "'DM Sans',sans-serif" }}>Average</div>
               </div>
               {parseFloat(grossMargin) < parseFloat(benchmark.avgMargin) && (
                 <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 5, background: `${AMBER}12`, border: `1px solid ${AMBER}30`, fontFamily: "'DM Sans',sans-serif", fontSize: 11, color: AMBER, lineHeight: 1.5 }}>
@@ -3324,9 +3328,9 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
           {rev > 0 && (
             <div className="card" style={{ padding: "20px 24px" }}>
               <button onClick={getCanopyTake} disabled={aiLoading}
-                className="btn act" style={{ width: "100%", padding: "11px 18px", fontSize: 12, marginBottom: aiResponse ? 14 : 0 }}>
+                className="btn act" style={{ width: "100%", padding: "11px 18px", fontSize: 12, marginBottom: aiResponse ? 14 : 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                 {aiLoading ? "Analyzing..." : "Get Canopy's Take"}
-                {!aiLoading && <span style={{ marginLeft: 6, fontSize: 9, padding: "2px 6px", borderRadius: 3, background: "rgba(92,122,90,0.25)", color: ACCENT2, fontWeight: 500 }}>AI</span>}
+                {!aiLoading && <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, background: "rgba(92,122,90,0.25)", color: ACCENT2, fontWeight: 500 }}>AI</span>}
               </button>
               {aiResponse && (
                 <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: MID, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
