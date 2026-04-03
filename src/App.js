@@ -3039,12 +3039,12 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
               <button className="btn" onClick={() => setShowClearConfirm(false)} style={{ fontSize: 12 }}>Cancel</button>
               {!activeEstimateId && (
                 <button className="btn act" onClick={async () => { setShowClearConfirm(false); await saveEstimate(); clearForm(); }} style={{ fontSize: 12 }} disabled={!name.trim()}>
-                  Save &amp; New
+                  Save & New
                 </button>
               )}
               <button className="btn" onClick={() => { setShowClearConfirm(false); clearForm(); }}
                 style={{ fontSize: 12, borderColor: RED, color: RED }}>
-                {activeEstimateId ? "Start New" : "Discard &amp; New"}
+                {activeEstimateId ? "Start New" : "Discard & New"}
               </button>
             </div>
           </div>
