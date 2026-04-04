@@ -1945,15 +1945,10 @@ ${JSON.stringify(trend,null,2)}`;
     setMessages(newMessages);
     setLoading(true);
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("/api/ai-chat", {
         method:"POST",
-        headers:{
-          "Content-Type":"application/json",
-          "x-api-key": process.env.REACT_APP_ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
-        },
-        body:JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:1000, system:SYSTEM_PROMPT, messages:newMessages.map(m=>({ role:m.role,content:m.content })) })
+        headers:{ "Content-Type":"application/json" },
+        body:JSON.stringify({ system:SYSTEM_PROMPT, max_tokens:1000, messages:newMessages.map(m=>({ role:m.role,content:m.content })) })
       });
       const data = await res.json();
       const reply = data.content?.map(b=>b.text||"").join("") || "Sorry, couldn't get a response.";
@@ -3025,15 +3020,10 @@ ${benchmarkInfo}
 Give a short, direct assessment: Is the margin healthy? How does it compare to their history? Any specific cost lines that look unusual? Should they raise the price? Keep it under 100 words.`;
 
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("/api/ai-chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": process.env.REACT_APP_ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
-        },
-        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 500, system: "You are a concise financial analyst for a small business owner. Be direct and actionable.", messages: [{ role: "user", content: prompt }] })
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ system: "You are a concise financial analyst for a small business owner. Be direct and actionable.", max_tokens: 500, messages: [{ role: "user", content: prompt }] })
       });
       const data = await res.json();
       setAiResponse(data.content?.map(b => b.text || "").join("") || "Couldn't get a response.");
