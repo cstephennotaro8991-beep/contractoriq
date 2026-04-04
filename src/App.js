@@ -1914,7 +1914,7 @@ function AIChat({ jobSummaries, trendData }) {
       .map(d => ({ ...d, profit: d.revenue - d.costs }));
   })();
 
-  const SYSTEM_PROMPT = `You are a sharp, no-nonsense financial analyst for a small contracting business. You have access to all job data below. Answer questions about profitability, trends, and business performance concisely and in plain English — like a smart bookkeeper talking to a busy contractor. Be direct. Use dollar figures and percentages. Flag problems clearly. Keep responses under 200 words unless a detailed breakdown is asked for.
+  const SYSTEM_PROMPT = `You are a sharp, no-nonsense financial analyst for a small business. You have access to all job data below. Answer questions about profitability, trends, and business performance concisely and in plain English — like a smart bookkeeper talking to a busy business owner. Be direct. Use dollar figures and percentages. Flag problems clearly. Keep responses under 200 words unless a detailed breakdown is asked for.
 
 JOB SUMMARY DATA:
 ${JSON.stringify(jobSummaries.map(j=>({ id:j.id,name:j.name,client:j.clientName,type:j.type,status:j.status,revenue:j.revenue,costs:j.costs,profit:j.profit,marginPct:j.marginPct+"%" })),null,2)}
@@ -1947,7 +1947,12 @@ ${JSON.stringify(trend,null,2)}`;
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method:"POST",
-        headers:{ "Content-Type":"application/json" },
+        headers:{
+          "Content-Type":"application/json",
+          "x-api-key": process.env.REACT_APP_ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
         body:JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:1000, system:SYSTEM_PROMPT, messages:newMessages.map(m=>({ role:m.role,content:m.content })) })
       });
       const data = await res.json();
@@ -3022,7 +3027,12 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": process.env.REACT_APP_ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
         body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 500, system: "You are a concise financial analyst for a small business owner. Be direct and actionable.", messages: [{ role: "user", content: prompt }] })
       });
       const data = await res.json();
@@ -3536,7 +3546,7 @@ function ConsentGate({ userId, onConsent }) {
             style={{ marginTop:3, accentColor:ACCENT2, width:15, height:15, flexShrink:0, cursor:"pointer" }}
           />
           <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:MID, lineHeight:1.6 }}>
-            <strong style={{ color:DARK }}>Optional:</strong> I consent to my anonymized, aggregated financial performance data being used to generate industry benchmarks and improve Canopy. No personally identifiable information is ever shared.
+            <strong style={{ color:DARK }}>Optional:</strong> I consent to Canopy using my anonymized performance data to improve the product experience. No personally identifiable information is ever shared.
           </span>
         </label>
 
