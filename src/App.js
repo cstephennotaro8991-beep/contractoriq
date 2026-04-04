@@ -2798,8 +2798,32 @@ function Reports({ jobSummaries }) {
 // On self-serve signup (future): move these fields into the signup/onboarding flow.
 
 const INDUSTRY_OPTIONS = [
-  "Flooring", "HVAC", "Plumbing", "Electrical", "Landscaping",
-  "Painting", "General Contracting", "Roofing", "Renovation / Remodeling", "Other",
+  // Professional Services
+  "Consulting",
+  "Legal Services",
+  "Accounting & Bookkeeping",
+  "Marketing & Advertising",
+  "IT & Technology Services",
+  // Trades & Construction
+  "General Contracting",
+  "Electrical",
+  "Plumbing",
+  "HVAC",
+  "Landscaping",
+  "Painting",
+  "Flooring",
+  "Roofing",
+  "Renovation / Remodeling",
+  // Other SMB
+  "Retail",
+  "Restaurant / Food Service",
+  "Healthcare & Wellness",
+  "Real Estate",
+  "Event Services",
+  "Cleaning Services",
+  "Transportation & Logistics",
+  "Manufacturing",
+  "Other",
 ];
 
 const REVENUE_OPTIONS = [
