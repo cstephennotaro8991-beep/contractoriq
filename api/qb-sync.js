@@ -130,16 +130,51 @@ async function refreshTokenIfNeeded(contractor) {
 
 function guessJobType(name) {
   const n = name.toLowerCase();
+  // Flooring
   if (n.includes('floor') || n.includes('hardwood') || n.includes('tile') ||
-      n.includes('carpet') || n.includes('vinyl') || n.includes('laminate')) return 'Flooring';
-  if (n.includes('kitchen') || n.includes('remodel') || n.includes('reno'))  return 'Remodel';
-  if (n.includes('bath') || n.includes('addition'))   return 'Addition';
-  if (n.includes('roof'))                             return 'Roofing';
-  if (n.includes('deck') || n.includes('patio'))      return 'Exterior';
-  if (n.includes('foundation') || n.includes('structural')) return 'Structural';
-  if (n.includes('commercial') || n.includes('office')) return 'Commercial';
-  if (n.includes('paint'))                            return 'Painting';
-  return 'General Construction';
+      n.includes('carpet') || n.includes('vinyl') || n.includes('laminate') ||
+      n.includes('epoxy') || n.includes('subfloor')) return 'Flooring';
+  // Remodel / Renovation
+  if (n.includes('kitchen') || n.includes('remodel') || n.includes('reno') ||
+      n.includes('renovation') || n.includes('retrofit')) return 'Remodel';
+  // Additions / Framing
+  if (n.includes('bath') || n.includes('addition') || n.includes('framing') ||
+      n.includes('frame')) return 'Addition';
+  // Roofing
+  if (n.includes('roof') || n.includes('shingle') || n.includes('gutter')) return 'Roofing';
+  // Exterior / Decks
+  if (n.includes('deck') || n.includes('patio') || n.includes('fence') ||
+      n.includes('siding') || n.includes('exterior')) return 'Exterior';
+  // Structural / Foundation
+  if (n.includes('foundation') || n.includes('structural') || n.includes('concrete') ||
+      n.includes('masonry') || n.includes('basement')) return 'Structural';
+  // Commercial
+  if (n.includes('commercial') || n.includes('office') || n.includes('retail') ||
+      n.includes('warehouse') || n.includes('tenant')) return 'Commercial';
+  // Painting
+  if (n.includes('paint') || n.includes('stain') || n.includes('drywall') ||
+      n.includes('plaster')) return 'Painting';
+  // HVAC / Mechanical
+  if (n.includes('hvac') || n.includes('heat') || n.includes('cool') ||
+      n.includes('duct') || n.includes('ventil')) return 'HVAC';
+  // Electrical
+  if (n.includes('electric') || n.includes('wiring') || n.includes('panel') ||
+      n.includes('lighting')) return 'Electrical';
+  // Plumbing
+  if (n.includes('plumb') || n.includes('pipe') || n.includes('drain') ||
+      n.includes('water') || n.includes('sewer')) return 'Plumbing';
+  // Landscaping
+  if (n.includes('landscape') || n.includes('lawn') || n.includes('garden') ||
+      n.includes('irrigation') || n.includes('tree')) return 'Landscaping';
+  // Cleaning
+  if (n.includes('clean') || n.includes('janitorial') || n.includes('maid')) return 'Cleaning';
+  // IT / Tech
+  if (n.includes('software') || n.includes('it ') || n.includes('tech') ||
+      n.includes('network') || n.includes('server')) return 'IT Services';
+  // Consulting / Professional Services
+  if (n.includes('consult') || n.includes('advisory') || n.includes('audit') ||
+      n.includes('assess') || n.includes('review')) return 'Consulting';
+  return 'General';
 }
 
 // ── Main sync handler ─────────────────────────────────────────────────────────
