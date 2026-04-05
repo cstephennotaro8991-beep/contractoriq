@@ -3207,7 +3207,7 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
       <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
 
         {/* ── Left: Templates + Saved estimates list ── */}
-        <div style={{ width: 240, flexShrink: 0 }}>
+        <div style={{ width: 200, flexShrink: 0 }}>
 
           {/* Templates */}
           {templates.length > 0 && (
@@ -3432,7 +3432,7 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
         </div>
 
         {/* ── Right: Results panel ── */}
-        <div style={{ width: 300, flexShrink: 0, display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ width: 240, flexShrink: 0, display: "flex", flexDirection: "column", gap: 16 }}>
 
           {/* Gross profit card */}
           <div className="card" style={{ padding: "24px 24px", textAlign: "center" }}>
