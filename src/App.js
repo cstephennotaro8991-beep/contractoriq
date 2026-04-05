@@ -2834,9 +2834,20 @@ const REVENUE_OPTIONS = [
 
 const COST_CATEGORIES = ["Materials", "Labor", "Subcontractor", "Other"];
 
+// Compute the effective amount for a cost line (flat or unit mode)
+function getLineAmount(line) {
+  if (line.mode === "unit") {
+    return (parseFloat(line.quantity) || 0) * (parseFloat(line.unitCost) || 0);
+  }
+  return parseFloat(line.amount) || 0;
+}
+
+const BLANK_LINE = { description: "", category: "Materials", amount: "", mode: "flat", unitCost: "", quantity: "" };
+
 function JobEstimator({ jobSummaries, userId }) {
   // ── Saved estimates state
   const [estimates, setEstimates]         = useState([]);
+  const [templates, setTemplates]         = useState([]);
   const [loadingEstimates, setLoadingEstimates] = useState(true);
   const [activeEstimateId, setActiveEstimateId] = useState(null);
 
@@ -2844,17 +2855,19 @@ function JobEstimator({ jobSummaries, userId }) {
   const [name, setName]                   = useState("");
   const [jobType, setJobType]             = useState("");
   const [expectedRevenue, setExpectedRevenue] = useState("");
-  const [costLines, setCostLines]         = useState([{ description: "", category: "Materials", amount: "" }]);
+  const [costLines, setCostLines]         = useState([{ ...BLANK_LINE }]);
   const [notes, setNotes]                 = useState("");
   const [saving, setSaving]               = useState(false);
+  const [savingTemplate, setSavingTemplate] = useState(false);
   const [dirty, setDirty]                 = useState(false);
 
   // ── AI state
   const [aiLoading, setAiLoading]         = useState(false);
   const [aiResponse, setAiResponse]       = useState("");
 
-  // ── New Estimate confirmation
+  // ── Modals
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
 
   // ── Derive job types from existing data
   const jobTypes = useMemo(() => {
@@ -2862,7 +2875,7 @@ function JobEstimator({ jobSummaries, userId }) {
     return types.sort();
   }, [jobSummaries]);
 
-  // ── Load saved estimates on mount
+  // ── Load saved estimates and templates on mount
   useEffect(() => {
     if (!userId) { setLoadingEstimates(false); return; }
     (async () => {
@@ -2872,7 +2885,10 @@ function JobEstimator({ jobSummaries, userId }) {
           .select("*")
           .eq("contractor_id", userId)
           .order("updated_at", { ascending: false });
-        if (data) setEstimates(data);
+        if (data) {
+          setEstimates(data.filter(e => !e.is_template));
+          setTemplates(data.filter(e => e.is_template));
+        }
       } catch (e) {
         console.error("Error loading estimates:", e.message);
       }
@@ -2881,7 +2897,7 @@ function JobEstimator({ jobSummaries, userId }) {
   }, [userId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Calculations
-  const totalCosts = costLines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
+  const totalCosts = costLines.reduce((s, l) => s + getLineAmount(l), 0);
   const rev = parseFloat(expectedRevenue) || 0;
   const grossProfit = rev - totalCosts;
   const grossMargin = rev > 0 ? ((grossProfit / rev) * 100).toFixed(1) : "0.0";
@@ -2902,7 +2918,7 @@ function JobEstimator({ jobSummaries, userId }) {
 
   // ── Cost line helpers
   function addCostLine() {
-    setCostLines([...costLines, { description: "", category: "Materials", amount: "" }]);
+    setCostLines([...costLines, { ...BLANK_LINE }]);
     setDirty(true);
   }
   function removeCostLine(idx) {
@@ -2914,11 +2930,26 @@ function JobEstimator({ jobSummaries, userId }) {
     setCostLines(costLines.map((l, i) => i === idx ? { ...l, [field]: value } : l));
     setDirty(true);
   }
+  function toggleCostLineMode(idx) {
+    const line = costLines[idx];
+    if (line.mode === "unit") {
+      // Switch to flat — carry over computed amount
+      setCostLines(costLines.map((l, i) => i === idx
+        ? { ...l, mode: "flat", amount: String(getLineAmount(l)) }
+        : l));
+    } else {
+      // Switch to unit — clear qty/unitCost
+      setCostLines(costLines.map((l, i) => i === idx
+        ? { ...l, mode: "unit", unitCost: "", quantity: "" }
+        : l));
+    }
+    setDirty(true);
+  }
 
   // ── Clear form
   function clearForm() {
     setName(""); setJobType(""); setExpectedRevenue(""); setNotes("");
-    setCostLines([{ description: "", category: "Materials", amount: "" }]);
+    setCostLines([{ ...BLANK_LINE }]);
     setActiveEstimateId(null); setDirty(false); setAiResponse("");
   }
 
@@ -2929,11 +2960,26 @@ function JobEstimator({ jobSummaries, userId }) {
     setExpectedRevenue(est.expected_revenue ? String(est.expected_revenue) : "");
     setNotes(est.notes || "");
     setCostLines(est.cost_lines && est.cost_lines.length > 0
-      ? est.cost_lines.map(l => ({ description: l.description || "", category: l.category || "Materials", amount: l.amount ? String(l.amount) : "" }))
-      : [{ description: "", category: "Materials", amount: "" }]);
+      ? est.cost_lines.map(l => ({ description: l.description || "", category: l.category || "Materials", amount: l.amount ? String(l.amount) : "", mode: l.mode || "flat", unitCost: l.unitCost ? String(l.unitCost) : "", quantity: l.quantity ? String(l.quantity) : "" }))
+      : [{ ...BLANK_LINE }]);
     setActiveEstimateId(est.id);
     setDirty(false);
     setAiResponse("");
+  }
+
+  // ── Load a template into the form (clears revenue + name for user to fill)
+  function loadTemplate(tmpl) {
+    setName("");
+    setJobType(tmpl.job_type || "");
+    setExpectedRevenue("");
+    setNotes(tmpl.notes || "");
+    setCostLines(tmpl.cost_lines && tmpl.cost_lines.length > 0
+      ? tmpl.cost_lines.map(l => ({ description: l.description || "", category: l.category || "Materials", amount: l.amount ? String(l.amount) : "", mode: l.mode || "flat", unitCost: l.unitCost ? String(l.unitCost) : "", quantity: l.quantity ? String(l.quantity) : "" }))
+      : [{ ...BLANK_LINE }]);
+    setActiveEstimateId(null);
+    setDirty(true);
+    setAiResponse("");
+    setShowTemplateModal(false);
   }
 
   // ── Save estimate (create or update)
@@ -2945,8 +2991,9 @@ function JobEstimator({ jobSummaries, userId }) {
       name: name.trim(),
       job_type: jobType || null,
       expected_revenue: parseFloat(expectedRevenue) || 0,
-      cost_lines: costLines.map(l => ({ description: l.description, category: l.category, amount: parseFloat(l.amount) || 0 })),
+      cost_lines: costLines.map(l => ({ description: l.description, category: l.category, amount: getLineAmount(l), mode: l.mode || "flat", unitCost: l.unitCost || "", quantity: l.quantity || "" })),
       notes: notes || null,
+      is_template: false,
       updated_at: new Date().toISOString(),
     };
     try {
@@ -2980,6 +3027,40 @@ function JobEstimator({ jobSummaries, userId }) {
     }
   }
 
+  // ── Save current cost lines as a reusable template
+  async function saveAsTemplate() {
+    if (!userId || !name.trim()) return;
+    setSavingTemplate(true);
+    const payload = {
+      contractor_id: userId,
+      name: name.trim() + " (Template)",
+      job_type: jobType || null,
+      expected_revenue: 0,
+      cost_lines: costLines.map(l => ({ description: l.description, category: l.category, amount: getLineAmount(l), mode: l.mode || "flat", unitCost: l.unitCost || "", quantity: l.quantity || "" })),
+      notes: notes || null,
+      is_template: true,
+      updated_at: new Date().toISOString(),
+    };
+    try {
+      const { data, error } = await supabase.from("estimates").insert(payload).select().single();
+      if (error) throw error;
+      setTemplates(prev => [data, ...prev]);
+    } catch (e) {
+      console.error("Error saving template:", e.message);
+    }
+    setSavingTemplate(false);
+  }
+
+  // ── Delete template
+  async function deleteTemplate(id) {
+    try {
+      await supabase.from("estimates").delete().eq("id", id);
+      setTemplates(prev => prev.filter(t => t.id !== id));
+    } catch (e) {
+      console.error("Error deleting template:", e.message);
+    }
+  }
+
   // ── Duplicate estimate
   function duplicateEstimate(est) {
     setName(est.name + " (copy)");
@@ -2987,8 +3068,8 @@ function JobEstimator({ jobSummaries, userId }) {
     setExpectedRevenue(est.expected_revenue ? String(est.expected_revenue) : "");
     setNotes(est.notes || "");
     setCostLines(est.cost_lines && est.cost_lines.length > 0
-      ? est.cost_lines.map(l => ({ description: l.description || "", category: l.category || "Materials", amount: l.amount ? String(l.amount) : "" }))
-      : [{ description: "", category: "Materials", amount: "" }]);
+      ? est.cost_lines.map(l => ({ description: l.description || "", category: l.category || "Materials", amount: l.amount ? String(l.amount) : "", mode: l.mode || "flat", unitCost: l.unitCost ? String(l.unitCost) : "", quantity: l.quantity ? String(l.quantity) : "" }))
+      : [{ ...BLANK_LINE }]);
     setActiveEstimateId(null);
     setDirty(true);
     setAiResponse("");
@@ -2998,7 +3079,7 @@ function JobEstimator({ jobSummaries, userId }) {
   async function getCanopyTake() {
     if (aiLoading || rev <= 0) return;
     setAiLoading(true); setAiResponse("");
-    const costBreakdown = costLines.filter(l => parseFloat(l.amount) > 0).map(l => `${l.category}: ${l.description || "unnamed"} — $${parseFloat(l.amount).toLocaleString()}`).join("\n");
+    const costBreakdown = costLines.filter(l => getLineAmount(l) > 0).map(l => `${l.category}: ${l.description || "unnamed"} — $${getLineAmount(l).toLocaleString()}`).join("\n");
     const benchmarkInfo = benchmark
       ? `Historical benchmark for ${benchmark.label} (${benchmark.count} completed jobs): average margin ${benchmark.avgMargin}%, average revenue ${$(benchmark.avgRevenue)}, average cost ${$(benchmark.avgCost)}.`
       : "No historical data available for comparison.";
@@ -3041,7 +3122,7 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
   const categoryTotals = useMemo(() => {
     const map = {};
     costLines.forEach(l => {
-      const amt = parseFloat(l.amount) || 0;
+      const amt = getLineAmount(l);
       if (amt > 0) map[l.category] = (map[l.category] || 0) + amt;
     });
     return COST_CATEGORIES.map(c => ({ name: c, value: map[c] || 0 })).filter(c => c.value > 0);
@@ -3062,14 +3143,40 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
               <button className="btn" onClick={() => setShowClearConfirm(false)} style={{ fontSize: 12 }}>Cancel</button>
               {!activeEstimateId && (
-                <button className="btn act" onClick={async () => { setShowClearConfirm(false); await saveEstimate(); clearForm(); }} style={{ fontSize: 12 }} disabled={!name.trim()}>
+                <button className="btn act" onClick={async () => { setShowClearConfirm(false); await saveEstimate(); clearForm(); if (templates.length > 0) setShowTemplateModal(true); }} style={{ fontSize: 12 }} disabled={!name.trim()}>
                   Save & New
                 </button>
               )}
-              <button className="btn" onClick={() => { setShowClearConfirm(false); clearForm(); }}
+              <button className="btn" onClick={() => { setShowClearConfirm(false); clearForm(); if (templates.length > 0) setShowTemplateModal(true); }}
                 style={{ fontSize: 12, borderColor: RED, color: RED }}>
                 {activeEstimateId ? "Start New" : "Discard & New"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Template picker modal ── */}
+      {showTemplateModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(44,36,22,0.45)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 8, width: "100%", maxWidth: 440, padding: "28px 32px", boxShadow: "0 20px 60px rgba(44,36,22,0.2)" }}>
+            <h3 style={{ fontFamily: "'Lora',serif", fontSize: 17, fontWeight: 600, color: DARK, marginBottom: 8 }}>Start from a template?</h3>
+            <p style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: MID, lineHeight: 1.6, marginBottom: 18 }}>
+              Pick a template to pre-fill your cost lines, or start from scratch.
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20, maxHeight: 260, overflowY: "auto" }}>
+              {templates.map(t => (
+                <button key={t.id} onClick={() => loadTemplate(t)}
+                  style={{ textAlign: "left", padding: "12px 14px", borderRadius: 6, border: `1px solid ${BORDER}`, background: BG, cursor: "pointer", fontFamily: "'DM Sans',sans-serif", transition: "border-color 0.15s" }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = ACCENT}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = BORDER}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: DARK }}>{t.name}</div>
+                  {t.job_type && <div style={{ fontSize: 11, color: DIM, marginTop: 2 }}>{t.job_type} · {(t.cost_lines || []).length} cost lines</div>}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button className="btn" onClick={() => setShowTemplateModal(false)} style={{ fontSize: 12 }}>Start from Scratch</button>
             </div>
           </div>
         </div>
@@ -3084,15 +3191,53 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
             Price out a job, see your projected margin, and compare to your real history.
           </p>
         </div>
-        <button className="btn act" onClick={() => { if (name.trim() || expectedRevenue || costLines.some(l => l.amount || l.description)) { setShowClearConfirm(true); } else { clearForm(); } }} style={{ fontSize: 12, padding: "9px 18px" }}>
+        <button className="btn act" onClick={() => {
+          const hasData = name.trim() || expectedRevenue || costLines.some(l => l.description || l.amount || l.unitCost || l.quantity);
+          if (hasData && dirty) {
+            setShowClearConfirm(true);
+          } else {
+            clearForm();
+            if (templates.length > 0) setShowTemplateModal(true);
+          }
+        }} style={{ fontSize: 12, padding: "9px 18px" }}>
           + New Estimate
         </button>
       </div>
 
       <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
 
-        {/* ── Left: Saved estimates list ── */}
+        {/* ── Left: Templates + Saved estimates list ── */}
         <div style={{ width: 240, flexShrink: 0 }}>
+
+          {/* Templates */}
+          {templates.length > 0 && (
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 600, color: DIM, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
+                Templates
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {templates.map(t => (
+                  <div key={t.id}
+                    onClick={() => loadTemplate(t)}
+                    style={{ padding: "10px 14px", borderRadius: 6, cursor: "pointer", background: "transparent", border: `1px solid ${BORDER}`, transition: "all 0.15s" }}
+                    onMouseEnter={e => { e.currentTarget.style.background = CARD; e.currentTarget.style.borderColor = ACCENT; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = BORDER; }}>
+                    <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, fontWeight: 500, color: DARK, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {t.name}
+                    </div>
+                    {t.job_type && <div style={{ fontSize: 10, color: DIM, fontFamily: "'DM Sans',sans-serif", marginTop: 2 }}>{t.job_type}</div>}
+                    <div style={{ marginTop: 6 }}>
+                      <button onClick={e => { e.stopPropagation(); deleteTemplate(t.id); }}
+                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: 10, color: RED, fontFamily: "'DM Sans',sans-serif", padding: 0, textDecoration: "underline" }}>
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 600, color: DIM, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
             Saved Estimates
           </div>
@@ -3105,7 +3250,7 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {estimates.map(est => {
-                const estCosts = (est.cost_lines || []).reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
+                const estCosts = (est.cost_lines || []).reduce((s, l) => s + getLineAmount(l), 0);
                 const estRev = parseFloat(est.expected_revenue) || 0;
                 const estMargin = estRev > 0 ? (((estRev - estCosts) / estRev) * 100).toFixed(1) : "0.0";
                 const isActive = activeEstimateId === est.id;
@@ -3203,7 +3348,7 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
               <div style={{ display: "flex", gap: 10, marginBottom: 6 }}>
                 <div style={{ flex: 2, fontSize: 10, color: DIM, fontFamily: "'DM Sans',sans-serif", fontWeight: 500 }}>Description</div>
                 <div style={{ flex: 1, fontSize: 10, color: DIM, fontFamily: "'DM Sans',sans-serif", fontWeight: 500 }}>Category</div>
-                <div style={{ width: 130, fontSize: 10, color: DIM, fontFamily: "'DM Sans',sans-serif", fontWeight: 500 }}>Amount</div>
+                <div style={{ width: 200, fontSize: 10, color: DIM, fontFamily: "'DM Sans',sans-serif", fontWeight: 500 }}>Amount</div>
                 <div style={{ width: 30 }}/>
               </div>
               {costLines.map((line, idx) => (
@@ -3216,12 +3361,39 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
                     style={{ flex: 1, padding: "9px 12px", borderRadius: 4, border: `1px solid ${BORDER}`, background: BG, fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: DARK, outline: "none", boxSizing: "border-box" }}>
                     {COST_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
-                  <div style={{ position: "relative", width: 130 }}>
-                    <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontFamily: "'DM Mono',monospace", fontSize: 12, color: DIM }}>$</span>
-                    <input type="number" value={line.amount} onChange={e => updateCostLine(idx, "amount", e.target.value)}
-                      placeholder="0"
-                      style={{ width: "100%", padding: "9px 12px 9px 24px", borderRadius: 4, border: `1px solid ${BORDER}`, background: BG, fontFamily: "'DM Mono',monospace", fontSize: 12, color: DARK, outline: "none", boxSizing: "border-box" }}
-                    />
+                  {/* Amount area — flat or unit mode */}
+                  <div style={{ width: 200, display: "flex", alignItems: "center", gap: 4 }}>
+                    {line.mode === "flat" ? (
+                      <div style={{ position: "relative", flex: 1 }}>
+                        <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontFamily: "'DM Mono',monospace", fontSize: 12, color: DIM }}>$</span>
+                        <input type="number" value={line.amount} onChange={e => updateCostLine(idx, "amount", e.target.value)}
+                          placeholder="0"
+                          style={{ width: "100%", padding: "9px 12px 9px 22px", borderRadius: 4, border: `1px solid ${BORDER}`, background: BG, fontFamily: "'DM Mono',monospace", fontSize: 12, color: DARK, outline: "none", boxSizing: "border-box" }}
+                        />
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", alignItems: "center", gap: 3, flex: 1 }}>
+                        <input type="number" value={line.quantity} onChange={e => updateCostLine(idx, "quantity", e.target.value)}
+                          placeholder="Qty"
+                          style={{ width: 48, padding: "9px 6px", borderRadius: 4, border: `1px solid ${BORDER}`, background: BG, fontFamily: "'DM Mono',monospace", fontSize: 12, color: DARK, outline: "none", boxSizing: "border-box", textAlign: "center" }}
+                        />
+                        <span style={{ fontSize: 11, color: DIM }}>×</span>
+                        <div style={{ position: "relative", flex: 1 }}>
+                          <span style={{ position: "absolute", left: 7, top: "50%", transform: "translateY(-50%)", fontFamily: "'DM Mono',monospace", fontSize: 11, color: DIM }}>$</span>
+                          <input type="number" value={line.unitCost} onChange={e => updateCostLine(idx, "unitCost", e.target.value)}
+                            placeholder="0"
+                            style={{ width: "100%", padding: "9px 6px 9px 18px", borderRadius: 4, border: `1px solid ${BORDER}`, background: BG, fontFamily: "'DM Mono',monospace", fontSize: 12, color: DARK, outline: "none", boxSizing: "border-box" }}
+                          />
+                        </div>
+                        <span style={{ fontSize: 10, color: DIM, whiteSpace: "nowrap" }}>= {$(getLineAmount(line))}</span>
+                      </div>
+                    )}
+                    {/* Mode toggle */}
+                    <button onClick={() => toggleCostLineMode(idx)}
+                      title={line.mode === "flat" ? "Switch to unit × qty" : "Switch to flat amount"}
+                      style={{ padding: "4px 7px", borderRadius: 4, border: `1px solid ${BORDER}`, background: line.mode === "unit" ? ACCENT : "none", cursor: "pointer", fontSize: 9, color: line.mode === "unit" ? "#fff" : DIM, fontFamily: "'DM Sans',sans-serif", fontWeight: 600, flexShrink: 0, letterSpacing: "0.04em" }}>
+                      {line.mode === "unit" ? "FLAT" : "UNIT"}
+                    </button>
                   </div>
                   <button onClick={() => removeCostLine(idx)}
                     style={{ width: 30, height: 30, borderRadius: 4, border: `1px solid ${BORDER}`, background: "none", cursor: costLines.length > 1 ? "pointer" : "default", color: costLines.length > 1 ? RED : DIM, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", opacity: costLines.length > 1 ? 1 : 0.3, flexShrink: 0 }}>
@@ -3243,11 +3415,15 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
               />
             </div>
 
-            {/* Save button */}
-            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            {/* Save buttons */}
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               <button className="btn act" onClick={saveEstimate} disabled={saving || !name.trim()}
                 style={{ padding: "10px 24px", fontSize: 12, opacity: (!name.trim()) ? 0.4 : 1 }}>
                 {saving ? "Saving..." : activeEstimateId ? "Update Estimate" : "Save Estimate"}
+              </button>
+              <button className="btn" onClick={saveAsTemplate} disabled={savingTemplate || !name.trim()}
+                style={{ padding: "10px 18px", fontSize: 12, opacity: (!name.trim()) ? 0.4 : 1 }}>
+                {savingTemplate ? "Saving..." : "Save as Template"}
               </button>
               {dirty && <span style={{ fontSize: 11, color: AMBER, fontFamily: "'DM Sans',sans-serif" }}>Unsaved changes</span>}
               {!dirty && activeEstimateId && <span style={{ fontSize: 11, color: ACCENT2, fontFamily: "'DM Sans',sans-serif" }}>Saved</span>}
