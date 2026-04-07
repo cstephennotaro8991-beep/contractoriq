@@ -12,19 +12,18 @@ const supabase = createClient(
 
 // ── QB API helper ─────────────────────────────────────────────────────────────
 
-async function qbQuery(realmId, accessToken, entity, conditions = '') {
-  const query = conditions
-    ? `SELECT * FROM ${entity} WHERE ${conditions}`
-    : `SELECT * FROM ${entity}`;
+const QB_PAGE_SIZE = 1000;
+const MAX_RETRIES  = 3;
+const RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
 
+async function qbFetchPage(realmId, accessToken, entity, conditions, startPosition) {
   const baseUrl = process.env.QB_ENVIRONMENT === 'sandbox'
     ? 'https://sandbox-quickbooks.api.intuit.com'
     : 'https://quickbooks.api.intuit.com';
 
+  const whereClause = conditions ? ` WHERE ${conditions}` : '';
+  const query = `SELECT * FROM ${entity}${whereClause} STARTPOSITION ${startPosition} MAXRESULTS ${QB_PAGE_SIZE}`;
   const url = `${baseUrl}/v3/company/${realmId}/query?query=${encodeURIComponent(query)}&minorversion=65`;
-
-  const MAX_RETRIES = 3;
-  const RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     const res = await fetch(url, { // eslint-disable-line no-await-in-loop
@@ -50,7 +49,7 @@ async function qbQuery(realmId, accessToken, entity, conditions = '') {
 
     // Retry on transient errors with exponential backoff
     if (RETRY_STATUSES.has(res.status) && attempt < MAX_RETRIES) {
-      const delay = Math.pow(2, attempt) * 500; // 1s, 2s on attempts 1 and 2
+      const delay = Math.pow(2, attempt) * 500;
       console.warn(`QB API ${res.status} on attempt ${attempt} (tid: ${tid}) — retrying in ${delay}ms`);
       await new Promise(r => setTimeout(r, delay)); // eslint-disable-line no-await-in-loop
       continue;
@@ -58,6 +57,26 @@ async function qbQuery(realmId, accessToken, entity, conditions = '') {
 
     throw new Error(`QB API error ${res.status} (tid: ${tid}): ${text.slice(0, 200)}`);
   }
+}
+
+// Fetches all pages for a given entity, handling QB's 1,000-record limit
+async function qbQuery(realmId, accessToken, entity, conditions = '') {
+  const allRecords = [];
+  let startPosition = 1;
+
+  while (true) { // eslint-disable-line no-constant-condition
+    const page = await qbFetchPage(realmId, accessToken, entity, conditions, startPosition); // eslint-disable-line no-await-in-loop
+    const records = page?.[entity] || [];
+    allRecords.push(...records);
+
+    // If fewer than a full page returned, we've reached the end
+    if (records.length < QB_PAGE_SIZE) break;
+
+    startPosition += QB_PAGE_SIZE;
+    console.log(`${entity}: fetched ${allRecords.length} records so far, fetching next page...`);
+  }
+
+  return { [entity]: allRecords };
 }
 
 // ── Token refresh helper ──────────────────────────────────────────────────────
