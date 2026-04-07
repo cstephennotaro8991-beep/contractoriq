@@ -202,8 +202,8 @@ const DATE_RANGES = [
 const MOCK_TODAY = new Date();
 
 function getDateCutoff(rangeKey) {
-  if (!rangeKey || rangeKey === "all") return null;
-  if (rangeKey === "ytd") return new Date("2024-01-01");
+  if (!rangeKey || rangeKey === "all" || rangeKey === "custom") return null;
+  if (rangeKey === "ytd") return new Date(`${MOCK_TODAY.getFullYear()}-01-01`);
   const range = DATE_RANGES.find(r => r.key === rangeKey);
   if (!range) return null;
   const cutoff = new Date(MOCK_TODAY);
@@ -211,7 +211,25 @@ function getDateCutoff(rangeKey) {
   return cutoff;
 }
 
-function filterJobsByDate(jobs, rangeKey) {
+function filterJobsByDate(jobs, rangeKey, customStart, customEnd) {
+  if (rangeKey === "custom") {
+    const start = customStart ? new Date(customStart) : null;
+    const end   = customEnd   ? new Date(customEnd + "T23:59:59") : null;
+    if (!start && !end) return jobs;
+    return jobs.map(job => {
+      const filteredInvoices  = job.invoices.filter(inv => {
+        const d = new Date(inv.TxnDate);
+        return (!start || d >= start) && (!end || d <= end);
+      });
+      const filteredPurchases = job.purchases.filter(p => {
+        const d = new Date(p.TxnDate);
+        return (!start || d >= start) && (!end || d <= end);
+      });
+      const revenue = filteredInvoices.reduce((s, inv) => s + (inv.TotalAmt || 0), 0);
+      const costs   = filteredPurchases.reduce((s, p) => s + (p.TotalAmt || 0), 0);
+      return { ...job, invoices: filteredInvoices, purchases: filteredPurchases, revenue, costs, profit: revenue - costs, marginPct: revenue > 0 ? (((revenue - costs) / revenue) * 100).toFixed(1) : "0.0", outstanding: filteredInvoices.reduce((s, inv) => s + (inv.Balance || 0), 0) };
+    }).filter(job => job.revenue > 0 || job.costs > 0);
+  }
   const cutoff = getDateCutoff(rangeKey);
   if (!cutoff) return jobs;
   return jobs.map(job => {
@@ -240,7 +258,16 @@ function filterJobsByDate(jobs, rangeKey) {
   }).filter(job => job.revenue > 0 || job.costs > 0);
 }
 
-function filterTrendByDate(trend, rangeKey) {
+function filterTrendByDate(trend, rangeKey, customStart, customEnd) {
+  if (rangeKey === "custom") {
+    const start = customStart ? new Date(customStart) : null;
+    const end   = customEnd   ? new Date(customEnd + "T23:59:59") : null;
+    if (!start && !end) return trend;
+    return trend.filter(d => {
+      const date = new Date(d.date);
+      return (!start || date >= start) && (!end || date <= end);
+    });
+  }
   const cutoff = getDateCutoff(rangeKey);
   if (!cutoff) return trend;
   return trend.filter(d => new Date(d.date) >= cutoff);
@@ -768,6 +795,8 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, q
   const [sort, setSort]             = useState("profit");
   const [sortDir, setSortDir]       = useState("desc");
   const [dateRange, setDateRange]   = useState("all");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd]     = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [trendView, setTrendView]     = useState("cumulative");
   const [expenseView, setExpenseView] = useState("job");
@@ -807,8 +836,8 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, q
   const TREND = dynamicTrend.length > 0 ? dynamicTrend : MONTHLY_TREND;
 
   // Apply date filter
-  const filteredJobs  = dateRange === "all" ? jobSummaries : filterJobsByDate(jobSummaries, dateRange);
-  const filteredTrend = dateRange === "all" ? TREND : filterTrendByDate(TREND, dateRange);
+  const filteredJobs  = dateRange === "all" ? jobSummaries : filterJobsByDate(jobSummaries, dateRange, customStart, customEnd);
+  const filteredTrend = dateRange === "all" ? TREND : filterTrendByDate(TREND, dateRange, customStart, customEnd);
 
   // Cumulative profit data — running total across months
   const cumulativeData = useMemo(() => {
@@ -908,6 +937,12 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, q
   // Overhead total — filtered to selected date range
   const overheadInRange = (overhead || []).filter(o => {
     if (dateRange === "all") return true;
+    if (dateRange === "custom") {
+      const start = customStart ? new Date(customStart) : null;
+      const end   = customEnd   ? new Date(customEnd + "T23:59:59") : null;
+      const d = new Date(o.date);
+      return (!start || d >= start) && (!end || d <= end);
+    }
     const cutoff = getDateCutoff(dateRange);
     return cutoff ? new Date(o.date) >= cutoff : true;
   });
@@ -937,7 +972,9 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, q
 
   const rangeLabel = dateRange === "all"
     ? allTimeLabel
-    : `${DATE_RANGES.find(r=>r.key===dateRange)?.label} · ${typeFilteredJobs.length} job${typeFilteredJobs.length!==1?"s":""}`;
+    : dateRange === "custom"
+      ? `${customStart || "…"} → ${customEnd || "…"} · ${typeFilteredJobs.length} job${typeFilteredJobs.length!==1?"s":""}`
+      : `${DATE_RANGES.find(r=>r.key===dateRange)?.label} · ${typeFilteredJobs.length} job${typeFilteredJobs.length!==1?"s":""}`;
 
   return (
     <div style={{ padding:"32px 36px", background:BG, minHeight:"100vh" }}>
@@ -948,13 +985,25 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, q
           <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em" }}>Job Profitability Overview</h1>
           <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>{rangeLabel}</p>
         </div>
-        <div style={{ display:"flex",alignItems:"center",gap:6,marginTop:4 }}>
+        <div style={{ display:"flex",alignItems:"center",gap:6,marginTop:4,flexWrap:"wrap" }}>
           <div style={{ display:"flex",border:`1px solid ${BORDER}`,borderRadius:5,overflow:"hidden",background:CARD }}>
             {DATE_RANGES.map((r,i) => (
               <button key={r.key} onClick={()=>setDateRange(r.key)} style={{ cursor:"pointer",padding:"7px 13px",fontSize:11,fontWeight:500,fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.03em",border:"none",borderRight:i<DATE_RANGES.length-1?`1px solid ${BORDER}`:"none",background:dateRange===r.key?ACCENT:CARD,color:dateRange===r.key?CARD:MID,transition:"all 0.15s" }}>{r.label}</button>
             ))}
           </div>
+          <button onClick={()=>setDateRange("custom")} style={{ cursor:"pointer",padding:"7px 14px",fontSize:11,fontWeight:500,fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.03em",border:`1px solid ${BORDER}`,borderRadius:5,background:dateRange==="custom"?ACCENT:CARD,color:dateRange==="custom"?CARD:MID,transition:"all 0.15s" }}>Custom</button>
           <button onClick={()=>setDateRange("all")} style={{ cursor:"pointer",padding:"7px 14px",fontSize:11,fontWeight:500,fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.03em",border:`1px solid ${BORDER}`,borderRadius:5,background:dateRange==="all"?DARK:CARD,color:dateRange==="all"?CARD:MID,transition:"all 0.15s" }}>All</button>
+          {dateRange === "custom" && (
+            <div style={{ display:"flex",alignItems:"center",gap:6,marginLeft:4 }}>
+              <input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)}
+                style={{ padding:"5px 10px",borderRadius:5,border:`1px solid ${BORDER}`,background:CARD,fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DARK,outline:"none",cursor:"pointer" }}
+              />
+              <span style={{ fontSize:11,color:DIM,fontFamily:"'DM Sans',sans-serif" }}>→</span>
+              <input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)}
+                style={{ padding:"5px 10px",borderRadius:5,border:`1px solid ${BORDER}`,background:CARD,fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DARK,outline:"none",cursor:"pointer" }}
+              />
+            </div>
+          )}
         </div>
       </div>
 
