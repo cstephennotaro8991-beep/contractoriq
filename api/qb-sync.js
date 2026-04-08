@@ -228,17 +228,19 @@ export default async function handler(req, res) {
     console.log(`Syncing QB data for contractor — realm decrypted successfully`);
 
     // Fetch from QuickBooks
-    const [customerResponse, invoiceResponse, purchaseResponse] = await Promise.all([
+    const [customerResponse, invoiceResponse, purchaseResponse, billResponse] = await Promise.all([
       qbQuery(realmId, accessToken, 'Customer'),
       qbQuery(realmId, accessToken, 'Invoice'),
       qbQuery(realmId, accessToken, 'Purchase'),
+      qbQuery(realmId, accessToken, 'Bill'),
     ]);
 
     const customers  = customerResponse?.Customer  || [];
     const invoices   = invoiceResponse?.Invoice    || [];
     const purchases  = purchaseResponse?.Purchase  || [];
+    const bills      = billResponse?.Bill          || [];
 
-    console.log(`QB fetch complete: ${customers.length} customers, ${invoices.length} invoices, ${purchases.length} purchases`);
+    console.log(`QB fetch complete: ${customers.length} customers, ${invoices.length} invoices, ${purchases.length} purchases, ${bills.length} bills`);
 
     // Build client map and jobs
     const clientMap    = {};
@@ -353,6 +355,56 @@ export default async function handler(req, res) {
       }
     });
 
+    // Build transactions from bills (vendor invoices entered with payment terms)
+    let billCounter = 1;
+
+    bills.forEach(b => {
+      const lines = b.Line || [];
+      let hasTaggedLine = false;
+
+      lines.forEach(line => {
+        const qbJobId = line.AccountBasedExpenseLineDetail?.CustomerRef?.value
+                     || line.ItemBasedExpenseLineDetail?.CustomerRef?.value;
+        const amount  = line.Amount || 0;
+        if (amount <= 0) return;
+
+        if (qbJobId && jobMap[qbJobId]) {
+          hasTaggedLine = true;
+          transactionsToUpsert.push({
+            id:            `${userId}_bill_${b.Id}_${line.Id || billCounter++}`,
+            contractor_id: userId,
+            job_id:        jobMap[qbJobId].id,
+            type:          'expense',
+            doc_number:    b.DocNumber || b.Id,
+            txn_date:      b.TxnDate,
+            amount:        amount,
+            description:   line.Description || 'Bill expense',
+            vendor:        b.VendorRef?.name || 'Unknown Vendor',
+          });
+        }
+      });
+
+      if (!hasTaggedLine) {
+        const totalAmt = b.TotalAmt || lines.reduce((s,l) => s + (l.Amount||0), 0);
+        if (totalAmt > 0) {
+          inboxToUpsert.push({
+            id:                `${userId}_inbox_bill_${b.Id}`,
+            contractor_id:     userId,
+            doc_number:        b.DocNumber || b.Id,
+            vendor:            b.VendorRef?.name || 'Unknown Vendor',
+            txn_date:          b.TxnDate,
+            amount:            totalAmt,
+            description:       lines[0]?.Description || 'Untagged bill',
+            payment_type:      'Bill',
+            suggested_job_id:  null,
+            suggestion_reason: null,
+            tagged_job_id:     null,
+            status:            'pending',
+          });
+        }
+      }
+    });
+
     if (transactionsToUpsert.length > 0) {
       const { error: txnError } = await supabase
         .from('transactions')
@@ -376,6 +428,7 @@ export default async function handler(req, res) {
       jobs:         jobsToUpsert.length,
       transactions: transactionsToUpsert.length,
       inbox:        inboxToUpsert.length,
+      bills:        bills.length,
     };
 
     console.log('Sync complete:', JSON.stringify(summary));
