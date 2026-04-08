@@ -807,12 +807,9 @@ function KpiModal({ type, expenseView, jobSummaries, allJobSummaries, overhead, 
 
 // ─── TAB: DASHBOARD ───────────────────────────────────────────────────────────
 
-function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, qbConnected, userId, clientType }) {
+function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, qbConnected, userId, clientType, dateRange, setDateRange, customStart, setCustomStart, customEnd, setCustomEnd }) {
   const [sort, setSort]             = useState("profit");
   const [sortDir, setSortDir]       = useState("desc");
-  const [dateRange, setDateRange]   = useState("all");
-  const [customStart, setCustomStart] = useState("");
-  const [customEnd, setCustomEnd]     = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [trendView, setTrendView]     = useState("cumulative");
   const [expenseView, setExpenseView] = useState("job");
@@ -1491,10 +1488,13 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, q
 
 // ─── TAB: EXPENSE INBOX ───────────────────────────────────────────────────────
 
-function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, tagged, jobSummaries, overhead, dismissed }) {
+function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, tagged, jobSummaries, overhead, dismissed, dateRange, setDateRange, customStart, setCustomStart, customEnd, setCustomEnd }) {
   const [selections, setSelections] = useState({});
   const [filter, setFilter] = useState("untagged");
   const [showSyncGuide, setShowSyncGuide] = useState(false);
+
+  // Apply same date filter as dashboard
+  const filteredUntagged = filterUntaggedByDate(untagged, dateRange, customStart, customEnd);
 
   // Build job options from live data — fall back to mock if empty
   const liveJobOptions = (jobSummaries || []).map(j => ({
@@ -1504,7 +1504,7 @@ function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, t
   }));
   const jobOptions = liveJobOptions.length > 0 ? liveJobOptions : JOB_OPTIONS;
 
-  const totalUntagged = untagged.reduce((s,u) => s + u.amount, 0);
+  const totalUntagged = filteredUntagged.reduce((s,u) => s + u.amount, 0);
   const totalTagged   = tagged.reduce((s,t) => s + t.amount, 0);
   const needsQBSync   = tagged.length;
 
@@ -1593,9 +1593,32 @@ function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, t
       )}
 
       {/* Header */}
-      <div style={{ marginBottom:28 }}>
-        <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em" }}>Expense Inbox</h1>
-        <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>Expenses without a job assigned in QuickBooks. Tag them to keep profit numbers accurate.</p>
+      <div style={{ marginBottom:28, display:"flex", alignItems:"flex-start", justifyContent:"space-between", flexWrap:"wrap", gap:12 }}>
+        <div>
+          <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em" }}>Expense Inbox</h1>
+          <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>Expenses without a job assigned in QuickBooks. Tag them to keep profit numbers accurate.</p>
+        </div>
+        {/* Date range toggle — same as dashboard, persists across tabs */}
+        <div style={{ display:"flex",alignItems:"center",gap:6,flexWrap:"wrap" }}>
+          <div style={{ display:"flex",border:`1px solid ${BORDER}`,borderRadius:5,overflow:"hidden" }}>
+            {DATE_RANGES.map((r,i) => (
+              <button key={r.key} onClick={()=>setDateRange(r.key)} style={{ cursor:"pointer",padding:"7px 13px",fontSize:11,fontWeight:500,fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.03em",border:"none",borderRight:i<DATE_RANGES.length-1?`1px solid ${BORDER}`:"none",background:dateRange===r.key?ACCENT:CARD,color:dateRange===r.key?CARD:MID,transition:"all 0.15s" }}>{r.label}</button>
+            ))}
+          </div>
+          <button onClick={()=>setDateRange("custom")} style={{ cursor:"pointer",padding:"7px 14px",fontSize:11,fontWeight:500,fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.03em",border:`1px solid ${BORDER}`,borderRadius:5,background:dateRange==="custom"?ACCENT:CARD,color:dateRange==="custom"?CARD:MID,transition:"all 0.15s" }}>Custom</button>
+          <button onClick={()=>setDateRange("all")} style={{ cursor:"pointer",padding:"7px 14px",fontSize:11,fontWeight:500,fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.03em",border:`1px solid ${BORDER}`,borderRadius:5,background:dateRange==="all"?DARK:CARD,color:dateRange==="all"?CARD:MID,transition:"all 0.15s" }}>All</button>
+          {dateRange === "custom" && (
+            <div style={{ display:"flex",alignItems:"center",gap:6,marginLeft:4 }}>
+              <input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)}
+                style={{ padding:"5px 10px",borderRadius:5,border:`1px solid ${BORDER}`,background:CARD,fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DARK,outline:"none",cursor:"pointer" }}
+              />
+              <span style={{ fontSize:11,color:DIM,fontFamily:"'DM Sans',sans-serif" }}>→</span>
+              <input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)}
+                style={{ padding:"5px 10px",borderRadius:5,border:`1px solid ${BORDER}`,background:CARD,fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DARK,outline:"none",cursor:"pointer" }}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       {/* KPIs */}
@@ -1603,13 +1626,13 @@ function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, t
         {(() => {
           const taggedCount   = (jobSummaries||[]).reduce((s,j) => s + j.purchases.length, 0);
           const overheadCount = (overhead||[]).length;
-          const untaggedCount = untagged.length;
+          const untaggedCount = filteredUntagged.length;
           const total         = taggedCount + overheadCount + untaggedCount;
           const accountedFor  = taggedCount + overheadCount;
           const dqPct         = total > 0 ? Math.round((accountedFor / total) * 100) : 100;
           const dqColor       = dqPct >= 80 ? ACCENT2 : dqPct >= 50 ? AMBER : RED;
           return [
-            { label:"Untagged Expenses",   val:untagged.length,  sub:$(totalUntagged)+" unallocated",           color:untagged.length>0?AMBER:ACCENT2 },
+            { label:"Untagged Expenses",   val:filteredUntagged.length,  sub:$(totalUntagged)+" unallocated",           color:filteredUntagged.length>0?AMBER:ACCENT2 },
             { label:"Fixed Costs Tagged",  val:overheadCount,    sub:$(((overhead||[]).reduce((s,o)=>s+o.amount,0)))+" overhead total", color:overheadCount>0?ACCENT2:DIM },
             { label:"Data Quality Score",  val:`${dqPct}%`,      sub:`${accountedFor}/${total} expenses accounted for`, color:dqColor },
             { label:"Needs QB Sync",       val:needsQBSync,      sub:"tags not yet in QuickBooks",              color:needsQBSync>0?MID:DIM },
@@ -1639,7 +1662,7 @@ function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, t
       {/* ── Tab bar ── */}
       <div style={{ display:"flex",alignItems:"center",gap:0,marginBottom:24,borderBottom:`1px solid ${BORDER}` }}>
         {[
-          { key:"untagged", label:"Untagged",   count:untagged.length,            color:AMBER },
+          { key:"untagged", label:"Untagged",   count:filteredUntagged.length,    color:AMBER },
           { key:"fixed",    label:"Fixed Costs", count:(overhead||[]).length,       color:ACCENT2 },
           { key:"tagged",   label:"Tagged",      count:tagged.length,               color:ACCENT2 },
           { key:"dismissed",label:"Dismissed",   count:(dismissed||[]).length,      color:DIM },
@@ -1665,10 +1688,10 @@ function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, t
 
       {/* UNTAGGED tab */}
       {filter === "untagged" && (
-        untagged.length > 0 ? (
+        filteredUntagged.length > 0 ? (
           <div>
             <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18 }}>
-              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM }}>{untagged.length} expense{untagged.length!==1?"s":""} need attention · {$(totalUntagged)} unallocated</div>
+              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM }}>{filteredUntagged.length} expense{filteredUntagged.length!==1?"s":""} need attention · {$(totalUntagged)} unallocated</div>
               <div style={{ display:"flex",gap:8 }}>
                 {[["all","All"],["suggested","Has Suggestion"]].map(([k,l]) => (
                   <button key={k} className={`btn${((filter==="untagged" && selections.__subfilter===k) || (k==="all" && !selections.__subfilter))?" act":""}`}
@@ -1677,7 +1700,7 @@ function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, t
               </div>
             </div>
             <div style={{ display:"flex",flexDirection:"column",gap:12 }}>
-              {(selections.__subfilter==="suggested" ? untagged.filter(u=>u.suggestedJob) : untagged).map(item => (
+              {(selections.__subfilter==="suggested" ? filteredUntagged.filter(u=>u.suggestedJob) : filteredUntagged).map(item => (
                 <div key={item.id} className="inbox-row slide-in">
                   <div style={{ display:"grid",gridTemplateColumns:"1fr auto",gap:20,alignItems:"start" }}>
                     <div>
@@ -4038,6 +4061,9 @@ export default function App() {
   const [tagged, setTagged]             = useState([]);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [showTutorial, setShowTutorial]     = useState(false);
+  const [dateRange, setDateRange]       = useState("all");
+  const [customStart, setCustomStart]   = useState("");
+  const [customEnd, setCustomEnd]       = useState("");
   const [qbConnected, setQbConnected]       = useState(false);
   const [qbError, setQbError]           = useState(null);
   const [syncing, setSyncing]           = useState(false);
@@ -4423,8 +4449,8 @@ export default function App() {
 
       {/* ── Content ── */}
       <div style={{ flex:1 }}>
-        {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} onEstimate={()=>setTab("estimator")} jobSummaries={jobSummaries} untagged={untagged} overhead={overhead} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType}/>}
-        {tab==="inbox"     && <ExpenseInbox untagged={untagged} tagged={tagged} onTag={handleTag} onDismiss={handleDismiss} onMarkOverhead={handleMarkOverhead} onRestore={handleRestore} overhead={overhead} dismissed={dismissed} jobSummaries={jobSummaries}/>}
+        {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} onEstimate={()=>setTab("estimator")} jobSummaries={jobSummaries} untagged={untagged} overhead={overhead} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
+        {tab==="inbox"     && <ExpenseInbox untagged={untagged} tagged={tagged} onTag={handleTag} onDismiss={handleDismiss} onMarkOverhead={handleMarkOverhead} onRestore={handleRestore} overhead={overhead} dismissed={dismissed} jobSummaries={jobSummaries} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
         {tab==="detail"    && <JobDetail job={selectedJob} onBack={()=>setTab("dashboard")} untagged={untagged}/>}
         {tab==="clients"   && <ClientScorecard jobSummaries={jobSummaries}/>}
         {tab==="estimator" && <JobEstimator jobSummaries={jobSummaries} userId={session?.user?.id}/>}
