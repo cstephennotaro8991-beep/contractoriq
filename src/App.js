@@ -1477,13 +1477,62 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, q
 
 // ─── TAB: EXPENSE INBOX ───────────────────────────────────────────────────────
 
-function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, tagged, jobSummaries, overhead, dismissed, dateRange, setDateRange, customStart, setCustomStart, customEnd, setCustomEnd }) {
-  const [selections, setSelections] = useState({});
-  const [filter, setFilter] = useState("untagged");
-  const [showSyncGuide, setShowSyncGuide] = useState(false);
+function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, onBulkTag, onBulkMarkOverhead, onBulkDismiss, onSaveVendorRule, vendorRules, tagged, jobSummaries, overhead, dismissed, dateRange, setDateRange, customStart, setCustomStart, customEnd, setCustomEnd }) {
+  const [selections, setSelections]           = useState({});
+  const [bulkJobSelections, setBulkJobSelections] = useState({}); // vendor -> jobId
+  const [filter, setFilter]                   = useState("untagged");
+  const [showSyncGuide, setShowSyncGuide]     = useState(false);
+  const [groupByVendor, setGroupByVendor]     = useState(true);
+  const [collapsedVendors, setCollapsedVendors] = useState(new Set());
+  const [sortBy, setSortBy]                   = useState("date");
+  const [searchQuery, setSearchQuery]         = useState("");
+  const [typeFilter, setTypeFilter]           = useState("all");
+  const [rulePrompt, setRulePrompt]           = useState(null); // { vendor, ruleType }
 
-  // Apply same date filter as dashboard
-  const filteredUntagged = filterUntaggedByDate(untagged, dateRange, customStart, customEnd);
+  // Build rule lookup: vendor name -> rule_type
+  const ruleMap = useMemo(() => {
+    const m = {};
+    (vendorRules || []).forEach(r => { m[r.vendor_name] = r.rule_type; });
+    return m;
+  }, [vendorRules]);
+
+  // Apply date + search + type filter, then sort
+  const filteredUntagged = useMemo(() => {
+    let items = filterUntaggedByDate(untagged, dateRange, customStart, customEnd);
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      items = items.filter(u => u.vendor.toLowerCase().includes(q) || u.description.toLowerCase().includes(q));
+    }
+    if (typeFilter !== 'all') {
+      items = items.filter(u => u.paymentType === typeFilter);
+    }
+    if (sortBy === 'amount') {
+      items = [...items].sort((a, b) => b.amount - a.amount);
+    } else if (sortBy === 'vendor') {
+      items = [...items].sort((a, b) => a.vendor.localeCompare(b.vendor));
+    } else {
+      items = [...items].sort((a, b) => b.date.localeCompare(a.date));
+    }
+    return items;
+  }, [untagged, dateRange, customStart, customEnd, searchQuery, typeFilter, sortBy]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Group by vendor, job_cost vendors float to top, then sort by total amount desc
+  const vendorGroups = useMemo(() => {
+    const groups = {};
+    filteredUntagged.forEach(item => {
+      if (!groups[item.vendor]) groups[item.vendor] = [];
+      groups[item.vendor].push(item);
+    });
+    return Object.entries(groups).sort((a, b) => {
+      const aRule = ruleMap[a[0]];
+      const bRule = ruleMap[b[0]];
+      if (aRule === 'job_cost' && bRule !== 'job_cost') return -1;
+      if (aRule !== 'job_cost' && bRule === 'job_cost') return 1;
+      const aAmt = a[1].reduce((s, i) => s + i.amount, 0);
+      const bAmt = b[1].reduce((s, i) => s + i.amount, 0);
+      return bAmt - aAmt;
+    });
+  }, [filteredUntagged, ruleMap]);
 
   // Build job options from live data — fall back to mock if empty
   const liveJobOptions = (jobSummaries || []).map(j => ({
@@ -1506,6 +1555,40 @@ function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, t
     if (!jobId) return;
     const job = jobOptions.find(j => j.value === jobId);
     onTag(item, jobId, job?.label || "");
+  }
+
+  function toggleVendorCollapsed(vendor) {
+    setCollapsedVendors(prev => {
+      const next = new Set(prev);
+      if (next.has(vendor)) next.delete(vendor);
+      else next.add(vendor);
+      return next;
+    });
+  }
+
+  function handleBulkTagVendor(vendor, items) {
+    const jobId = bulkJobSelections[vendor];
+    if (!jobId) return;
+    const job = jobOptions.find(j => j.value === jobId);
+    onBulkTag(items, jobId, job?.label || "");
+    setBulkJobSelections(prev => { const n = {...prev}; delete n[vendor]; return n; });
+    // Only prompt rule for job_cost type (bulk job tag = user confirmed this is job-specific)
+    setRulePrompt({ vendor, ruleType: 'job_cost' });
+  }
+
+  function handleBulkOverheadVendor(vendor, items) {
+    onBulkMarkOverhead(items);
+    setRulePrompt({ vendor, ruleType: 'overhead' });
+  }
+
+  function handleBulkDismissVendor(vendor, items) {
+    onBulkDismiss(items.map(i => i.id));
+    setRulePrompt({ vendor, ruleType: 'dismiss' });
+  }
+
+  function saveRuleAndClose(vendor, ruleType) {
+    onSaveVendorRule(vendor, ruleType);
+    setRulePrompt(null);
   }
 
   const SYNC_STEPS = [
@@ -1582,7 +1665,7 @@ function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, t
       )}
 
       {/* Header */}
-      <div style={{ marginBottom:28, display:"flex", alignItems:"flex-start", justifyContent:"space-between", flexWrap:"wrap", gap:12 }}>
+      <div style={{ marginBottom:20, display:"flex", alignItems:"flex-start", justifyContent:"space-between", flexWrap:"wrap", gap:12 }}>
         <div>
           <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em" }}>Expense Inbox</h1>
           <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>Expenses without a job assigned in QuickBooks. Tag them to keep profit numbers accurate.</p>
@@ -1607,6 +1690,35 @@ function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, t
               />
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Layer 4: Search + Sort + Type filter + Group toggle */}
+      <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:20,flexWrap:"wrap" }}>
+        {/* Search */}
+        <input
+          type="text"
+          placeholder="Search vendor or description..."
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          style={{ flex:"1 1 180px",minWidth:180,maxWidth:280,padding:"7px 12px",borderRadius:5,border:`1px solid ${BORDER}`,background:CARD,fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DARK,outline:"none" }}
+        />
+        {/* Type filter */}
+        <div style={{ display:"flex",border:`1px solid ${BORDER}`,borderRadius:5,overflow:"hidden" }}>
+          {[["all","All"],["Check","Check"],["CreditCard","Credit Card"],["Bill","Bill"]].map(([k,l],i,arr) => (
+            <button key={k} onClick={()=>setTypeFilter(k)} style={{ cursor:"pointer",padding:"7px 12px",fontSize:11,fontWeight:500,fontFamily:"'DM Sans',sans-serif",border:"none",borderRight:i<arr.length-1?`1px solid ${BORDER}`:"none",background:typeFilter===k?ACCENT:CARD,color:typeFilter===k?CARD:MID,transition:"all 0.15s",whiteSpace:"nowrap" }}>{l}</button>
+          ))}
+        </div>
+        {/* Sort */}
+        <select value={sortBy} onChange={e=>setSortBy(e.target.value)} style={{ padding:"7px 10px",borderRadius:5,border:`1px solid ${BORDER}`,background:CARD,fontFamily:"'DM Sans',sans-serif",fontSize:11,color:MID,cursor:"pointer",outline:"none" }}>
+          <option value="date">Sort: Newest first</option>
+          <option value="amount">Sort: Largest first</option>
+          <option value="vendor">Sort: Vendor A–Z</option>
+        </select>
+        {/* Group toggle */}
+        <div style={{ display:"flex",border:`1px solid ${BORDER}`,borderRadius:5,overflow:"hidden",marginLeft:"auto" }}>
+          <button onClick={()=>setGroupByVendor(true)} title="Group by vendor" style={{ cursor:"pointer",padding:"7px 13px",fontSize:11,fontWeight:500,fontFamily:"'DM Sans',sans-serif",border:"none",borderRight:`1px solid ${BORDER}`,background:groupByVendor?ACCENT:CARD,color:groupByVendor?CARD:MID,transition:"all 0.15s" }}>⊞ Grouped</button>
+          <button onClick={()=>setGroupByVendor(false)} title="Flat list" style={{ cursor:"pointer",padding:"7px 13px",fontSize:11,fontWeight:500,fontFamily:"'DM Sans',sans-serif",border:"none",background:!groupByVendor?ACCENT:CARD,color:!groupByVendor?CARD:MID,transition:"all 0.15s" }}>≡ List</button>
         </div>
       </div>
 
@@ -1681,54 +1793,131 @@ function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, t
       {filter === "untagged" && (
         filteredUntagged.length > 0 ? (
           <div>
-            <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18 }}>
-              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM }}>{filteredUntagged.length} expense{filteredUntagged.length!==1?"s":""} need attention · {$(totalUntagged)} unallocated</div>
-              <div style={{ display:"flex",gap:8 }}>
-                {[["all","All"],["suggested","Has Suggestion"]].map(([k,l]) => (
-                  <button key={k} className={`btn${((filter==="untagged" && selections.__subfilter===k) || (k==="all" && !selections.__subfilter))?" act":""}`}
-                    onClick={()=>setSelections(prev=>({...prev,__subfilter:k==="all"?"":k}))}>{l}</button>
-                ))}
-              </div>
+            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM,marginBottom:16 }}>
+              {filteredUntagged.length} expense{filteredUntagged.length!==1?"s":""} need attention · {$(totalUntagged)} unallocated
+              {groupByVendor && vendorGroups.length > 0 && ` · ${vendorGroups.length} vendor${vendorGroups.length!==1?"s":""}`}
             </div>
-            <div style={{ display:"flex",flexDirection:"column",gap:12 }}>
-              {(selections.__subfilter==="suggested" ? filteredUntagged.filter(u=>u.suggestedJob) : filteredUntagged).map(item => (
-                <div key={item.id} className="inbox-row slide-in">
-                  <div style={{ display:"grid",gridTemplateColumns:"1fr auto",gap:20,alignItems:"start" }}>
-                    <div>
-                      <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:8,flexWrap:"wrap" }}>
-                        <span style={{ fontWeight:500,color:DARK,fontSize:13,fontFamily:"'DM Sans',sans-serif" }}>{item.vendor}</span>
-                        <span className="mono" style={{ fontSize:10,color:DIM }}>{item.docNumber}</span>
-                        <span className="mono" style={{ fontSize:10,color:DIM }}>{item.date}</span>
-                        <span className="tag">{item.paymentType}</span>
+
+            {/* ── GROUPED VIEW (Layer 2) ── */}
+            {groupByVendor ? (
+              <div style={{ display:"flex",flexDirection:"column",gap:10 }}>
+                {vendorGroups.map(([vendor, items]) => {
+                  const isCollapsed    = collapsedVendors.has(vendor);
+                  const groupTotal     = items.reduce((s,i) => s + i.amount, 0);
+                  const rule           = ruleMap[vendor];
+                  const hasBulkJob     = !!bulkJobSelections[vendor];
+                  const ruleBadgeColor = rule === 'job_cost' ? ACCENT2 : rule === 'overhead' ? AMBER : rule === 'dismiss' ? DIM : null;
+                  const ruleBadgeLabel = rule === 'job_cost' ? '⚙ Job Cost' : rule === 'overhead' ? '⚙ Auto: Fixed Cost' : rule === 'dismiss' ? '⚙ Auto: Dismiss' : null;
+                  return (
+                    <div key={vendor} style={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:6,overflow:"hidden" }}>
+                      {/* Group header */}
+                      <div style={{ display:"flex",alignItems:"center",gap:10,padding:"13px 18px",cursor:"pointer",background:isCollapsed?CARD:BG2,borderBottom:isCollapsed?"none":`1px solid ${BORDER}` }}
+                           onClick={()=>toggleVendorCollapsed(vendor)}>
+                        <span style={{ fontWeight:600,color:DARK,fontSize:13,fontFamily:"'DM Sans',sans-serif",flex:1 }}>{vendor}</span>
+                        {ruleBadgeLabel && (
+                          <span style={{ fontSize:10,padding:"2px 8px",borderRadius:3,background:`${ruleBadgeColor}22`,color:ruleBadgeColor,fontFamily:"'DM Sans',sans-serif",fontWeight:500,border:`1px solid ${ruleBadgeColor}44` }}>{ruleBadgeLabel}</span>
+                        )}
+                        <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM }}>{items.length} item{items.length!==1?"s":""}</span>
+                        <span style={{ fontFamily:"'DM Mono',monospace",fontSize:13,fontWeight:500,color:RED }}>–{$(groupTotal)}</span>
+                        <span style={{ fontSize:10,color:DIM,marginLeft:4,width:14,textAlign:"center" }}>{isCollapsed?"▼":"▲"}</span>
                       </div>
-                      <div style={{ fontSize:12,color:MID,marginBottom:12,fontFamily:"'DM Sans',sans-serif" }}>{item.description}</div>
-                      {item.suggestedJob && (
-                        <div className="suggestion-pill" onClick={() => handleApplySuggestion(item)} title="Click to apply this suggestion">
-                          <span>→</span>
-                          <span>{item.suggestionReason} — click to apply</span>
+
+                      {!isCollapsed && (
+                        <div>
+                          {/* Bulk actions bar */}
+                          <div style={{ display:"flex",alignItems:"center",gap:8,padding:"10px 18px",background:CARD,borderBottom:`1px solid ${BORDER}`,flexWrap:"wrap" }}>
+                            <select className="job-select" style={{ flex:"1 1 180px",maxWidth:240 }}
+                              value={bulkJobSelections[vendor] || ""}
+                              onChange={e => setBulkJobSelections(prev => ({...prev,[vendor]:e.target.value}))}>
+                              <option value="">Tag all to a job...</option>
+                              {jobOptions.map(j => <option key={j.value} value={j.value}>{j.label}{j.client?` (${j.client})`:""}</option>)}
+                            </select>
+                            <button className={`btn${hasBulkJob?" act":""}`} onClick={()=>handleBulkTagVendor(vendor,items)} disabled={!hasBulkJob} style={{ opacity:hasBulkJob?1:0.4,whiteSpace:"nowrap" }}>Tag All →</button>
+                            <button className="btn" onClick={()=>handleBulkOverheadVendor(vendor,items)} style={{ borderColor:"rgba(140,107,48,0.3)",color:AMBER,whiteSpace:"nowrap" }}>Fixed Cost All</button>
+                            <button className="btn red" onClick={()=>handleBulkDismissVendor(vendor,items)} style={{ whiteSpace:"nowrap" }}>Dismiss All</button>
+                            {!rule && (
+                              <button className="btn" onClick={()=>setRulePrompt({vendor,ruleType:null})} style={{ marginLeft:"auto",fontSize:10,color:DIM,whiteSpace:"nowrap" }}>Set rule →</button>
+                            )}
+                          </div>
+
+                          {/* Individual items */}
+                          <div style={{ display:"flex",flexDirection:"column",gap:0 }}>
+                            {items.map((item,idx) => (
+                              <div key={item.id} style={{ padding:"14px 18px",borderBottom:idx<items.length-1?`1px solid ${BORDER}`:"none" }}>
+                                <div style={{ display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start" }}>
+                                  <div>
+                                    <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap" }}>
+                                      <span className="mono" style={{ fontSize:10,color:DIM }}>{item.docNumber}</span>
+                                      <span className="mono" style={{ fontSize:10,color:DIM }}>{item.date}</span>
+                                      <span className="tag">{item.paymentType}</span>
+                                    </div>
+                                    <div style={{ fontSize:12,color:MID,fontFamily:"'DM Sans',sans-serif" }}>{item.description}</div>
+                                    {item.suggestedJob && (
+                                      <div className="suggestion-pill" style={{ marginTop:8 }} onClick={()=>handleApplySuggestion(item)} title="Click to apply">
+                                        <span>→</span><span>{item.suggestionReason} — click to apply</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div style={{ display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8,minWidth:260 }}>
+                                    <div style={{ fontFamily:"'DM Mono',monospace",fontSize:16,fontWeight:500,color:RED }}>–{$(item.amount)}</div>
+                                    <select className="job-select" value={selections[item.id]||""} onChange={e=>setSelections(prev=>({...prev,[item.id]:e.target.value}))}>
+                                      <option value="">Assign to job...</option>
+                                      {jobOptions.map(j=><option key={j.value} value={j.value}>{j.label}{j.client?` (${j.client})`:""}</option>)}
+                                    </select>
+                                    <div style={{ display:"flex",gap:6 }}>
+                                      <button className="btn red" onClick={()=>onDismiss(item.id)}>Dismiss</button>
+                                      <button className="btn" onClick={()=>onMarkOverhead(item)} style={{ borderColor:"rgba(140,107,48,0.3)",color:AMBER }}>Fixed Cost</button>
+                                      <button className={`btn${selections[item.id]?" act":""}`} onClick={()=>handleConfirm(item)} disabled={!selections[item.id]} style={{ opacity:selections[item.id]?1:0.45 }}>Confirm →</button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
                     </div>
-                    <div style={{ display:"flex",flexDirection:"column",alignItems:"flex-end",gap:10,minWidth:280 }}>
-                      <div style={{ fontFamily:"'DM Mono',monospace",fontSize:18,fontWeight:500,color:RED }}>–{$(item.amount)}</div>
-                      <div style={{ display:"flex",gap:8,width:"100%" }}>
-                        <select className="job-select" value={selections[item.id] || ""} onChange={e => setSelections(prev => ({ ...prev, [item.id]: e.target.value }))}>
-                          <option value="">Assign to a job...</option>
-                          {jobOptions.map(j => (
-                            <option key={j.value} value={j.value}>{j.label} ({j.client})</option>
-                          ))}
-                        </select>
+                  );
+                })}
+              </div>
+            ) : (
+              /* ── FLAT LIST VIEW ── */
+              <div style={{ display:"flex",flexDirection:"column",gap:12 }}>
+                {filteredUntagged.map(item => (
+                  <div key={item.id} className="inbox-row slide-in">
+                    <div style={{ display:"grid",gridTemplateColumns:"1fr auto",gap:20,alignItems:"start" }}>
+                      <div>
+                        <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:8,flexWrap:"wrap" }}>
+                          <span style={{ fontWeight:500,color:DARK,fontSize:13,fontFamily:"'DM Sans',sans-serif" }}>{item.vendor}</span>
+                          {ruleMap[item.vendor] && <span style={{ fontSize:10,padding:"1px 7px",borderRadius:3,background:"rgba(92,122,90,0.1)",color:ACCENT2,fontFamily:"'DM Sans',sans-serif",border:"1px solid rgba(92,122,90,0.2)" }}>⚙ {ruleMap[item.vendor]==='job_cost'?'Job Cost':ruleMap[item.vendor]==='overhead'?'Auto: Fixed Cost':'Auto: Dismiss'}</span>}
+                          <span className="mono" style={{ fontSize:10,color:DIM }}>{item.docNumber}</span>
+                          <span className="mono" style={{ fontSize:10,color:DIM }}>{item.date}</span>
+                          <span className="tag">{item.paymentType}</span>
+                        </div>
+                        <div style={{ fontSize:12,color:MID,marginBottom:12,fontFamily:"'DM Sans',sans-serif" }}>{item.description}</div>
+                        {item.suggestedJob && (
+                          <div className="suggestion-pill" onClick={()=>handleApplySuggestion(item)} title="Click to apply this suggestion">
+                            <span>→</span><span>{item.suggestionReason} — click to apply</span>
+                          </div>
+                        )}
                       </div>
-                      <div style={{ display:"flex",gap:8 }}>
-                        <button className="btn red" onClick={() => onDismiss(item.id)}>Dismiss</button>
-                        <button className="btn" onClick={() => onMarkOverhead(item)} style={{ borderColor:"rgba(140,107,48,0.3)",color:AMBER }} title="Mark as fixed overhead cost">Fixed Cost</button>
-                        <button className={`btn${selections[item.id]?" act":""}`} onClick={() => handleConfirm(item)} disabled={!selections[item.id]} style={{ opacity:selections[item.id]?1:0.45 }}>Confirm →</button>
+                      <div style={{ display:"flex",flexDirection:"column",alignItems:"flex-end",gap:10,minWidth:280 }}>
+                        <div style={{ fontFamily:"'DM Mono',monospace",fontSize:18,fontWeight:500,color:RED }}>–{$(item.amount)}</div>
+                        <select className="job-select" value={selections[item.id]||""} onChange={e=>setSelections(prev=>({...prev,[item.id]:e.target.value}))}>
+                          <option value="">Assign to a job...</option>
+                          {jobOptions.map(j=><option key={j.value} value={j.value}>{j.label}{j.client?` (${j.client})`:""}</option>)}
+                        </select>
+                        <div style={{ display:"flex",gap:8 }}>
+                          <button className="btn red" onClick={()=>onDismiss(item.id)}>Dismiss</button>
+                          <button className="btn" onClick={()=>onMarkOverhead(item)} style={{ borderColor:"rgba(140,107,48,0.3)",color:AMBER }}>Fixed Cost</button>
+                          <button className={`btn${selections[item.id]?" act":""}`} onClick={()=>handleConfirm(item)} disabled={!selections[item.id]} style={{ opacity:selections[item.id]?1:0.45 }}>Confirm →</button>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <div style={{ textAlign:"center",padding:"60px 40px",background:CARD,borderRadius:6,border:`1px solid rgba(92,122,90,0.25)`,boxShadow:"0 1px 4px rgba(44,36,22,0.05)" }}>
@@ -1843,6 +2032,43 @@ function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, t
             <div style={{ fontSize:13,color:DIM,fontFamily:"'DM Sans',sans-serif" }}>Dismissed expenses will appear here so you can restore them if needed.</div>
           </div>
         )
+      )}
+
+      {/* Layer 3: Vendor rule prompt — appears after any bulk action */}
+      {rulePrompt && (
+        <div style={{ position:"fixed",inset:0,background:"rgba(44,36,22,0.35)",zIndex:600,display:"flex",alignItems:"center",justifyContent:"center",padding:24 }} onClick={()=>setRulePrompt(null)}>
+          <div style={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:8,width:"100%",maxWidth:420,boxShadow:"0 20px 60px rgba(44,36,22,0.18)",padding:"28px 32px" }} onClick={e=>e.stopPropagation()}>
+            <h3 style={{ fontFamily:"'Lora',serif",fontSize:17,fontWeight:500,color:DARK,marginBottom:6,letterSpacing:"-0.01em" }}>Save a rule for {rulePrompt.vendor}?</h3>
+            {rulePrompt.ruleType === 'job_cost' && (
+              <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:MID,lineHeight:1.6,marginBottom:20 }}>Mark as a <strong style={{ color:DARK }}>Job Cost vendor</strong> — Canopy will always group these at the top of your inbox and flag them as job expenses, but won't auto-assign them (since each purchase may go to a different job).</p>
+            )}
+            {rulePrompt.ruleType === 'overhead' && (
+              <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:MID,lineHeight:1.6,marginBottom:20 }}>Mark as a <strong style={{ color:DARK }}>Fixed Cost vendor</strong> — future expenses from <em>{rulePrompt.vendor}</em> will be automatically tagged as overhead on the next sync.</p>
+            )}
+            {rulePrompt.ruleType === 'dismiss' && (
+              <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:MID,lineHeight:1.6,marginBottom:20 }}>Mark as a <strong style={{ color:DARK }}>Dismissed vendor</strong> — future expenses from <em>{rulePrompt.vendor}</em> will be automatically dismissed on the next sync.</p>
+            )}
+            {!rulePrompt.ruleType && (
+              <div style={{ display:"flex",flexDirection:"column",gap:10,marginBottom:20 }}>
+                <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:MID,marginBottom:4 }}>Choose how Canopy should handle future expenses from this vendor:</p>
+                {[
+                  { type:'job_cost', label:'Job Cost vendor', desc:'Group at top of inbox, flag for manual job assignment. No auto-assign.' },
+                  { type:'overhead', label:'Fixed Cost vendor', desc:'Auto-tag as overhead on every sync.' },
+                  { type:'dismiss',  label:'Always dismiss',   desc:'Auto-dismiss silently on every sync.' },
+                ].map(opt => (
+                  <div key={opt.type} onClick={()=>setRulePrompt(prev=>({...prev,ruleType:opt.type}))} style={{ padding:"11px 14px",borderRadius:5,border:`1px solid ${BORDER}`,cursor:"pointer",background:BG2 }}>
+                    <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,fontWeight:500,color:DARK,marginBottom:2 }}>{opt.label}</div>
+                    <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM }}>{opt.desc}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ display:"flex",gap:10,justifyContent:"flex-end" }}>
+              <button className="btn" onClick={()=>setRulePrompt(null)}>Skip</button>
+              {rulePrompt.ruleType && <button className="btn act" onClick={()=>saveRuleAndClose(rulePrompt.vendor,rulePrompt.ruleType)}>Save Rule</button>}
+            </div>
+          </div>
+        </div>
       )}
 
     </div>
@@ -3925,6 +4151,7 @@ function useContractorData(userId, mockJobSummaries, mockUntagged) {
   const [liveUntagged, setLiveUntagged]         = useState(null);
   const [liveOverhead, setLiveOverhead]         = useState([]);
   const [liveDismissed, setLiveDismissed]       = useState([]);
+  const [liveVendorRules, setLiveVendorRules]   = useState([]);
   const [loading, setLoading]                   = useState(false);
   const [dataSource, setDataSource]             = useState('mock');
 
@@ -3963,6 +4190,44 @@ function useContractorData(userId, mockJobSummaries, mockUntagged) {
         .eq('contractor_id', userId)
         .eq('status', 'dismissed');
 
+      // Fetch vendor rules (graceful — table may not exist yet)
+      let vendorRulesData = [];
+      try {
+        const { data: vrData } = await supabase
+          .from('vendor_rules')
+          .select('*')
+          .eq('contractor_id', userId);
+        vendorRulesData = vrData || [];
+      } catch (e) { // eslint-disable-line no-unused-vars
+        // vendor_rules table not yet created — skip silently
+      }
+
+      // Build rule map: vendor name -> rule_type
+      const vendorRuleMap = {};
+      vendorRulesData.forEach(r => { vendorRuleMap[r.vendor_name] = r.rule_type; });
+
+      // Auto-apply rules to newly synced pending items:
+      // - 'overhead' vendors get auto-tagged as fixed cost
+      // - 'dismiss' vendors get auto-dismissed
+      // - 'job_cost' vendors stay pending but get flagged for sorting priority
+      const autoOverheadIds = [];
+      const autoDismissIds  = [];
+      const pendingAfterRules = [];
+      (inboxItems || []).forEach(item => {
+        const rule = vendorRuleMap[item.vendor];
+        if (rule === 'overhead')     autoOverheadIds.push(item.id);
+        else if (rule === 'dismiss') autoDismissIds.push(item.id);
+        else pendingAfterRules.push({ ...item, vendorRule: rule || null });
+      });
+
+      // Batch-write auto-applied items to Supabase
+      if (autoOverheadIds.length > 0) {
+        await supabase.from('inbox_tags').update({ status: 'overhead' }).in('id', autoOverheadIds);
+      }
+      if (autoDismissIds.length > 0) {
+        await supabase.from('inbox_tags').update({ status: 'dismissed' }).in('id', autoDismissIds);
+      }
+
       const liveSummaries = jobs.map(job => {
         const jobTxns   = (transactions || []).filter(t => t.job_id === job.id);
         const invoices  = jobTxns.filter(t => t.type === 'revenue');
@@ -3996,11 +4261,12 @@ function useContractorData(userId, mockJobSummaries, mockUntagged) {
         };
       }).filter(j => j.revenue > 0 || j.costs > 0);
 
-      const parsedUntagged = (inboxItems || []).map(item => ({
+      const parsedUntagged = pendingAfterRules.map(item => ({
         id: item.id, docNumber: item.doc_number, vendor: item.vendor,
         date: item.txn_date, amount: item.amount, description: item.description,
         paymentType: item.payment_type || 'Check',
         suggestedJob: item.suggested_job_id, suggestionReason: item.suggestion_reason,
+        vendorRule: item.vendorRule || null,
       }));
 
       const parsedOverhead = (overheadItems || []).map(item => ({
@@ -4020,6 +4286,7 @@ function useContractorData(userId, mockJobSummaries, mockUntagged) {
         setLiveUntagged(parsedUntagged);
         setLiveOverhead(parsedOverhead);
         setLiveDismissed(parsedDismissed);
+        setLiveVendorRules(vendorRulesData);
         setDataSource('live');
       }
     } catch (err) {
@@ -4035,6 +4302,7 @@ function useContractorData(userId, mockJobSummaries, mockUntagged) {
     untagged:     liveUntagged     || mockUntagged,
     overhead:     liveOverhead,
     dismissed:    liveDismissed,
+    vendorRules:  liveVendorRules,
     loading,
     dataSource,
     refresh: loadLiveData,
@@ -4067,6 +4335,7 @@ export default function App() {
     untagged: baseUntagged,
     overhead,
     dismissed,
+    vendorRules,
     dataSource,
     refresh: refreshData,
   } = useContractorData(session?.user?.id, mockJobSummaries, INITIAL_UNTAGGED);
@@ -4303,6 +4572,80 @@ export default function App() {
     }
   }
 
+  // ── Bulk inbox actions ────────────────────────────────────────────────────────
+
+  async function handleBulkTag(items, jobId, jobName) {
+    if (!items.length || !jobId) return;
+    setTagged(prev => [...prev, ...items.map(item => ({ ...item, taggedJobId: jobId, taggedJobName: jobName }))]);
+    try {
+      await supabase
+        .from('inbox_tags')
+        .update({ status: 'tagged', tagged_job_id: jobId })
+        .in('id', items.map(i => i.id));
+      await supabase
+        .from('transactions')
+        .upsert(items.map(item => ({
+          id:            `${session.user.id}_inbox_${item.id}`,
+          contractor_id: session.user.id,
+          job_id:        jobId,
+          type:          'expense',
+          doc_number:    item.docNumber,
+          txn_date:      item.date,
+          amount:        item.amount,
+          description:   item.description,
+          vendor:        item.vendor,
+        })), { onConflict: 'id' });
+      await refreshData();
+    } catch (err) {
+      console.error('Error bulk tagging:', err);
+    }
+  }
+
+  async function handleBulkMarkOverhead(items) {
+    if (!items.length) return;
+    try {
+      await supabase
+        .from('inbox_tags')
+        .update({ status: 'overhead' })
+        .in('id', items.map(i => i.id));
+      await refreshData();
+    } catch (err) {
+      console.error('Error bulk marking overhead:', err);
+    }
+  }
+
+  async function handleBulkDismiss(ids) {
+    if (!ids.length) return;
+    setTagged(prev => prev.filter(u => !ids.includes(u.id)));
+    try {
+      await supabase
+        .from('inbox_tags')
+        .update({ status: 'dismissed' })
+        .in('id', ids);
+      await refreshData();
+    } catch (err) {
+      console.error('Error bulk dismissing:', err);
+    }
+  }
+
+  // ── Vendor rule management ────────────────────────────────────────────────────
+
+  async function handleSaveVendorRule(vendorName, ruleType) {
+    if (!session?.user?.id || !vendorName || !ruleType) return;
+    try {
+      await supabase
+        .from('vendor_rules')
+        .upsert({
+          contractor_id: session.user.id,
+          vendor_name:   vendorName,
+          rule_type:     ruleType,
+        }, { onConflict: 'contractor_id,vendor_name' });
+      await refreshData();
+    } catch (err) {
+      console.error('Error saving vendor rule:', err);
+    }
+  }
+
   const inboxCount = untagged.length;
 
   const TABS = [
@@ -4441,7 +4784,7 @@ export default function App() {
       {/* ── Content ── */}
       <div style={{ flex:1 }}>
         {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} onEstimate={()=>setTab("estimator")} jobSummaries={jobSummaries} untagged={untagged} overhead={overhead} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
-        {tab==="inbox"     && <ExpenseInbox untagged={untagged} tagged={tagged} onTag={handleTag} onDismiss={handleDismiss} onMarkOverhead={handleMarkOverhead} onRestore={handleRestore} overhead={overhead} dismissed={dismissed} jobSummaries={jobSummaries} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
+        {tab==="inbox"     && <ExpenseInbox untagged={untagged} tagged={tagged} onTag={handleTag} onDismiss={handleDismiss} onMarkOverhead={handleMarkOverhead} onRestore={handleRestore} onBulkTag={handleBulkTag} onBulkMarkOverhead={handleBulkMarkOverhead} onBulkDismiss={handleBulkDismiss} onSaveVendorRule={handleSaveVendorRule} vendorRules={vendorRules} overhead={overhead} dismissed={dismissed} jobSummaries={jobSummaries} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
         {tab==="detail"    && <JobDetail job={selectedJob} onBack={()=>setTab("dashboard")} untagged={untagged}/>}
         {tab==="clients"   && <ClientScorecard jobSummaries={jobSummaries}/>}
         {tab==="estimator" && <JobEstimator jobSummaries={jobSummaries} userId={session?.user?.id}/>}
