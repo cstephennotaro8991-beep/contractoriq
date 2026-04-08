@@ -4347,6 +4347,9 @@ export default function App() {
               <div style={{ fontSize:10, color:SIDEBAR_DIM, fontFamily:"'DM Sans',sans-serif", marginTop:4, paddingLeft:13 }}>
                 {dataSource === 'live' ? "Live data" : "Demo data"}
                 {" · "}
+                <span onClick={() => triggerSync(session?.user?.id)}
+                  style={{ color:SIDEBAR_DIM, textDecoration:"underline", cursor:"pointer" }}>sync</span>
+                {" · "}
                 <a href={`/api/qb-disconnect?userId=${session?.user?.id}&redirect=true`}
                   style={{ color:SIDEBAR_DIM, textDecoration:"underline", cursor:"pointer" }}>disconnect</a>
               </div>
