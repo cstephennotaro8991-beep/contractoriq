@@ -258,6 +258,22 @@ function filterJobsByDate(jobs, rangeKey, customStart, customEnd) {
   }).filter(job => job.revenue > 0 || job.costs > 0);
 }
 
+function filterUntaggedByDate(items, rangeKey, customStart, customEnd) {
+  if (rangeKey === "all") return items;
+  if (rangeKey === "custom") {
+    const start = customStart ? new Date(customStart) : null;
+    const end   = customEnd   ? new Date(customEnd + "T23:59:59") : null;
+    if (!start && !end) return items;
+    return items.filter(u => {
+      const d = new Date(u.date);
+      return (!start || d >= start) && (!end || d <= end);
+    });
+  }
+  const cutoff = getDateCutoff(rangeKey);
+  if (!cutoff) return items;
+  return items.filter(u => new Date(u.date) >= cutoff);
+}
+
 function filterTrendByDate(trend, rangeKey, customStart, customEnd) {
   if (rangeKey === "custom") {
     const start = customStart ? new Date(customStart) : null;
@@ -836,8 +852,9 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, q
   const TREND = dynamicTrend.length > 0 ? dynamicTrend : MONTHLY_TREND;
 
   // Apply date filter
-  const filteredJobs  = dateRange === "all" ? jobSummaries : filterJobsByDate(jobSummaries, dateRange, customStart, customEnd);
-  const filteredTrend = dateRange === "all" ? TREND : filterTrendByDate(TREND, dateRange, customStart, customEnd);
+  const filteredJobs     = dateRange === "all" ? jobSummaries : filterJobsByDate(jobSummaries, dateRange, customStart, customEnd);
+  const filteredTrend    = dateRange === "all" ? TREND : filterTrendByDate(TREND, dateRange, customStart, customEnd);
+  const filteredUntagged = filterUntaggedByDate(untagged, dateRange, customStart, customEnd);
 
   // Cumulative profit data — running total across months
   const cumulativeData = useMemo(() => {
@@ -928,7 +945,7 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, q
   // Data Quality Score — tagged + overhead both count as accounted for
   const totalTaggedExpenses   = jobSummaries.reduce((s,j) => s + j.purchases.length, 0);
   const totalOverheadExpenses = (overhead || []).length;
-  const totalUntaggedExpenses = untagged.length;
+  const totalUntaggedExpenses = filteredUntagged.length;
   const totalExpenses  = totalTaggedExpenses + totalOverheadExpenses + totalUntaggedExpenses;
   const accountedFor   = totalTaggedExpenses + totalOverheadExpenses;
   const dataQuality    = totalExpenses > 0 ? Math.round((accountedFor / totalExpenses) * 100) : 100;
@@ -1057,7 +1074,7 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, q
           jobSummaries={typeFilteredJobs}
           allJobSummaries={jobSummaries}
           overhead={overhead}
-          untagged={untagged}
+          untagged={filteredUntagged}
           totalRev={totalRev}
           totalCost={totalCost}
           totalOverhead={totalOverhead}
@@ -1132,7 +1149,7 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, q
             </div>
             {/* Right — DQ badge button */}
             {(() => {
-              const untaggedActive = untagged.filter(u => u.status !== 'dismissed');
+              const untaggedActive = filteredUntagged.filter(u => u.status !== 'dismissed');
               const hasIssues = untaggedActive.length > 0;
               const badgeColor = dqColor;
               const bgTint = hasIssues ? `${AMBER}18` : `${ACCENT2}18`;
@@ -1434,8 +1451,8 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, q
           const win = j.profit > 0;
           const atRisk = j.status === "In Progress" && j.revenue > 0 && (j.costs / j.revenue) > 0.85;
           // Untagged flags — strong if inbox item suggests this job, soft if any untagged exist
-          const hasSuggestedUntagged = untagged.some(u => u.suggestedJob === j.id);
-          const hasAnyUntagged       = untagged.length > 0;
+          const hasSuggestedUntagged = filteredUntagged.some(u => u.suggestedJob === j.id);
+          const hasAnyUntagged       = filteredUntagged.length > 0;
           return (
             <div key={j.id} className="trow" style={{ gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 90px",borderLeft:`3px solid ${win?ACCENT2:RED}`,opacity:win?1:0.92 }} onClick={()=>onJobClick(j)}>
               <div className="tcell" style={{ flexDirection:"column",alignItems:"flex-start",gap:3 }}>
