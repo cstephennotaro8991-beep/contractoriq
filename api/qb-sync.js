@@ -250,7 +250,8 @@ export default async function handler(req, res) {
     });
 
     customers.forEach(c => {
-      if (c.Job && c.ParentRef) {
+      // Include any sub-customer, whether or not QB marks it as a "Job"
+      if (c.ParentRef) {
         const clientName = clientMap[c.ParentRef.value] || '';
         const jobRecord  = {
           id:            `${userId}_${c.Id}`,
@@ -302,8 +303,16 @@ export default async function handler(req, res) {
       const lines = p.Line || [];
       let hasTaggedLine = false;
 
+      // Header-level CustomerRef fallback (used when all lines belong to one job)
+      const headerJobId = p.CustomerRef?.value;
+
       lines.forEach(line => {
-        const qbJobId = line.AccountBasedExpenseLineDetail?.CustomerRef?.value;
+        // QB uses AccountBasedExpenseLineDetail for account-coded expenses,
+        // ItemBasedExpenseLineDetail for item/service-coded expenses.
+        // Fall back to the purchase header CustomerRef if neither line detail has one.
+        const qbJobId = line.AccountBasedExpenseLineDetail?.CustomerRef?.value
+                     || line.ItemBasedExpenseLineDetail?.CustomerRef?.value
+                     || headerJobId;
         const amount  = line.Amount || 0;
         if (amount <= 0) return;
 
