@@ -1,13 +1,16 @@
 {
-  "rewrites": [
+  "functions": {
+    "api/qb-sync.js": { "maxDuration": 300 }
+  },
+  "headers": [
     {
       "source": "/api/(.*)",
-      "destination": "/api/$1"
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store, no-cache" }
+      ]
     }
   ],
-  "functions": {
-    "api/*.js": {
-      "runtime": "nodejs18.x"
-    }
-  }
+  "rewrites": [
+    { "source": "/api/ai-chat", "destination": "/api/ai-chat" }
+  ]
 }
