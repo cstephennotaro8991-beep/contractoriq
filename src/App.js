@@ -4024,6 +4024,7 @@ export default function App() {
   const [qbConnected, setQbConnected]       = useState(false);
   const [qbError, setQbError]           = useState(null);
   const [syncing, setSyncing]           = useState(false);
+  const [syncError, setSyncError]       = useState(null);
 
   // ── Live data hook — loads from Supabase, falls back to mock
   const mockJobSummaries = buildJobSummaries({});
@@ -4058,6 +4059,7 @@ export default function App() {
   // ── Trigger a QB sync after successful OAuth connect
   async function triggerSync(userId) {
     setSyncing(true);
+    setSyncError(null);
     try {
       const res = await fetch(`/api/qb-sync?userId=${userId}`);
       const data = await res.json();
@@ -4069,10 +4071,13 @@ export default function App() {
         if (data.error === 'QB_DISCONNECTED') {
           setQbConnected(false);
           setQbError('QB_TOKEN_EXPIRED');
+        } else {
+          setSyncError(data.error || 'Sync failed. Please try again.');
         }
       }
     } catch (err) {
       console.error('QB sync error:', err);
+      setSyncError('Sync timed out or lost connection. Please try again.');
     }
     setSyncing(false);
   }
@@ -4377,16 +4382,20 @@ export default function App() {
 
       {/* ── QB success / syncing banner ── */}
       {qbConnected && dataSource === 'mock' && (
-        <div style={{ background:"rgba(92,122,90,0.06)", borderBottom:`1px solid rgba(92,122,90,0.25)`, padding:"11px 36px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+        <div style={{ background: syncError ? "rgba(180,60,60,0.06)" : "rgba(92,122,90,0.06)", borderBottom:`1px solid ${syncError ? "rgba(180,60,60,0.25)" : "rgba(92,122,90,0.25)"}`, padding:"11px 36px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            <div style={{ width:6, height:6, borderRadius:"50%", background:ACCENT2 }}/>
-            <div style={{ fontSize:13, color:ACCENT2, fontFamily:"'DM Sans',sans-serif", fontWeight:500 }}>
-              {syncing ? "Syncing your QuickBooks data — this takes about 30 seconds…" : "QuickBooks connected — click to load your real data"}
+            <div style={{ width:6, height:6, borderRadius:"50%", background: syncError ? RED : ACCENT2 }}/>
+            <div style={{ fontSize:13, color: syncError ? RED : ACCENT2, fontFamily:"'DM Sans',sans-serif", fontWeight:500 }}>
+              {syncing
+                ? "⏳ Syncing your QuickBooks data — this may take a minute for large accounts…"
+                : syncError
+                  ? syncError
+                  : "QuickBooks connected — click to load your real data"}
             </div>
           </div>
           {!syncing && (
             <button className="btn act" style={{ fontSize:11 }} onClick={() => triggerSync(session.user.id)}>
-              Sync Now →
+              {syncError ? "Retry Sync →" : "Sync Now →"}
             </button>
           )}
         </div>
