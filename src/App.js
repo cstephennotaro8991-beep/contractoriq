@@ -939,28 +939,17 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, q
   const outstandingJobs = typeFilteredJobs.filter(j => j.outstanding > 0).sort((a,b) => b.outstanding - a.outstanding);
   const totalOutstanding = outstandingJobs.reduce((s,j) => s + j.outstanding, 0);
 
-  // Data Quality Score — tagged + overhead both count as accounted for
-  const totalTaggedExpenses   = jobSummaries.reduce((s,j) => s + j.purchases.length, 0);
-  const totalOverheadExpenses = (overhead || []).length;
+  // Data Quality Score — all three components filtered to the selected date range
+  const filteredOverhead      = filterUntaggedByDate(overhead || [], dateRange, customStart, customEnd);
+  const totalTaggedExpenses   = filteredJobs.reduce((s,j) => s + j.purchases.length, 0);
+  const totalOverheadExpenses = filteredOverhead.length;
   const totalUntaggedExpenses = filteredUntagged.length;
   const totalExpenses  = totalTaggedExpenses + totalOverheadExpenses + totalUntaggedExpenses;
   const accountedFor   = totalTaggedExpenses + totalOverheadExpenses;
   const dataQuality    = totalExpenses > 0 ? Math.round((accountedFor / totalExpenses) * 100) : 100;
   const dqColor        = dataQuality >= 80 ? ACCENT2 : dataQuality >= 50 ? AMBER : RED;
 
-  // Overhead total — filtered to selected date range
-  const overheadInRange = (overhead || []).filter(o => {
-    if (dateRange === "all") return true;
-    if (dateRange === "custom") {
-      const start = customStart ? new Date(customStart) : null;
-      const end   = customEnd   ? new Date(customEnd + "T23:59:59") : null;
-      const d = new Date(o.date);
-      return (!start || d >= start) && (!end || d <= end);
-    }
-    const cutoff = getDateCutoff(dateRange);
-    return cutoff ? new Date(o.date) >= cutoff : true;
-  });
-  const totalOverhead = overheadInRange.reduce((s, o) => s + (o.amount || 0), 0);
+  const totalOverhead = filteredOverhead.reduce((s, o) => s + (o.amount || 0), 0);
 
   // Hero display values — profit, margin, color (depends on expenseView + totalOverhead)
   const heroIsNet  = expenseView === "fixed";
@@ -1624,8 +1613,10 @@ function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, t
       {/* KPIs */}
       <div style={{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:28 }}>
         {(() => {
-          const taggedCount   = (jobSummaries||[]).reduce((s,j) => s + j.purchases.length, 0);
-          const overheadCount = (overhead||[]).length;
+          const filteredJobs     = filterJobsByDate(jobSummaries || [], dateRange, customStart, customEnd);
+          const filteredOverhead = filterUntaggedByDate(overhead || [], dateRange, customStart, customEnd);
+          const taggedCount   = (dateRange === "all" ? (jobSummaries||[]) : filteredJobs).reduce((s,j) => s + j.purchases.length, 0);
+          const overheadCount = filteredOverhead.length;
           const untaggedCount = filteredUntagged.length;
           const total         = taggedCount + overheadCount + untaggedCount;
           const accountedFor  = taggedCount + overheadCount;
