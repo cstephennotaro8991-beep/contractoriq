@@ -2066,7 +2066,7 @@ function SyncReview({ autoMatched, suggested, untagged, allTagged, overhead, dis
 
 // ─── TAB: EXPENSE INBOX (legacy — kept for reference) ────────────────────────
 
-function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, onBulkTag, onBulkMarkOverhead, onBulkDismiss, onSaveVendorRule, vendorRules, tagged, jobSummaries, overhead, dismissed, dateRange, setDateRange, customStart, setCustomStart, customEnd, setCustomEnd }) {
+function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, onBulkTag, onBulkMarkOverhead, onBulkDismiss, onSaveVendorRule, vendorRules, tagged, jobSummaries, overhead, dismissed, dateRange, setDateRange, customStart, setCustomStart, customEnd, setCustomEnd }) { // eslint-disable-line no-unused-vars
   const [selections, setSelections]           = useState({});
   const [bulkJobSelections, setBulkJobSelections] = useState({}); // vendor -> jobId
   const [filter, setFilter]                   = useState("untagged");
