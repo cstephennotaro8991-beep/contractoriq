@@ -982,6 +982,49 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, d
       ? `${customStart || "…"} → ${customEnd || "…"} · ${typeFilteredJobs.length} job${typeFilteredJobs.length!==1?"s":""}`
       : `${DATE_RANGES.find(r=>r.key===dateRange)?.label} · ${typeFilteredJobs.length} job${typeFilteredJobs.length!==1?"s":""}`;
 
+  // ── Trend commentary — plain-English summary of slope + MoM change + best month ──
+  const trendCommentary = useMemo(() => {
+    if (filteredTrend.length < 3) return null;
+    const parts = [];
+    const slope = trendSlope;
+    const best  = filteredTrend.reduce((b, m) => m.profit > b.profit ? m : b, filteredTrend[0]);
+    const worst = filteredTrend.reduce((b, m) => m.profit < b.profit ? m : b, filteredTrend[0]);
+    if (Math.abs(slope) < 300) {
+      parts.push("Profit has been relatively stable across this period.");
+    } else if (slope > 0) {
+      parts.push(`Profit is trending up about ${$k(Math.round(slope))}/month — solid growth trajectory.`);
+    } else {
+      parts.push(`Profit is trending down about ${$k(Math.abs(Math.round(slope)))}/month — worth a closer look.`);
+    }
+    if (periodComparison && periodComparison.profitPct !== null) {
+      const pct = periodComparison.profitPct;
+      const prev = periodComparison.prevMonth;
+      if (pct > 20) parts.push(`Most recent month was ${pct}% stronger than ${prev}.`);
+      else if (pct < -20) parts.push(`Profit dropped ${Math.abs(pct)}% versus ${prev} — a soft month.`);
+    }
+    if (best.profit > 0) parts.push(`Best month so far: ${best.month} at ${$(Math.round(best.profit))} profit.`);
+    else if (worst.profit < 0) parts.push(`Toughest month: ${worst.month} at ${$(Math.round(worst.profit))}.`);
+    return parts.join("  ");
+  }, [filteredTrend, trendSlope, periodComparison]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Additional alert types ──
+  const lossJobs      = typeFilteredJobs.filter(j => j.status !== "In Progress" && j.profit < 0);
+  const lowMarginJobs = typeFilteredJobs.filter(j => j.status !== "In Progress" && j.profit >= 0 && parseFloat(j.marginPct) < 10 && j.revenue > 0);
+
+  // ── Vendor cost leaderboard — top vendors by total spend across filtered jobs ──
+  const vendorLeaderboard = useMemo(() => {
+    const map = {};
+    typeFilteredJobs.forEach(job => {
+      Object.entries(job.costByVendor || {}).forEach(([vendor, amount]) => {
+        if (!map[vendor]) map[vendor] = { vendor, total: 0, jobCount: 0 };
+        map[vendor].total    += amount;
+        map[vendor].jobCount += 1;
+      });
+    });
+    return Object.values(map).sort((a, b) => b.total - a.total).slice(0, 10);
+  }, [typeFilteredJobs]);
+  const vendorTotal = vendorLeaderboard.reduce((s, v) => s + v.total, 0);
+
   return (
     <div style={{ padding:"32px 36px", background:BG, minHeight:"100vh" }}>
 
@@ -1029,29 +1072,48 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, d
         </div>
       )}
 
-      {/* Unbilled Work Alert */}
-      {unbilledJobs.length > 0 && (
-        <div style={{ marginBottom:20,padding:"13px 20px",borderRadius:5,border:`1px solid rgba(140,64,64,0.25)`,background:"rgba(140,64,64,0.04)",display:"flex",alignItems:"center",justifyContent:"space-between" }}>
-          <div style={{ fontSize:13,color:RED,fontFamily:"'DM Sans',sans-serif" }}>
-            <span style={{ fontWeight:500 }}>⚠ {unbilledJobs.length} job{unbilledJobs.length!==1?"s":""} with expenses recorded but no invoice sent</span>
-            <span style={{ color:MID,marginLeft:8 }}>— {$(unbilledJobs.reduce((s,j)=>s+j.costs,0))} potentially unbilled</span>
-          </div>
-          <div style={{ fontSize:11,color:RED,fontFamily:"'DM Sans',sans-serif",whiteSpace:"nowrap",marginLeft:16,fontWeight:500 }}>
-            {unbilledJobs.map(j=>j.name).join(", ")}
-          </div>
-        </div>
-      )}
-
-      {/* Mid-Job Margin Alert */}
-      {atRiskJobs.length > 0 && (
-        <div style={{ marginBottom:20,padding:"13px 20px",borderRadius:5,border:`1px solid rgba(140,107,48,0.25)`,background:"rgba(140,107,48,0.05)",display:"flex",alignItems:"center",justifyContent:"space-between" }}>
-          <div style={{ fontSize:13,color:AMBER,fontFamily:"'DM Sans',sans-serif" }}>
-            <span style={{ fontWeight:500 }}>● {atRiskJobs.length} active job{atRiskJobs.length!==1?"s":""} trending toward a loss</span>
-            <span style={{ color:MID,marginLeft:8 }}>— costs are running above 85% of revenue billed so far</span>
-          </div>
-          <div style={{ fontSize:11,color:AMBER,fontFamily:"'DM Sans',sans-serif",whiteSpace:"nowrap",marginLeft:16,fontWeight:500 }}>
-            {atRiskJobs.map(j=>`${j.name} (${j.marginPct}%)`).join("  ·  ")}
-          </div>
+      {/* ── Job Health Alerts ── */}
+      {(unbilledJobs.length > 0 || atRiskJobs.length > 0 || lossJobs.length > 0 || lowMarginJobs.length > 0) && (
+        <div style={{ display:"flex",flexDirection:"column",gap:8,marginBottom:20 }}>
+          {unbilledJobs.length > 0 && (
+            <div style={{ padding:"11px 18px",borderRadius:5,border:`1px solid rgba(140,64,64,0.25)`,background:"rgba(140,64,64,0.04)",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8 }}>
+              <div style={{ display:"flex",alignItems:"center",gap:10 }}>
+                <span style={{ fontSize:12,fontWeight:700,color:CARD,background:RED,borderRadius:3,padding:"1px 7px",fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.04em" }}>UNBILLED</span>
+                <span style={{ fontSize:13,color:RED,fontFamily:"'DM Sans',sans-serif",fontWeight:500 }}>{unbilledJobs.length} job{unbilledJobs.length!==1?"s":""} have costs but no invoice sent</span>
+                <span style={{ fontSize:12,color:MID,fontFamily:"'DM Sans',sans-serif" }}>· {$(unbilledJobs.reduce((s,j)=>s+j.costs,0))} potentially unbilled</span>
+              </div>
+              <div style={{ fontSize:11,color:RED,fontFamily:"'DM Sans',sans-serif",fontWeight:500 }}>{unbilledJobs.slice(0,3).map(j=>j.name).join("  ·  ")}{unbilledJobs.length>3?` +${unbilledJobs.length-3} more`:""}</div>
+            </div>
+          )}
+          {atRiskJobs.length > 0 && (
+            <div style={{ padding:"11px 18px",borderRadius:5,border:`1px solid rgba(140,107,48,0.25)`,background:"rgba(140,107,48,0.05)",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8 }}>
+              <div style={{ display:"flex",alignItems:"center",gap:10 }}>
+                <span style={{ fontSize:12,fontWeight:700,color:CARD,background:AMBER,borderRadius:3,padding:"1px 7px",fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.04em" }}>AT RISK</span>
+                <span style={{ fontSize:13,color:AMBER,fontFamily:"'DM Sans',sans-serif",fontWeight:500 }}>{atRiskJobs.length} active job{atRiskJobs.length!==1?"s":""} trending toward a loss</span>
+                <span style={{ fontSize:12,color:MID,fontFamily:"'DM Sans',sans-serif" }}>· costs above 85% of revenue so far</span>
+              </div>
+              <div style={{ fontSize:11,color:AMBER,fontFamily:"'DM Sans',sans-serif",fontWeight:500 }}>{atRiskJobs.slice(0,3).map(j=>`${j.name} (${j.marginPct}%)`).join("  ·  ")}{atRiskJobs.length>3?` +${atRiskJobs.length-3} more`:""}</div>
+            </div>
+          )}
+          {lossJobs.length > 0 && (
+            <div style={{ padding:"11px 18px",borderRadius:5,border:`1px solid rgba(140,64,64,0.2)`,background:"rgba(140,64,64,0.03)",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8 }}>
+              <div style={{ display:"flex",alignItems:"center",gap:10 }}>
+                <span style={{ fontSize:12,fontWeight:700,color:RED,border:`1px solid ${RED}`,borderRadius:3,padding:"1px 7px",fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.04em" }}>LOSS</span>
+                <span style={{ fontSize:13,color:MID,fontFamily:"'DM Sans',sans-serif",fontWeight:500 }}>{lossJobs.length} completed job{lossJobs.length!==1?"s":""} closed at a loss</span>
+                <span style={{ fontSize:12,color:MID,fontFamily:"'DM Sans',sans-serif" }}>· {$(Math.abs(lossJobs.reduce((s,j)=>s+j.profit,0)))} total lost</span>
+              </div>
+              <div style={{ fontSize:11,color:MID,fontFamily:"'DM Sans',sans-serif" }}>{lossJobs.slice(0,3).map(j=>`${j.name} (${j.marginPct}%)`).join("  ·  ")}{lossJobs.length>3?` +${lossJobs.length-3} more`:""}</div>
+            </div>
+          )}
+          {lowMarginJobs.length > 0 && (
+            <div style={{ padding:"11px 18px",borderRadius:5,border:`1px solid rgba(140,107,48,0.15)`,background:"rgba(140,107,48,0.03)",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8 }}>
+              <div style={{ display:"flex",alignItems:"center",gap:10 }}>
+                <span style={{ fontSize:12,fontWeight:700,color:AMBER,border:`1px solid ${AMBER}`,borderRadius:3,padding:"1px 7px",fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.04em" }}>LOW MARGIN</span>
+                <span style={{ fontSize:13,color:MID,fontFamily:"'DM Sans',sans-serif",fontWeight:500 }}>{lowMarginJobs.length} job{lowMarginJobs.length!==1?"s":""} finished under 10% margin</span>
+              </div>
+              <div style={{ fontSize:11,color:MID,fontFamily:"'DM Sans',sans-serif" }}>{lowMarginJobs.slice(0,3).map(j=>`${j.name} (${j.marginPct}%)`).join("  ·  ")}{lowMarginJobs.length>3?` +${lowMarginJobs.length-3} more`:""}</div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1395,6 +1457,13 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, d
               </div>
             </>
           )}
+
+          {/* Trend commentary */}
+          {trendCommentary && (
+            <div style={{ marginTop:14,paddingTop:12,borderTop:`1px solid ${BORDER}`,fontFamily:"'DM Sans',sans-serif",fontSize:12,color:MID,lineHeight:1.7,fontStyle:"italic" }}>
+              {trendCommentary}
+            </div>
+          )}
         </div>
       </div>
 
@@ -1474,6 +1543,36 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, d
           </div>
         )}
       </div>
+
+      {/* ── Vendor Cost Leaderboard ── */}
+      {vendorLeaderboard.length > 0 && (
+        <div className="card" style={{ marginTop:24,padding:"22px 26px" }}>
+          <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18 }}>
+            <div>
+              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:4,fontWeight:500 }}>Vendor Cost Breakdown</div>
+              <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>Where your money is going — top {vendorLeaderboard.length} vendors by spend</div>
+            </div>
+            <div style={{ fontFamily:"'DM Mono',monospace",fontSize:13,color:DIM }}>{$(Math.round(vendorTotal))} total</div>
+          </div>
+          <div style={{ display:"flex",flexDirection:"column",gap:7 }}>
+            {vendorLeaderboard.map((v, i) => {
+              const pct = vendorTotal > 0 ? (v.total / vendorTotal) * 100 : 0;
+              return (
+                <div key={v.vendor} style={{ display:"flex",alignItems:"center",gap:12 }}>
+                  <div style={{ width:20,textAlign:"right",fontFamily:"'DM Mono',monospace",fontSize:10,color:DIM }}>{i+1}</div>
+                  <div style={{ width:180,fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DARK,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{v.vendor}</div>
+                  <div style={{ flex:1,height:8,background:BORDER,borderRadius:4,overflow:"hidden" }}>
+                    <div style={{ height:"100%",width:`${pct}%`,background:i===0?ACCENT:i===1?ACCENT2:MID,borderRadius:4,transition:"width 0.4s",opacity:1-i*0.06 }}/>
+                  </div>
+                  <div style={{ width:80,textAlign:"right",fontFamily:"'DM Mono',monospace",fontSize:12,color:DARK,fontWeight:500 }}>{$(Math.round(v.total))}</div>
+                  <div style={{ width:36,textAlign:"right",fontFamily:"'DM Mono',monospace",fontSize:10,color:DIM }}>{pct.toFixed(0)}%</div>
+                  <div style={{ width:60,textAlign:"right",fontFamily:"'DM Sans',sans-serif",fontSize:10,color:DIM }}>{v.jobCount} job{v.jobCount!==1?"s":""}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3925,6 +4024,9 @@ function JobEstimator({ jobSummaries, userId }) {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
 
+  // ── Linked job (for Actuals comparison)
+  const [linkedJobId, setLinkedJobId] = useState("");
+
   // ── Derive job types from existing data
   const jobTypes = useMemo(() => {
     const types = [...new Set(jobSummaries.map(j => j.type).filter(Boolean))];
@@ -4006,7 +4108,7 @@ function JobEstimator({ jobSummaries, userId }) {
   function clearForm() {
     setName(""); setJobType(""); setExpectedRevenue(""); setNotes("");
     setCostLines([{ ...BLANK_LINE }]);
-    setActiveEstimateId(null); setDirty(false); setAiResponse("");
+    setActiveEstimateId(null); setLinkedJobId(""); setDirty(false); setAiResponse("");
   }
 
   // ── Load an estimate into the form
@@ -4015,6 +4117,7 @@ function JobEstimator({ jobSummaries, userId }) {
     setJobType(est.job_type || "");
     setExpectedRevenue(est.expected_revenue ? String(est.expected_revenue) : "");
     setNotes(est.notes || "");
+    setLinkedJobId(est.linked_job_id || "");
     setCostLines(est.cost_lines && est.cost_lines.length > 0
       ? est.cost_lines.map(l => ({ description: l.description || "", category: l.category || "Materials", amount: l.amount ? String(l.amount) : "", mode: l.mode || "flat", unitCost: l.unitCost ? String(l.unitCost) : "", quantity: l.quantity ? String(l.quantity) : "" }))
       : [{ ...BLANK_LINE }]);
@@ -4050,6 +4153,7 @@ function JobEstimator({ jobSummaries, userId }) {
       cost_lines: costLines.map(l => ({ description: l.description, category: l.category, amount: getLineAmount(l), mode: l.mode || "flat", unitCost: l.unitCost || "", quantity: l.quantity || "" })),
       notes: notes || null,
       is_template: false,
+      linked_job_id: linkedJobId || null,
       updated_at: new Date().toISOString(),
     };
     try {
@@ -4184,6 +4288,43 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
     return COST_CATEGORIES.map(c => ({ name: c, value: map[c] || 0 })).filter(c => c.value > 0);
   }, [costLines]);
   const catColors = { Materials: ACCENT, Labor: ACCENT2, Subcontractor: AMBER, Other: MID };
+
+  // ── Linked job + actuals comparison ──
+  const linkedJob = linkedJobId ? jobSummaries.find(j => j.id === linkedJobId) : null;
+
+  const actualsComparison = useMemo(() => {
+    if (!linkedJob) return null;
+    // Aggregate actual costs by category using description heuristics
+    const actualByCategory = { Materials: 0, Labor: 0, Subcontractor: 0, Other: 0 };
+    linkedJob.purchases.forEach(p => {
+      const desc = (p.Line?.[0]?.Description || "").toLowerCase();
+      const vendor = (p.EntityRef?.name || "").toLowerCase();
+      if (/labor|crew|worker|install|technician/.test(desc + vendor))       actualByCategory.Labor        += p.TotalAmt || 0;
+      else if (/sub|contractor|outsource/.test(desc + vendor))              actualByCategory.Subcontractor += p.TotalAmt || 0;
+      else if (/material|supply|supplies|lumber|pipe|wire|concrete|paint/.test(desc + vendor)) actualByCategory.Materials += p.TotalAmt || 0;
+      else                                                                   actualByCategory.Other        += p.TotalAmt || 0;
+    });
+    // Map estimated cost lines to same categories
+    const estimatedByCategory = { Materials: 0, Labor: 0, Subcontractor: 0, Other: 0 };
+    costLines.forEach(l => {
+      const amt = getLineAmount(l);
+      if (amt > 0 && estimatedByCategory[l.category] !== undefined) estimatedByCategory[l.category] += amt;
+    });
+    return {
+      categories: COST_CATEGORIES.map(cat => ({
+        cat,
+        estimated: estimatedByCategory[cat],
+        actual: actualByCategory[cat],
+        variance: actualByCategory[cat] - estimatedByCategory[cat],
+      })).filter(r => r.estimated > 0 || r.actual > 0),
+      totalEstimated: totalCosts,
+      totalActual: linkedJob.costs,
+      revenueEstimated: rev,
+      revenueActual: linkedJob.revenue,
+      marginEstimated: parseFloat(grossMargin),
+      marginActual: linkedJob.revenue > 0 ? parseFloat(((linkedJob.profit / linkedJob.revenue) * 100).toFixed(1)) : 0,
+    };
+  }, [linkedJob, costLines, totalCosts, rev, grossMargin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div style={{ padding: "32px 36px", background: BG, minHeight: "100vh" }}>
@@ -4471,6 +4612,27 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
               />
             </div>
 
+            {/* Link to completed job — for Actuals comparison */}
+            {jobSummaries.filter(j => j.status !== "In Progress").length > 0 && (
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ display: "block", fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 700, color: DARK, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>
+                  Link to Completed Job <span style={{ fontWeight: 400, color: DIM, textTransform: "none", letterSpacing: 0 }}>(optional — enables Estimate vs. Actuals)</span>
+                </label>
+                <select value={linkedJobId} onChange={e => { setLinkedJobId(e.target.value); setDirty(true); }}
+                  style={{ width: "100%", maxWidth: 380, padding: "9px 14px", borderRadius: 5, border: `1px solid ${linkedJobId ? ACCENT : BORDER}`, background: BG, fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: DARK, outline: "none", boxSizing: "border-box" }}>
+                  <option value="">No job linked</option>
+                  {jobSummaries.filter(j => j.status !== "In Progress").map(j => (
+                    <option key={j.id} value={j.id}>{j.name}{j.clientName ? ` (${j.clientName})` : ""}</option>
+                  ))}
+                </select>
+                {linkedJob && (
+                  <div style={{ marginTop: 8, fontSize: 11, color: ACCENT2, fontFamily: "'DM Sans',sans-serif" }}>
+                    ✓ Linked to {linkedJob.name} — actual margin was {linkedJob.revenue > 0 ? ((linkedJob.profit / linkedJob.revenue) * 100).toFixed(1) : "0.0"}%
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Save buttons */}
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               <button className="btn act" onClick={saveEstimate} disabled={saving || !name.trim()}
@@ -4593,6 +4755,70 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
                   {aiResponse}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Estimate vs. Actuals comparison */}
+          {actualsComparison && (
+            <div className="card" style={{ padding: "20px 24px" }}>
+              <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 600, color: DIM, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 14 }}>
+                Estimate vs. Actuals
+              </div>
+
+              {/* Revenue + margin summary row */}
+              <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+                {[
+                  { label: "Est. Margin", val: `${actualsComparison.marginEstimated}%`, color: actualsComparison.marginEstimated >= 30 ? ACCENT2 : actualsComparison.marginEstimated >= 15 ? AMBER : RED },
+                  { label: "Actual Margin", val: `${actualsComparison.marginActual}%`, color: actualsComparison.marginActual >= 30 ? ACCENT2 : actualsComparison.marginActual >= 15 ? AMBER : RED },
+                ].map(({ label, val, color }) => (
+                  <div key={label} style={{ flex: 1, background: BG, borderRadius: 5, padding: "10px 12px", textAlign: "center" }}>
+                    <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 15, fontWeight: 600, color }}>{val}</div>
+                    <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 9, color: DIM, marginTop: 2 }}>{label}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Cost variance by category */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {actualsComparison.categories.map(({ cat, estimated, actual, variance }) => (
+                  <div key={cat}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                      <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, color: MID }}>{cat}</span>
+                      <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 10, color: variance > 0 ? RED : ACCENT2, fontWeight: 600 }}>
+                        {variance > 0 ? "+" : ""}{$(Math.round(variance))}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                      <div style={{ flex: 1, height: 5, background: BORDER, borderRadius: 2, overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: `${estimated > 0 ? Math.min((estimated / Math.max(estimated, actual)) * 100, 100) : 0}%`, background: ACCENT, borderRadius: 2 }}/>
+                      </div>
+                      <div style={{ flex: 1, height: 5, background: BORDER, borderRadius: 2, overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: `${actual > 0 ? Math.min((actual / Math.max(estimated, actual)) * 100, 100) : 0}%`, background: variance > 50 ? RED : ACCENT2, borderRadius: 2 }}/>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 2 }}>
+                      <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 9, color: DIM }}>Est {$(Math.round(estimated))}</span>
+                      <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 9, color: DIM }}>Act {$(Math.round(actual))}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Total variance callout */}
+              <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${BORDER}` }}>
+                {(() => {
+                  const totalVariance = actualsComparison.totalActual - actualsComparison.totalEstimated;
+                  const isOver = totalVariance > 0;
+                  return (
+                    <div style={{ padding: "10px 12px", borderRadius: 5, background: isOver ? `${RED}0D` : `${ACCENT2}0D`, border: `1px solid ${isOver ? RED : ACCENT2}30`, fontFamily: "'DM Sans',sans-serif", fontSize: 11, color: isOver ? RED : ACCENT2, lineHeight: 1.5 }}>
+                      {isOver
+                        ? `Over budget by ${$(Math.round(totalVariance))} (${((totalVariance / actualsComparison.totalEstimated) * 100).toFixed(0)}%). Review your ${[...actualsComparison.categories].sort((a,b)=>b.variance-a.variance)[0]?.cat} estimate next time.`
+                        : `Under budget by ${$(Math.abs(Math.round(totalVariance)))} — good cost control on this job.`
+                      }
+                    </div>
+                  );
+                })()}
+              </div>
             </div>
           )}
         </div>
