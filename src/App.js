@@ -1770,6 +1770,7 @@ function SyncReview({ autoMatched, suggested, untagged, allTagged, overhead, dis
   const [retagJobId, setRetagJobId]       = useState("");
   const [searchTagged, setSearchTagged]   = useState("");
   const [searchReview, setSearchReview]   = useState("");
+  const [searchQb, setSearchQb]           = useState("");
   const [toast, setToast]                 = useState(null);   // { message, color }
   const [confirmUndo, setConfirmUndo]     = useState(null);   // item awaiting undo confirmation
   const [bulkJobId, setBulkJobId]         = useState("");     // vendor-level bulk assign job
@@ -1814,6 +1815,44 @@ function SyncReview({ autoMatched, suggested, untagged, allTagged, overhead, dis
     const q = searchTagged.toLowerCase();
     return (t.vendor || '').toLowerCase().includes(q) || (t.description || '').toLowerCase().includes(q);
   });
+
+  // QB-direct expenses: tagged in QuickBooks before sync — not from inbox workflow
+  const qbDirectAll = useMemo(() => {
+    const result = [];
+    (jobSummaries || []).forEach(job => {
+      (job.purchases || []).forEach(p => {
+        if (!String(p.Id).includes('_automatch_')) {
+          result.push({ ...p, jobName: job.name, jobId: job.id });
+        }
+      });
+    });
+    return result.sort((a,b) => new Date(b.TxnDate) - new Date(a.TxnDate));
+  }, [jobSummaries]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const qbDirect = useMemo(() => {
+    let items = qbDirectAll;
+    if (dateRange !== "all") {
+      if (dateRange === "custom") {
+        const start = customStart ? new Date(customStart) : null;
+        const end   = customEnd   ? new Date(customEnd + "T23:59:59") : null;
+        if (start || end) items = items.filter(p => { const d = new Date(p.TxnDate); return (!start || d >= start) && (!end || d <= end); });
+      } else {
+        const cutoff = getDateCutoff(dateRange);
+        if (cutoff) items = items.filter(p => new Date(p.TxnDate) >= cutoff);
+      }
+    }
+    if (searchQb) {
+      const q = searchQb.toLowerCase();
+      items = items.filter(p =>
+        (p.EntityRef?.name||'').toLowerCase().includes(q) ||
+        (p.Line?.[0]?.Description||'').toLowerCase().includes(q) ||
+        (p.jobName||'').toLowerCase().includes(q)
+      );
+    }
+    return items;
+  }, [qbDirectAll, dateRange, customStart, customEnd, searchQb]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const qbDirectTotal = qbDirect.reduce((s,p) => s + (p.TotalAmt||0), 0);
 
   // Group auto-matched by vendor → job for the summary
   const autoGrouped = useMemo(() => {
@@ -1928,10 +1967,11 @@ function SyncReview({ autoMatched, suggested, untagged, allTagged, overhead, dis
 
   // Section tab data
   const sections = [
-    { key: "auto",    label: "Auto-Matched", count: filteredAutoMatched.length, color: ACCENT2 },
-    { key: "review",  label: "Needs Review",  count: needsReviewCount,           color: needsReviewCount > 0 ? AMBER : ACCENT2 },
-    { key: "fixed",   label: "Fixed Costs",   count: filteredOverhead.length,     color: ACCENT2 },
-    { key: "tagged",  label: "All Tagged",     count: filteredTagged.length,       color: ACCENT2 },
+    { key: "auto",     label: "Auto-Matched",  count: filteredAutoMatched.length, color: ACCENT2 },
+    { key: "review",   label: "Needs Review",   count: needsReviewCount,           color: needsReviewCount > 0 ? AMBER : ACCENT2 },
+    { key: "fixed",    label: "Fixed Costs",    count: filteredOverhead.length,    color: ACCENT2 },
+    { key: "tagged",   label: "All Tagged",      count: filteredTagged.length,      color: ACCENT2 },
+    { key: "qbtagged", label: "Tagged in QB",   count: qbDirect.length,            color: ACCENT2 },
   ];
 
   return (
@@ -2315,6 +2355,59 @@ function SyncReview({ autoMatched, suggested, untagged, allTagged, overhead, dis
                   </div>
                 );
               })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── TAGGED IN QB section ── */}
+      {section === "qbtagged" && (
+        <div>
+          {/* Info callout */}
+          <div style={{ marginBottom:16,padding:"12px 16px",borderRadius:6,background:"rgba(92,122,90,0.08)",border:`1px solid rgba(92,122,90,0.2)`,display:"flex",gap:10,alignItems:"flex-start" }}>
+            <span style={{ fontFamily:"'DM Mono',monospace",fontSize:13,color:ACCENT2,flexShrink:0,fontWeight:600 }}>i</span>
+            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:MID,lineHeight:1.6 }}>
+              These expenses were tagged directly in QuickBooks before syncing. They flow automatically to job costs and don't require any action here — they're already included in your profitability numbers.
+            </div>
+          </div>
+
+          {/* Search */}
+          <div style={{ marginBottom:16 }}>
+            <input
+              type="text"
+              placeholder="Search by vendor, description, or job..."
+              value={searchQb}
+              onChange={e => setSearchQb(e.target.value)}
+              style={{ width:"100%",maxWidth:400,padding:"8px 14px",borderRadius:5,border:`1px solid ${BORDER}`,background:CARD,fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DARK,outline:"none" }}
+            />
+          </div>
+
+          {/* Summary bar */}
+          {qbDirect.length > 0 && (
+            <div style={{ marginBottom:14,display:"flex",alignItems:"center",gap:16,fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM }}>
+              <span><strong style={{ color:DARK }}>{qbDirect.length}</strong> expense{qbDirect.length!==1?"s":""}</span>
+              <span style={{ fontFamily:"'DM Mono',monospace",color:RED,fontWeight:500 }}>–{$(qbDirectTotal)}</span>
+              <span>already in job costs</span>
+            </div>
+          )}
+
+          {qbDirect.length === 0 ? (
+            <div style={{ padding:40,textAlign:"center",color:DIM,fontFamily:"'DM Sans',sans-serif",fontSize:13 }}>No QB-tagged expenses in this date range.</div>
+          ) : (
+            <div style={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:6 }}>
+              {/* Column headers */}
+              <div style={{ display:"grid",gridTemplateColumns:"1.2fr 1.2fr 2fr 110px 110px",gap:8,padding:"8px 20px",borderBottom:`1px solid ${BORDER}`,fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.1em",textTransform:"uppercase",color:DIM,fontWeight:500 }}>
+                <span>Vendor</span><span>Job</span><span>Description</span><span>Date</span><span style={{ textAlign:"right" }}>Amount</span>
+              </div>
+              {qbDirect.map((p, idx) => (
+                <div key={p.Id} style={{ display:"grid",gridTemplateColumns:"1.2fr 1.2fr 2fr 110px 110px",gap:8,padding:"10px 20px",borderBottom:idx<qbDirect.length-1?`1px solid ${BORDER}`:"none",alignItems:"center" }}>
+                  <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,fontWeight:500,color:DARK,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{p.EntityRef?.name||'Unknown'}</div>
+                  <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:ACCENT2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{p.jobName}</div>
+                  <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:MID,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{p.Line?.[0]?.Description||'—'}</div>
+                  <div style={{ fontFamily:"'DM Mono',monospace",fontSize:11,color:DIM }}>{p.TxnDate}</div>
+                  <div style={{ fontFamily:"'DM Mono',monospace",fontSize:12,color:RED,fontWeight:500,textAlign:"right" }}>–{$(p.TotalAmt||0)}</div>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -5208,7 +5301,7 @@ function useContractorData(userId, mockJobSummaries, mockUntagged) {
           Id: t.id, DocNumber: t.doc_number, TxnDate: t.txn_date,
           TotalAmt: t.amount, EntityRef: { name: t.vendor || 'Unknown' },
           Line: [{ Amount: t.amount, Description: t.description,
-            AccountBasedExpenseLineDetail: { CustomerRef: { value: job.qb_job_id || job.id } } }]
+            AccountBasedExpenseLineDetail: { CustomerRef: { value: job.id } } }]
         }));
         return {
           id: job.id, name: job.name, clientName: job.client_name || '',
