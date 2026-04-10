@@ -1475,6 +1475,189 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, q
   );
 }
 
+// ─── VENDOR SETUP MODAL ──────────────────────────────────────────────────────
+// Shown after first sync (or via sidebar) to let the user pick which vendors
+// are job-related. Future syncs only process those vendors, eliminating bank noise.
+
+function VendorSetup({ userId, vendorRules, onSave, onClose, isFirstRun }) {
+  const [allVendors, setAllVendors]   = useState([]);
+  const [selected, setSelected]       = useState(new Set());
+  const [search, setSearch]           = useState('');
+  const [loading, setLoading]         = useState(true);
+  const [saving, setSaving]           = useState(false);
+
+  // On mount: load all distinct vendors from synced data + pre-check already-tracked ones
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      try {
+        const [{ data: txnRows }, { data: inboxRows }] = await Promise.all([
+          supabase.from('transactions').select('vendor').eq('contractor_id', userId).not('vendor', 'is', null),
+          supabase.from('inbox_tags').select('vendor').eq('contractor_id', userId).not('vendor', 'is', null),
+        ]);
+        const vendorSet = new Set([
+          ...(txnRows  || []).map(r => r.vendor),
+          ...(inboxRows || []).map(r => r.vendor),
+        ].filter(v => v && v.trim() !== '' && v !== 'Unknown Vendor'));
+        const sorted = [...vendorSet].sort((a, b) => a.localeCompare(b));
+        setAllVendors(sorted);
+
+        // Pre-check vendors already marked 'tracked' in vendor_rules
+        const alreadyTracked = new Set(
+          (vendorRules || [])
+            .filter(r => r.rule_type === 'tracked')
+            .map(r => r.vendor_name)
+        );
+        setSelected(alreadyTracked);
+      } catch (e) { // eslint-disable-line no-unused-vars
+        console.error('Error loading vendors for setup');
+      }
+      setLoading(false);
+    }
+    load();
+  }, [userId, vendorRules]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const filtered = allVendors.filter(v => v.toLowerCase().includes(search.toLowerCase()));
+  const allFilteredSelected = filtered.length > 0 && filtered.every(v => selected.has(v));
+
+  function toggleVendor(v) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(v)) next.delete(v); else next.add(v);
+      return next;
+    });
+  }
+
+  function toggleAllFiltered() {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (allFilteredSelected) filtered.forEach(v => next.delete(v));
+      else filtered.forEach(v => next.add(v));
+      return next;
+    });
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      // Remove old 'tracked' rules and write fresh set
+      await supabase
+        .from('vendor_rules')
+        .delete()
+        .eq('contractor_id', userId)
+        .eq('rule_type', 'tracked');
+
+      if (selected.size > 0) {
+        await supabase
+          .from('vendor_rules')
+          .insert([...selected].map(v => ({
+            contractor_id: userId,
+            vendor_name:   v,
+            rule_type:     'tracked',
+          })));
+      }
+      onSave();
+    } catch (err) {
+      console.error('Error saving vendor setup:', err);
+    }
+    setSaving(false);
+  }
+
+  return (
+    <div style={{ position:'fixed',inset:0,background:'rgba(44,36,22,0.5)',zIndex:700,display:'flex',alignItems:'center',justifyContent:'center',padding:24 }}>
+      <div style={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:8,width:'100%',maxWidth:560,maxHeight:'88vh',display:'flex',flexDirection:'column',boxShadow:'0 24px 64px rgba(44,36,22,0.22)' }}>
+
+        {/* Header */}
+        <div style={{ padding:'24px 28px 18px',borderBottom:`1px solid ${BORDER}` }}>
+          <div style={{ display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:12 }}>
+            <div>
+              <h2 style={{ fontFamily:"'Lora',serif",fontSize:20,fontWeight:500,color:DARK,letterSpacing:'-0.01em',marginBottom:4 }}>
+                {isFirstRun ? 'Set up your job vendors' : 'Manage job vendors'}
+              </h2>
+              <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,lineHeight:1.5 }}>
+                Select the vendors whose expenses should flow into your dashboard. Only these vendors will be synced — bank transactions and overhead vendors stay out.
+              </p>
+            </div>
+            {!isFirstRun && (
+              <button onClick={onClose} style={{ background:'none',border:'none',cursor:'pointer',color:DIM,fontSize:20,lineHeight:1,padding:'2px 4px',flexShrink:0 }}>×</button>
+            )}
+          </div>
+          {isFirstRun && (
+            <div style={{ marginTop:14,padding:'11px 14px',borderRadius:5,background:'rgba(92,122,90,0.08)',border:`1px solid rgba(92,122,90,0.2)` }}>
+              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:ACCENT2,fontWeight:500,marginBottom:2 }}>You can change this any time</div>
+              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:MID }}>Access Vendor Setup from the sidebar under QuickBooks settings. Add or remove vendors whenever your business changes.</div>
+            </div>
+          )}
+        </div>
+
+        {/* Search + select-all */}
+        <div style={{ padding:'14px 28px',borderBottom:`1px solid ${BORDER}`,display:'flex',alignItems:'center',gap:10 }}>
+          <input
+            type="text"
+            placeholder="Search vendors..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{ flex:1,padding:'7px 12px',borderRadius:5,border:`1px solid ${BORDER}`,background:BG,fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DARK,outline:'none' }}
+          />
+          <button
+            className="btn"
+            onClick={toggleAllFiltered}
+            style={{ whiteSpace:'nowrap',fontSize:11 }}
+          >
+            {allFilteredSelected ? 'Deselect all' : 'Select all'}
+          </button>
+        </div>
+
+        {/* Vendor list */}
+        <div style={{ flex:1,overflowY:'auto',padding:'8px 0' }}>
+          {loading ? (
+            <div style={{ padding:'40px',textAlign:'center',fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM }}>Loading vendors...</div>
+          ) : filtered.length === 0 ? (
+            <div style={{ padding:'40px',textAlign:'center',fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM }}>
+              {allVendors.length === 0 ? 'No vendors found — sync your QuickBooks data first.' : 'No vendors match your search.'}
+            </div>
+          ) : (
+            filtered.map(v => {
+              const isChecked = selected.has(v);
+              return (
+                <div
+                  key={v}
+                  onClick={() => toggleVendor(v)}
+                  style={{ display:'flex',alignItems:'center',gap:12,padding:'10px 28px',cursor:'pointer',background:isChecked?'rgba(92,122,90,0.06)':'transparent',borderBottom:`1px solid ${BORDER}`,transition:'background 0.1s' }}
+                >
+                  <div style={{ width:16,height:16,borderRadius:3,border:`1.5px solid ${isChecked?ACCENT2:BORDER}`,background:isChecked?ACCENT2:'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,transition:'all 0.15s' }}>
+                    {isChecked && <span style={{ color:CARD,fontSize:11,lineHeight:1,fontWeight:700 }}>✓</span>}
+                  </div>
+                  <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:isChecked?DARK:MID,fontWeight:isChecked?500:400 }}>{v}</span>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding:'16px 28px',borderTop:`1px solid ${BORDER}`,display:'flex',alignItems:'center',justifyContent:'space-between' }}>
+          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM }}>
+            {selected.size} vendor{selected.size !== 1 ? 's' : ''} selected
+          </div>
+          <div style={{ display:'flex',gap:10 }}>
+            {!isFirstRun && <button className="btn" onClick={onClose}>Cancel</button>}
+            <button
+              className="btn act"
+              onClick={handleSave}
+              disabled={saving || selected.size === 0}
+              style={{ opacity:(saving || selected.size === 0) ? 0.5 : 1 }}
+            >
+              {saving ? 'Saving...' : isFirstRun ? 'Save & Resync →' : 'Save changes'}
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
 // ─── TAB: EXPENSE INBOX ───────────────────────────────────────────────────────
 
 function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, onBulkTag, onBulkMarkOverhead, onBulkDismiss, onSaveVendorRule, vendorRules, tagged, jobSummaries, overhead, dismissed, dateRange, setDateRange, customStart, setCustomStart, customEnd, setCustomEnd }) {
@@ -4327,6 +4510,8 @@ export default function App() {
   const [qbError, setQbError]           = useState(null);
   const [syncing, setSyncing]           = useState(false);
   const [syncError, setSyncError]       = useState(null);
+  const [showVendorSetup, setShowVendorSetup] = useState(false);
+  const [vendorSetupIsFirstRun, setVendorSetupIsFirstRun] = useState(false);
 
   // ── Live data hook — loads from Supabase, falls back to mock
   const mockJobSummaries = buildJobSummaries({});
@@ -4369,6 +4554,12 @@ export default function App() {
       if (data.success) {
         console.log('QB sync complete:', data.summary);
         await refreshData();
+        // After sync, if no tracked vendors are set up yet, open vendor setup
+        const hasTracked = (vendorRules || []).some(r => r.rule_type === 'tracked');
+        if (!hasTracked) {
+          setVendorSetupIsFirstRun(true);
+          setShowVendorSetup(true);
+        }
       } else {
         console.error('QB sync failed:', data.error);
         if (data.error === 'QB_DISCONNECTED') {
@@ -4630,6 +4821,16 @@ export default function App() {
 
   // ── Vendor rule management ────────────────────────────────────────────────────
 
+  async function handleVendorSetupSave() {
+    setShowVendorSetup(false);
+    await refreshData();
+    // On first run, trigger a clean resync so the vendor filter takes effect immediately
+    if (vendorSetupIsFirstRun && session?.user?.id) {
+      triggerSync(session.user.id);
+    }
+    setVendorSetupIsFirstRun(false);
+  }
+
   async function handleSaveVendorRule(vendorName, ruleType) {
     if (!session?.user?.id || !vendorName || !ruleType) return;
     try {
@@ -4665,6 +4866,17 @@ export default function App() {
 
       {/* ── Tutorial modal ── */}
       {showTutorial && <TutorialModal onClose={dismissTutorial} qbConnected={qbConnected}/>}
+
+      {/* ── Vendor setup modal ── */}
+      {showVendorSetup && (
+        <VendorSetup
+          userId={session.user.id}
+          vendorRules={vendorRules}
+          onSave={handleVendorSetupSave}
+          onClose={() => setShowVendorSetup(false)}
+          isFirstRun={vendorSetupIsFirstRun}
+        />
+      )}
 
       {/* ── First-login disclaimer modal ── */}
       {showDisclaimer && (
@@ -4729,6 +4941,14 @@ export default function App() {
                 {" · "}
                 <a href={`/api/qb-disconnect?userId=${session?.user?.id}&redirect=true`}
                   style={{ color:SIDEBAR_DIM, textDecoration:"underline", cursor:"pointer" }}>disconnect</a>
+              </div>
+            )}
+            {qbConnected && (
+              <div style={{ fontSize:10, color:SIDEBAR_DIM, fontFamily:"'DM Sans',sans-serif", marginTop:3, paddingLeft:13 }}>
+                <span onClick={() => { setVendorSetupIsFirstRun(false); setShowVendorSetup(true); }}
+                  style={{ color:SIDEBAR_DIM, textDecoration:"underline", cursor:"pointer" }}>
+                  {(vendorRules||[]).some(r=>r.rule_type==='tracked') ? "manage vendors" : "⚠ set up vendors"}
+                </span>
               </div>
             )}
           </div>
