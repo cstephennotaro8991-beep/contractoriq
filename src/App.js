@@ -807,7 +807,7 @@ function KpiModal({ type, expenseView, jobSummaries, allJobSummaries, overhead, 
 
 // ─── TAB: DASHBOARD ───────────────────────────────────────────────────────────
 
-function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, qbConnected, userId, clientType, dateRange, setDateRange, customStart, setCustomStart, customEnd, setCustomEnd }) {
+function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, dismissed, qbConnected, userId, clientType, dateRange, setDateRange, customStart, setCustomStart, customEnd, setCustomEnd }) {
   const [sort, setSort]             = useState("profit");
   const [sortDir, setSortDir]       = useState("desc");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -939,12 +939,15 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, q
   const outstandingJobs = typeFilteredJobs.filter(j => j.outstanding > 0).sort((a,b) => b.outstanding - a.outstanding);
   const totalOutstanding = outstandingJobs.reduce((s,j) => s + j.outstanding, 0);
 
-  // Data Quality Score — all three components filtered to the selected date range
+  // Data Quality Score — all four components filtered to the selected date range.
+  // Dismissed items stay in the denominator so dismissing doesn't artificially inflate the score.
   const filteredOverhead      = filterUntaggedByDate(overhead || [], dateRange, customStart, customEnd);
+  const filteredDismissed     = filterUntaggedByDate(dismissed || [], dateRange, customStart, customEnd);
   const totalTaggedExpenses   = filteredJobs.reduce((s,j) => s + j.purchases.length, 0);
   const totalOverheadExpenses = filteredOverhead.length;
   const totalUntaggedExpenses = filteredUntagged.length;
-  const totalExpenses  = totalTaggedExpenses + totalOverheadExpenses + totalUntaggedExpenses;
+  const totalDismissedExpenses = filteredDismissed.length;
+  const totalExpenses  = totalTaggedExpenses + totalOverheadExpenses + totalUntaggedExpenses + totalDismissedExpenses;
   const accountedFor   = totalTaggedExpenses + totalOverheadExpenses;
   const dataQuality    = totalExpenses > 0 ? Math.round((accountedFor / totalExpenses) * 100) : 100;
   const dqColor        = dataQuality >= 80 ? ACCENT2 : dataQuality >= 50 ? AMBER : RED;
@@ -1667,6 +1670,17 @@ function SyncReview({ autoMatched, suggested, untagged, allTagged, overhead, dis
   const [retagItem, setRetagItem]         = useState(null);  // item being re-tagged
   const [retagJobId, setRetagJobId]       = useState("");
   const [searchTagged, setSearchTagged]   = useState("");
+  const [searchReview, setSearchReview]   = useState("");
+  const [toast, setToast]                 = useState(null);   // { message, color }
+  const [confirmUndo, setConfirmUndo]     = useState(null);   // item awaiting undo confirmation
+  const [bulkJobId, setBulkJobId]         = useState("");     // vendor-level bulk assign job
+  const toastTimer = useRef(null);
+
+  function showToast(message, color) {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ message, color: color || ACCENT2 });
+    toastTimer.current = setTimeout(() => setToast(null), 2500);
+  }
 
   // Job options for dropdowns
   const liveJobOptions = (jobSummaries || []).map(j => ({
@@ -1683,10 +1697,20 @@ function SyncReview({ autoMatched, suggested, untagged, allTagged, overhead, dis
 
   // Filter items by date range
   const filteredAutoMatched = filterUntaggedByDate(autoMatched || [], dateRange, customStart, customEnd);
-  const filteredSuggested   = filterUntaggedByDate(suggested || [], dateRange, customStart, customEnd);
-  const filteredUntagged    = filterUntaggedByDate(untagged || [], dateRange, customStart, customEnd);
   const filteredOverhead    = filterUntaggedByDate(overhead || [], dateRange, customStart, customEnd);
-  const filteredTagged      = (allTagged || []).filter(t => {
+
+  // Suggested + untagged: date filter first, then search filter
+  const dateSuggested = filterUntaggedByDate(suggested || [], dateRange, customStart, customEnd);
+  const dateUntagged  = filterUntaggedByDate(untagged || [], dateRange, customStart, customEnd);
+  const filteredSuggested = searchReview
+    ? dateSuggested.filter(i => { const q = searchReview.toLowerCase(); return (i.vendor||'').toLowerCase().includes(q) || (i.description||'').toLowerCase().includes(q); })
+    : dateSuggested;
+  const filteredUntagged = searchReview
+    ? dateUntagged.filter(i => { const q = searchReview.toLowerCase(); return (i.vendor||'').toLowerCase().includes(q) || (i.description||'').toLowerCase().includes(q); })
+    : dateUntagged;
+
+  // Tagged: search filter
+  const filteredTagged = (allTagged || []).filter(t => {
     if (!searchTagged) return true;
     const q = searchTagged.toLowerCase();
     return (t.vendor || '').toLowerCase().includes(q) || (t.description || '').toLowerCase().includes(q);
@@ -1705,14 +1729,64 @@ function SyncReview({ autoMatched, suggested, untagged, allTagged, overhead, dis
     return Object.values(groups).sort((a, b) => b.total - a.total);
   }, [filteredAutoMatched, jobLookup]);
 
-  const needsReviewCount = filteredSuggested.length + filteredUntagged.length;
+  // Group needs-review items by vendor for bulk actions
+  const reviewVendorGroups = useMemo(() => {
+    const groups = {};
+    [...filteredSuggested, ...filteredUntagged].forEach(item => {
+      if (!groups[item.vendor]) groups[item.vendor] = { items: [], total: 0, hasSuggested: false };
+      groups[item.vendor].items.push(item);
+      groups[item.vendor].total += item.amount;
+      if (item.suggestedJob) groups[item.vendor].hasSuggested = true;
+    });
+    return Object.entries(groups)
+      .filter(([, g]) => g.items.length >= 2) // only group vendors with 2+ items
+      .sort((a, b) => b[1].total - a[1].total);
+  }, [filteredSuggested, filteredUntagged]);
+
+  const needsReviewCount = dateSuggested.length + dateUntagged.length; // unfiltered by search for badge
   const autoTotal   = filteredAutoMatched.reduce((s, i) => s + i.amount, 0);
   const reviewTotal = [...filteredSuggested, ...filteredUntagged].reduce((s, i) => s + i.amount, 0);
+
+  // ── Bulk actions ──
+
+  function handleConfirmAllSuggestions() {
+    const items = filteredSuggested.filter(i => i.suggestedJob);
+    if (!items.length) return;
+    items.forEach(item => {
+      const job = jobLookup[item.suggestedJob];
+      onConfirmSuggestion(item, item.suggestedJob, job?.label || '');
+    });
+    showToast(`${items.length} expenses confirmed ✓`, ACCENT2);
+  }
+
+  function handleBulkOverhead(items) {
+    items.forEach(item => onMarkOverhead(item));
+    showToast(`${items.length} marked as fixed costs`, AMBER);
+  }
+
+  function handleBulkDismiss(items) {
+    items.forEach(item => onDismiss(item.id));
+    showToast(`${items.length} dismissed`, DIM);
+  }
+
+  function handleBulkAssign(items, jobId) {
+    const job = jobOptions.find(j => j.value === jobId);
+    items.forEach(item => {
+      if (item.suggestedJob) {
+        onConfirmSuggestion(item, jobId, job?.label || '');
+      } else {
+        onTag(item, jobId, job?.label || '');
+      }
+    });
+    setSearchReview("");
+    showToast(`${items.length} tagged to ${job?.label || 'job'} ✓`, ACCENT2);
+  }
 
   // Confirm a suggestion — accept the match
   function handleConfirmSuggestion(item) {
     const job = jobLookup[item.suggestedJob];
     onConfirmSuggestion(item, item.suggestedJob, job?.label || '');
+    showToast(`Tagged to ${job?.label || 'job'} ✓`, ACCENT2);
   }
 
   // Assign a needs-attention item manually
@@ -1722,6 +1796,7 @@ function SyncReview({ autoMatched, suggested, untagged, allTagged, overhead, dis
     const job = jobOptions.find(j => j.value === jobId);
     onTag(item, jobId, job?.label || '');
     setSelections(prev => { const n = { ...prev }; delete n[item.id]; return n; });
+    showToast(`Tagged to ${job?.label || 'job'} ✓`, ACCENT2);
   }
 
   // Change a suggested item to a different job
@@ -1731,6 +1806,7 @@ function SyncReview({ autoMatched, suggested, untagged, allTagged, overhead, dis
     const job = jobOptions.find(j => j.value === jobId);
     onConfirmSuggestion(item, jobId, job?.label || '');
     setSelections(prev => { const n = { ...prev }; delete n[item.id]; return n; });
+    showToast(`Tagged to ${job?.label || 'job'} ✓`, ACCENT2);
   }
 
   // Submit a re-tag
@@ -1738,8 +1814,17 @@ function SyncReview({ autoMatched, suggested, untagged, allTagged, overhead, dis
     if (!retagItem || !retagJobId) return;
     const job = jobOptions.find(j => j.value === retagJobId);
     onRetag(retagItem, retagJobId, job?.label || '');
+    showToast(`Moved to ${job?.label || 'job'} ✓`, ACCENT2);
     setRetagItem(null);
     setRetagJobId("");
+  }
+
+  // Confirm-then-undo auto-match (two-step to prevent accidents)
+  function handleUndoConfirmed() {
+    if (!confirmUndo) return;
+    onUndoAutoMatch(confirmUndo);
+    showToast(`Removed auto-match — moved to Needs Review`, AMBER);
+    setConfirmUndo(null);
   }
 
   // Section tab data
@@ -1751,7 +1836,32 @@ function SyncReview({ autoMatched, suggested, untagged, allTagged, overhead, dis
   ];
 
   return (
-    <div style={{ padding:"32px 36px",background:BG,minHeight:"100vh" }}>
+    <div style={{ padding:"32px 36px",background:BG,minHeight:"100vh",position:"relative" }}>
+
+      {/* Toast notification */}
+      {toast && (
+        <div style={{ position:"fixed",top:24,right:24,zIndex:800,padding:"12px 20px",borderRadius:6,background:CARD,border:`1px solid ${toast.color}44`,boxShadow:"0 8px 24px rgba(44,36,22,0.15)",display:"flex",alignItems:"center",gap:8,animation:"fadeIn 0.2s ease" }}>
+          <div style={{ width:8,height:8,borderRadius:"50%",background:toast.color,flexShrink:0 }}/>
+          <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DARK,fontWeight:500 }}>{toast.message}</span>
+        </div>
+      )}
+
+      {/* Undo auto-match confirmation dialog */}
+      {confirmUndo && (
+        <div style={{ position:"fixed",inset:0,background:"rgba(44,36,22,0.4)",zIndex:700,display:"flex",alignItems:"center",justifyContent:"center",padding:24 }}>
+          <div style={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:8,padding:"28px 32px",maxWidth:440,boxShadow:"0 20px 60px rgba(44,36,22,0.2)" }}>
+            <h3 style={{ fontFamily:"'Lora',serif",fontSize:17,fontWeight:500,color:DARK,marginBottom:8 }}>Undo auto-match?</h3>
+            <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:MID,lineHeight:1.6,marginBottom:6 }}>
+              This will remove <strong style={{ color:DARK }}>{confirmUndo.vendor}</strong> · {$(confirmUndo.amount)} from its matched job and move it to Needs Review for manual assignment.
+            </p>
+            <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM,marginBottom:20 }}>The expense will be removed from job costs until you re-assign it.</p>
+            <div style={{ display:"flex",gap:10,justifyContent:"flex-end" }}>
+              <button className="btn" onClick={()=>setConfirmUndo(null)}>Cancel</button>
+              <button className="btn" onClick={handleUndoConfirmed} style={{ borderColor:"rgba(140,107,48,0.3)",color:AMBER }}>Yes, undo match</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <div style={{ marginBottom:20, display:"flex", alignItems:"flex-start", justifyContent:"space-between", flexWrap:"wrap", gap:12 }}>
@@ -1869,7 +1979,7 @@ function SyncReview({ autoMatched, suggested, untagged, allTagged, overhead, dis
                             {item.matchReason && <div style={{ fontSize:10,color:DIM,fontFamily:"'DM Sans',sans-serif",marginTop:2 }}>{item.matchReason}</div>}
                           </div>
                           <div style={{ fontFamily:"'DM Mono',monospace",fontSize:14,fontWeight:500,color:RED,minWidth:80,textAlign:"right" }}>–{$(item.amount)}</div>
-                          <button className="btn" onClick={()=>onUndoAutoMatch(item)} style={{ fontSize:11,whiteSpace:"nowrap" }}>Undo</button>
+                          <button className="btn" onClick={()=>setConfirmUndo(item)} style={{ fontSize:11,whiteSpace:"nowrap" }}>Undo</button>
                         </div>
                       );
                     })}
@@ -1888,6 +1998,57 @@ function SyncReview({ autoMatched, suggested, untagged, allTagged, overhead, dis
             <div style={{ padding:40,textAlign:"center",color:DIM,fontFamily:"'DM Sans',sans-serif",fontSize:13 }}>All caught up — nothing needs review right now.</div>
           ) : (
             <div style={{ display:"flex",flexDirection:"column",gap:10 }}>
+
+              {/* Search bar */}
+              <div style={{ marginBottom:8 }}>
+                <input
+                  type="text"
+                  placeholder="Search vendor or description..."
+                  value={searchReview}
+                  onChange={e => setSearchReview(e.target.value)}
+                  style={{ width:"100%",maxWidth:400,padding:"8px 14px",borderRadius:5,border:`1px solid ${BORDER}`,background:CARD,fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DARK,outline:"none" }}
+                />
+              </div>
+
+              {/* Vendor summary chips — quick glance at which vendors have the most items */}
+              {reviewVendorGroups.length > 0 && (
+                <div style={{ display:"flex",gap:6,flexWrap:"wrap",marginBottom:8 }}>
+                  {reviewVendorGroups.slice(0, 6).map(([vendor, g]) => (
+                    <button key={vendor} onClick={()=>setSearchReview(vendor)} style={{ cursor:"pointer",padding:"5px 12px",borderRadius:4,border:`1px solid ${BORDER}`,background:searchReview===vendor?ACCENT:CARD,color:searchReview===vendor?CARD:MID,fontFamily:"'DM Sans',sans-serif",fontSize:11,fontWeight:500,transition:"all 0.15s" }}>
+                      {vendor} ({g.items.length}) · {$(g.total)}
+                    </button>
+                  ))}
+                  {searchReview && (
+                    <button onClick={()=>setSearchReview("")} style={{ cursor:"pointer",padding:"5px 12px",borderRadius:4,border:`1px solid ${BORDER}`,background:"transparent",color:DIM,fontFamily:"'DM Sans',sans-serif",fontSize:11 }}>Clear ×</button>
+                  )}
+                </div>
+              )}
+
+              {/* Vendor bulk action bar — visible when filtering by vendor */}
+              {searchReview && (() => {
+                const allVisible = [...filteredSuggested, ...filteredUntagged];
+                return allVisible.length >= 2 ? (
+                  <div style={{ display:"flex",alignItems:"center",gap:8,padding:"10px 14px",borderRadius:6,background:"rgba(92,122,90,0.06)",border:`1px solid rgba(92,122,90,0.15)`,marginBottom:10,flexWrap:"wrap" }}>
+                    <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,fontWeight:500,color:MID }}>{allVisible.length} items · {$(allVisible.reduce((s,i)=>s+i.amount,0))}</span>
+                    <span style={{ color:BORDER }}>|</span>
+                    <select className="job-select" value={bulkJobId} onChange={e=>setBulkJobId(e.target.value)} style={{ minWidth:180,fontSize:11 }}>
+                      <option value="">Tag all to job...</option>
+                      {jobOptions.map(j=><option key={j.value} value={j.value}>{j.label}{j.client?` (${j.client})`:""}</option>)}
+                    </select>
+                    <button className={`btn${bulkJobId?" act":""}`} disabled={!bulkJobId} onClick={()=>{handleBulkAssign(allVisible,bulkJobId);setBulkJobId("");}} style={{ fontSize:11,opacity:bulkJobId?1:0.45 }}>Tag All →</button>
+                    <button className="btn" onClick={()=>handleBulkOverhead(allVisible)} style={{ fontSize:11,borderColor:"rgba(140,107,48,0.3)",color:AMBER }}>All Fixed Costs</button>
+                    <button className="btn red" onClick={()=>handleBulkDismiss(allVisible)} style={{ fontSize:11 }}>Dismiss All</button>
+                  </div>
+                ) : null;
+              })()}
+
+              {/* Confirm all suggestions button */}
+              {filteredSuggested.length >= 2 && (
+                <div style={{ display:"flex",justifyContent:"flex-end",marginBottom:6 }}>
+                  <button className="btn act" onClick={handleConfirmAllSuggestions} style={{ fontSize:11,padding:"6px 14px" }}>Confirm All Suggestions ({filteredSuggested.length})</button>
+                </div>
+              )}
+
               {/* Suggested matches first */}
               {filteredSuggested.length > 0 && (
                 <div style={{ marginBottom:8 }}>
@@ -1919,8 +2080,8 @@ function SyncReview({ autoMatched, suggested, untagged, allTagged, overhead, dis
                               {jobOptions.map(j=><option key={j.value} value={j.value}>{j.label}{j.client?` (${j.client})`:""}</option>)}
                             </select>
                             <div style={{ display:"flex",gap:6 }}>
-                              <button className="btn" onClick={()=>onMarkOverhead(item)} style={{ borderColor:"rgba(140,107,48,0.3)",color:AMBER }}>Fixed Cost</button>
-                              <button className="btn red" onClick={()=>onDismiss(item.id)}>Dismiss</button>
+                              <button className="btn" onClick={()=>{onMarkOverhead(item);showToast(`${item.vendor} marked as fixed cost`,AMBER);}} style={{ borderColor:"rgba(140,107,48,0.3)",color:AMBER }}>Fixed Cost</button>
+                              <button className="btn red" onClick={()=>{onDismiss(item.id);showToast(`${item.vendor} dismissed`,DIM);}}>Dismiss</button>
                               {hasOverride ? (
                                 <button className="btn act" onClick={()=>handleChangeSuggestion(item)}>Assign →</button>
                               ) : (
@@ -1959,8 +2120,8 @@ function SyncReview({ autoMatched, suggested, untagged, allTagged, overhead, dis
                             {jobOptions.map(j=><option key={j.value} value={j.value}>{j.label}{j.client?` (${j.client})`:""}</option>)}
                           </select>
                           <div style={{ display:"flex",gap:6 }}>
-                            <button className="btn red" onClick={()=>onDismiss(item.id)}>Dismiss</button>
-                            <button className="btn" onClick={()=>onMarkOverhead(item)} style={{ borderColor:"rgba(140,107,48,0.3)",color:AMBER }}>Fixed Cost</button>
+                            <button className="btn red" onClick={()=>{onDismiss(item.id);showToast(`${item.vendor} dismissed`,DIM);}}>Dismiss</button>
+                            <button className="btn" onClick={()=>{onMarkOverhead(item);showToast(`${item.vendor} marked as fixed cost`,AMBER);}} style={{ borderColor:"rgba(140,107,48,0.3)",color:AMBER }}>Fixed Cost</button>
                             <button className={`btn${selections[item.id]?" act":""}`} onClick={()=>handleAssign(item)} disabled={!selections[item.id]} style={{ opacity:selections[item.id]?1:0.45 }}>Assign →</button>
                           </div>
                         </div>
@@ -4897,6 +5058,7 @@ export default function App() {
   const [qbError, setQbError]           = useState(null);
   const [syncing, setSyncing]           = useState(false);
   const [syncError, setSyncError]       = useState(null);
+  const [syncNudge, setSyncNudge]       = useState(null);  // { auto, suggested, needs_attention }
   const [showVendorSetup, setShowVendorSetup] = useState(false);
   const [vendorSetupIsFirstRun, setVendorSetupIsFirstRun] = useState(false);
 
@@ -4932,6 +5094,11 @@ export default function App() {
       if (data.success) {
         console.log('QB sync complete:', data.summary);
         await refreshData();
+        // Show post-sync nudge if matching engine did work
+        const m = data.summary?.matching;
+        if (m && (m.auto > 0 || m.suggested > 0 || m.needs_attention > 0)) {
+          setSyncNudge(m);
+        }
         // After sync, if no tracked vendors are set up yet, open vendor setup
         const hasTracked = (vendorRules || []).some(r => r.rule_type === 'tracked');
         if (!hasTracked) {
@@ -5097,6 +5264,8 @@ export default function App() {
       await refreshData();
     } catch (err) {
       console.error('Error saving tag to Supabase:', err);
+      // Roll back optimistic update so item reappears in inbox
+      setTagged(prev => prev.filter(t => t.id !== item.id));
     }
   }
 
@@ -5167,27 +5336,17 @@ export default function App() {
       await refreshData();
     } catch (err) {
       console.error('Error confirming suggestion:', err);
+      // Roll back optimistic update so item reappears
+      setTagged(prev => prev.filter(t => t.id !== item.id));
     }
   }
 
   async function handleRetag(item, newJobId, newJobName) {
-    // Change a tagged/auto-matched expense to a different job
+    // Change a tagged/auto-matched expense to a different job.
+    // Insert new transaction FIRST, then clean up old rows — so if insert fails,
+    // the old transaction stays intact and job costs are never orphaned.
     try {
-      // Update inbox_tags
-      await supabase
-        .from('inbox_tags')
-        .update({ status: 'tagged', tagged_job_id: newJobId, matched_by: 'manual' })
-        .eq('id', item.id);
-
-      // Delete old transaction rows that reference this inbox item
-      // Could be from auto-match (`_automatch_`) or manual tag (`_inbox_`)
-      const oldIds = [
-        `${session.user.id}_inbox_${item.id}`,
-        `${session.user.id}_automatch_${item.id}`,
-      ];
-      await supabase.from('transactions').delete().in('id', oldIds);
-
-      // Insert new transaction for the correct job
+      // 1. Insert new transaction for the correct job (upsert overwrites _inbox_ row if it exists)
       await supabase
         .from('transactions')
         .upsert({
@@ -5201,6 +5360,18 @@ export default function App() {
           description:   item.description,
           vendor:        item.vendor,
         }, { onConflict: 'id' });
+
+      // 2. Clean up any leftover auto-match transaction (different ID pattern)
+      await supabase
+        .from('transactions')
+        .delete()
+        .eq('id', `${session.user.id}_automatch_${item.id}`);
+
+      // 3. Update inbox_tags
+      await supabase
+        .from('inbox_tags')
+        .update({ status: 'tagged', tagged_job_id: newJobId, matched_by: 'manual' })
+        .eq('id', item.id);
 
       await refreshData();
     } catch (err) {
@@ -5408,9 +5579,22 @@ export default function App() {
         </div>
       )}
 
+      {/* ── Post-sync nudge banner ── */}
+      {syncNudge && (
+        <div style={{ background:"rgba(92,122,90,0.06)",borderBottom:`1px solid rgba(92,122,90,0.25)`,padding:"11px 36px",display:"flex",alignItems:"center",justifyContent:"space-between" }}>
+          <div style={{ fontSize:13,color:ACCENT2,fontFamily:"'DM Sans',sans-serif",fontWeight:500 }}>
+            Sync complete — {syncNudge.auto > 0 ? `${syncNudge.auto} auto-matched` : ""}{syncNudge.auto > 0 && (syncNudge.suggested > 0 || syncNudge.needs_attention > 0) ? ", " : ""}{syncNudge.suggested > 0 ? `${syncNudge.suggested} need confirmation` : ""}{syncNudge.suggested > 0 && syncNudge.needs_attention > 0 ? ", " : ""}{syncNudge.needs_attention > 0 ? `${syncNudge.needs_attention} need attention` : ""}
+          </div>
+          <div style={{ display:"flex",gap:8,alignItems:"center" }}>
+            <button className="btn act" style={{ fontSize:11 }} onClick={()=>{setTab("inbox");setSyncNudge(null);}}>Review Now →</button>
+            <button onClick={()=>setSyncNudge(null)} style={{ background:"none",border:"none",cursor:"pointer",color:DIM,fontSize:16,padding:"0 4px" }}>×</button>
+          </div>
+        </div>
+      )}
+
       {/* ── Content ── */}
       <div style={{ flex:1 }}>
-        {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} onEstimate={()=>setTab("estimator")} jobSummaries={jobSummaries} untagged={[...untagged, ...(suggested||[])]} overhead={overhead} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
+        {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} onEstimate={()=>setTab("estimator")} jobSummaries={jobSummaries} untagged={[...untagged, ...(suggested||[])]} overhead={overhead} dismissed={dismissed} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
         {tab==="inbox"     && <SyncReview autoMatched={autoMatched} suggested={suggested} untagged={untagged} allTagged={allTagged} overhead={overhead} dismissed={dismissed} jobSummaries={jobSummaries} vendorRules={vendorRules} onConfirmSuggestion={handleConfirmSuggestion} onTag={handleTag} onMarkOverhead={handleMarkOverhead} onDismiss={handleDismiss} onRestore={handleRestore} onRetag={handleRetag} onUndoAutoMatch={handleUndoAutoMatch} onSaveVendorRule={handleSaveVendorRule} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
         {tab==="detail"    && <JobDetail job={selectedJob} onBack={()=>setTab("dashboard")} untagged={untagged}/>}
         {tab==="clients"   && <ClientScorecard jobSummaries={jobSummaries}/>}
