@@ -196,6 +196,173 @@ function guessJobType(name) {
   return 'General';
 }
 
+// ── Matching engine ──────────────────────────────────────────────────────────
+// Scores each inbox item against vendor history and active jobs to determine
+// confidence tier: auto (>=0.80), suggested (0.40–0.79), needs_attention (<0.40).
+// Also applies vendor rules (overhead/dismiss) before scoring.
+
+async function matchExpenses(inboxItems, userId, jobMap, transactionsToUpsert) {
+  if (inboxItems.length === 0) return { matched: [], autoMatchedTxns: [] };
+
+  // 1. Fetch vendor rules (overhead, dismiss, job_cost) — one query
+  const { data: vendorRulesData } = await supabase
+    .from('vendor_rules')
+    .select('vendor_name, rule_type')
+    .eq('contractor_id', userId);
+
+  const ruleMap = {};
+  (vendorRulesData || []).forEach(r => { ruleMap[r.vendor_name] = r.rule_type; });
+
+  // 2. Fetch ALL existing tagged transactions for this contractor — vendor history
+  //    Single bulk query, then group by vendor → job_id counts
+  const { data: taggedTxns } = await supabase
+    .from('transactions')
+    .select('vendor, job_id')
+    .eq('contractor_id', userId)
+    .eq('type', 'expense')
+    .not('vendor', 'is', null);
+
+  const vendorHistory = {}; // vendor → { jobId: count, ... }
+  (taggedTxns || []).forEach(t => {
+    if (!vendorHistory[t.vendor]) vendorHistory[t.vendor] = {};
+    vendorHistory[t.vendor][t.job_id] = (vendorHistory[t.vendor][t.job_id] || 0) + 1;
+  });
+
+  // Also count any QB-tagged transactions from this sync (transactionsToUpsert)
+  // so first-sync data gets vendor history signal too
+  transactionsToUpsert.forEach(t => {
+    if (!t.vendor || t.type !== 'expense') return;
+    if (!vendorHistory[t.vendor]) vendorHistory[t.vendor] = {};
+    vendorHistory[t.vendor][t.job_id] = (vendorHistory[t.vendor][t.job_id] || 0) + 1;
+  });
+
+  // 3. Count active jobs (status = 'In Progress') for date overlap signal
+  const activeJobIds = Object.values(jobMap).filter(j => j.status === 'In Progress').map(j => j.id);
+  const onlyOneActiveJob = activeJobIds.length === 1 ? activeJobIds[0] : null;
+
+  // 4. Fetch already-existing inbox items so we don't re-score items the user already handled
+  const { data: existingInbox } = await supabase
+    .from('inbox_tags')
+    .select('id, status')
+    .eq('contractor_id', userId)
+    .in('id', inboxItems.map(i => i.id));
+
+  const existingStatusMap = {};
+  (existingInbox || []).forEach(r => { existingStatusMap[r.id] = r.status; });
+
+  // 5. Score each item
+  const matched = [];
+  const autoMatchedTxns = [];
+
+  for (const item of inboxItems) {
+    // Skip items the user has already acted on (tagged, overhead, dismissed, etc.)
+    const existingStatus = existingStatusMap[item.id];
+    if (existingStatus && existingStatus !== 'pending' && existingStatus !== 'suggested' && existingStatus !== 'auto_matched') {
+      continue; // user already handled this — don't overwrite
+    }
+
+    const vendor = item.vendor;
+    const rule   = ruleMap[vendor];
+
+    // Apply vendor rules first — overhead and dismiss skip scoring entirely
+    if (rule === 'overhead') {
+      matched.push({ ...item, status: 'overhead', confidence: null, match_tier: null, match_reason: `Vendor rule: ${vendor} is a fixed cost`, matched_by: 'rule' });
+      continue;
+    }
+    if (rule === 'dismiss') {
+      matched.push({ ...item, status: 'dismissed', confidence: null, match_tier: null, match_reason: `Vendor rule: ${vendor} is dismissed`, matched_by: 'rule' });
+      continue;
+    }
+
+    // Score: vendor history
+    let confidence = 0;
+    let bestJobId  = null;
+    let reason     = '';
+
+    const history = vendorHistory[vendor];
+    if (history) {
+      const total   = Object.values(history).reduce((s, c) => s + c, 0);
+      const entries = Object.entries(history).sort((a, b) => b[1] - a[1]);
+      const [topJobId, topCount] = entries[0];
+      const topPct = total > 0 ? topCount / total : 0;
+
+      if (topPct >= 0.80 && total >= 2) {
+        // Strong vendor history: 80%+ of expenses went to one job, with at least 2 data points
+        confidence = 0.70 + (topPct * 0.20); // 0.86–0.90
+        bestJobId  = topJobId;
+        reason     = `${topCount} of ${total} ${vendor} expenses → this job`;
+      } else if (topPct >= 0.60 && total >= 2) {
+        // Moderate vendor history
+        confidence = 0.40 + (topPct * 0.25); // 0.55–0.65
+        bestJobId  = topJobId;
+        reason     = `${topCount} of ${total} ${vendor} expenses → this job`;
+      } else if (total >= 1) {
+        // Weak / split history
+        confidence = 0.15 + (topPct * 0.15); // 0.15–0.30
+        bestJobId  = topJobId;
+        reason     = `${vendor} has expenses across ${entries.length} jobs`;
+      }
+    }
+
+    // Boost: job_cost vendor rule means user confirmed this vendor is job-related
+    if (rule === 'job_cost' && confidence > 0) {
+      confidence = Math.min(confidence + 0.10, 0.99);
+      reason += ' · vendor marked as job cost';
+    }
+
+    // Boost: only one active job — mild signal
+    if (onlyOneActiveJob && (!bestJobId || bestJobId === onlyOneActiveJob)) {
+      confidence = Math.min(confidence + 0.15, 0.99);
+      bestJobId  = bestJobId || onlyOneActiveJob;
+      if (!reason) reason = 'Only active job at time of sync';
+      else reason += ' · only active job';
+    }
+
+    // Determine tier
+    let tier, status;
+    if (confidence >= 0.80 && bestJobId) {
+      tier   = 'auto';
+      status = 'auto_matched';
+    } else if (confidence >= 0.40 && bestJobId) {
+      tier   = 'suggested';
+      status = 'suggested';
+    } else {
+      tier   = 'needs_attention';
+      status = 'pending';
+    }
+
+    matched.push({
+      ...item,
+      status,
+      suggested_job_id:  bestJobId,
+      suggestion_reason: reason || null,
+      tagged_job_id:     status === 'auto_matched' ? bestJobId : null,
+      confidence:        confidence > 0 ? parseFloat(confidence.toFixed(2)) : null,
+      match_tier:        tier,
+      match_reason:      reason || null,
+      matched_by:        confidence > 0 ? 'rule' : null,
+    });
+
+    // Auto-matched items also get a transaction row so they show in job costs.
+    // ID uses same pattern as handleTag in App.js: `{userId}_inbox_{item.id}`
+    if (status === 'auto_matched' && bestJobId) {
+      autoMatchedTxns.push({
+        id:            `${userId}_automatch_${item.id}`,
+        contractor_id: userId,
+        job_id:        bestJobId,
+        type:          'expense',
+        doc_number:    item.doc_number,
+        txn_date:      item.txn_date,
+        amount:        item.amount,
+        description:   item.description,
+        vendor:        item.vendor,
+      });
+    }
+  }
+
+  return { matched, autoMatchedTxns };
+}
+
 // ── Main sync handler ─────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
@@ -438,11 +605,42 @@ export default async function handler(req, res) {
       if (txnError) console.error('Transactions upsert error:', txnError.message);
     }
 
+    // ── Run matching engine on untagged inbox items ──────────────────────────
+    // Scores each item by vendor history + active jobs + vendor rules,
+    // assigns confidence tiers, and creates transaction rows for auto-matches.
+    let matchSummary = { auto: 0, suggested: 0, needs_attention: 0, rule_applied: 0 };
+
     if (inboxToUpsert.length > 0) {
-      const { error: inboxError } = await supabase
-        .from('inbox_tags')
-        .upsert(inboxToUpsert, { onConflict: 'id', ignoreDuplicates: true });
-      if (inboxError) console.error('Inbox upsert error:', inboxError.message);
+      const { matched, autoMatchedTxns } = await matchExpenses(
+        inboxToUpsert, userId, jobMap, transactionsToUpsert
+      );
+
+      // Count tiers for summary
+      matched.forEach(item => {
+        if (item.status === 'auto_matched')  matchSummary.auto++;
+        else if (item.status === 'suggested') matchSummary.suggested++;
+        else if (item.status === 'pending')   matchSummary.needs_attention++;
+        else matchSummary.rule_applied++; // overhead or dismissed by vendor rule
+      });
+
+      // Write scored inbox items — use ignoreDuplicates so we don't overwrite
+      // items the user has already acted on from a previous sync
+      if (matched.length > 0) {
+        const { error: inboxError } = await supabase
+          .from('inbox_tags')
+          .upsert(matched, { onConflict: 'id', ignoreDuplicates: true });
+        if (inboxError) console.error('Inbox upsert error:', inboxError.message);
+      }
+
+      // Write transaction rows for auto-matched items so they show in job costs
+      if (autoMatchedTxns.length > 0) {
+        const { error: autoTxnError } = await supabase
+          .from('transactions')
+          .upsert(autoMatchedTxns, { onConflict: 'id' });
+        if (autoTxnError) console.error('Auto-match transactions upsert error:', autoTxnError.message);
+      }
+
+      console.log(`Matching complete: ${matchSummary.auto} auto, ${matchSummary.suggested} suggested, ${matchSummary.needs_attention} needs attention, ${matchSummary.rule_applied} rule-applied`);
     }
 
     await supabase
@@ -455,6 +653,7 @@ export default async function handler(req, res) {
       transactions: transactionsToUpsert.length,
       inbox:        inboxToUpsert.length,
       bills:        bills.length,
+      matching:     matchSummary,
     };
 
     console.log('Sync complete:', JSON.stringify(summary));
