@@ -1658,7 +1658,413 @@ function VendorSetup({ userId, vendorRules, onSave, onClose, isFirstRun }) {
   );
 }
 
-// ─── TAB: EXPENSE INBOX ───────────────────────────────────────────────────────
+// ─── TAB: SYNC REVIEW ─────────────────────────────────────────────────────────
+
+function SyncReview({ autoMatched, suggested, untagged, allTagged, overhead, dismissed, jobSummaries, vendorRules, onConfirmSuggestion, onTag, onMarkOverhead, onDismiss, onRestore, onRetag, onUndoAutoMatch, onSaveVendorRule, dateRange, setDateRange, customStart, setCustomStart, customEnd, setCustomEnd }) {
+  const [section, setSection]             = useState("review");
+  const [selections, setSelections]       = useState({});    // itemId -> jobId
+  const [expandAuto, setExpandAuto]       = useState(false);
+  const [retagItem, setRetagItem]         = useState(null);  // item being re-tagged
+  const [retagJobId, setRetagJobId]       = useState("");
+  const [searchTagged, setSearchTagged]   = useState("");
+
+  // Job options for dropdowns
+  const liveJobOptions = (jobSummaries || []).map(j => ({
+    value: j.id, label: j.name, client: j.clientName || "",
+  }));
+  const jobOptions = liveJobOptions.length > 0 ? liveJobOptions : JOB_OPTIONS;
+
+  // Job lookup for displaying names
+  const jobLookup = useMemo(() => {
+    const m = {};
+    jobOptions.forEach(j => { m[j.value] = j; });
+    return m;
+  }, [jobOptions]);
+
+  // Filter items by date range
+  const filteredAutoMatched = filterUntaggedByDate(autoMatched || [], dateRange, customStart, customEnd);
+  const filteredSuggested   = filterUntaggedByDate(suggested || [], dateRange, customStart, customEnd);
+  const filteredUntagged    = filterUntaggedByDate(untagged || [], dateRange, customStart, customEnd);
+  const filteredOverhead    = filterUntaggedByDate(overhead || [], dateRange, customStart, customEnd);
+  const filteredTagged      = (allTagged || []).filter(t => {
+    if (!searchTagged) return true;
+    const q = searchTagged.toLowerCase();
+    return (t.vendor || '').toLowerCase().includes(q) || (t.description || '').toLowerCase().includes(q);
+  });
+
+  // Group auto-matched by vendor → job for the summary
+  const autoGrouped = useMemo(() => {
+    const groups = {};
+    filteredAutoMatched.forEach(item => {
+      const job = jobLookup[item.taggedJobId];
+      const key = `${item.vendor}→${item.taggedJobId}`;
+      if (!groups[key]) groups[key] = { vendor: item.vendor, jobName: job?.label || 'Unknown Job', jobId: item.taggedJobId, items: [], total: 0 };
+      groups[key].items.push(item);
+      groups[key].total += item.amount;
+    });
+    return Object.values(groups).sort((a, b) => b.total - a.total);
+  }, [filteredAutoMatched, jobLookup]);
+
+  const needsReviewCount = filteredSuggested.length + filteredUntagged.length;
+  const autoTotal   = filteredAutoMatched.reduce((s, i) => s + i.amount, 0);
+  const reviewTotal = [...filteredSuggested, ...filteredUntagged].reduce((s, i) => s + i.amount, 0);
+
+  // Confirm a suggestion — accept the match
+  function handleConfirmSuggestion(item) {
+    const job = jobLookup[item.suggestedJob];
+    onConfirmSuggestion(item, item.suggestedJob, job?.label || '');
+  }
+
+  // Assign a needs-attention item manually
+  function handleAssign(item) {
+    const jobId = selections[item.id];
+    if (!jobId) return;
+    const job = jobOptions.find(j => j.value === jobId);
+    onTag(item, jobId, job?.label || '');
+    setSelections(prev => { const n = { ...prev }; delete n[item.id]; return n; });
+  }
+
+  // Change a suggested item to a different job
+  function handleChangeSuggestion(item) {
+    const jobId = selections[item.id];
+    if (!jobId) return;
+    const job = jobOptions.find(j => j.value === jobId);
+    onConfirmSuggestion(item, jobId, job?.label || '');
+    setSelections(prev => { const n = { ...prev }; delete n[item.id]; return n; });
+  }
+
+  // Submit a re-tag
+  function handleRetagSubmit() {
+    if (!retagItem || !retagJobId) return;
+    const job = jobOptions.find(j => j.value === retagJobId);
+    onRetag(retagItem, retagJobId, job?.label || '');
+    setRetagItem(null);
+    setRetagJobId("");
+  }
+
+  // Section tab data
+  const sections = [
+    { key: "auto",    label: "Auto-Matched", count: filteredAutoMatched.length, color: ACCENT2 },
+    { key: "review",  label: "Needs Review",  count: needsReviewCount,           color: needsReviewCount > 0 ? AMBER : ACCENT2 },
+    { key: "fixed",   label: "Fixed Costs",   count: filteredOverhead.length,     color: ACCENT2 },
+    { key: "tagged",  label: "All Tagged",     count: filteredTagged.length,       color: ACCENT2 },
+  ];
+
+  return (
+    <div style={{ padding:"32px 36px",background:BG,minHeight:"100vh" }}>
+
+      {/* Header */}
+      <div style={{ marginBottom:20, display:"flex", alignItems:"flex-start", justifyContent:"space-between", flexWrap:"wrap", gap:12 }}>
+        <div>
+          <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em" }}>Sync Review</h1>
+          <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>Review how Canopy matched your expenses to jobs. Confirm, correct, or assign what needs attention.</p>
+        </div>
+        {/* Date range toggle */}
+        <div style={{ display:"flex",alignItems:"center",gap:6,flexWrap:"wrap" }}>
+          <div style={{ display:"flex",border:`1px solid ${BORDER}`,borderRadius:5,overflow:"hidden" }}>
+            {DATE_RANGES.map((r,i) => (
+              <button key={r.key} onClick={()=>setDateRange(r.key)} style={{ cursor:"pointer",padding:"7px 13px",fontSize:11,fontWeight:500,fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.03em",border:"none",borderRight:i<DATE_RANGES.length-1?`1px solid ${BORDER}`:"none",background:dateRange===r.key?ACCENT:CARD,color:dateRange===r.key?CARD:MID,transition:"all 0.15s" }}>{r.label}</button>
+            ))}
+          </div>
+          <button onClick={()=>setDateRange("custom")} style={{ cursor:"pointer",padding:"7px 14px",fontSize:11,fontWeight:500,fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.03em",border:`1px solid ${BORDER}`,borderRadius:5,background:dateRange==="custom"?ACCENT:CARD,color:dateRange==="custom"?CARD:MID,transition:"all 0.15s" }}>Custom</button>
+          <button onClick={()=>setDateRange("all")} style={{ cursor:"pointer",padding:"7px 14px",fontSize:11,fontWeight:500,fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.03em",border:`1px solid ${BORDER}`,borderRadius:5,background:dateRange==="all"?DARK:CARD,color:dateRange==="all"?CARD:MID,transition:"all 0.15s" }}>All</button>
+          {dateRange === "custom" && (
+            <div style={{ display:"flex",alignItems:"center",gap:6,marginLeft:4 }}>
+              <input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)} style={{ padding:"5px 10px",borderRadius:5,border:`1px solid ${BORDER}`,background:CARD,fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DARK,outline:"none",cursor:"pointer" }} />
+              <span style={{ fontSize:11,color:DIM,fontFamily:"'DM Sans',sans-serif" }}>→</span>
+              <input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)} style={{ padding:"5px 10px",borderRadius:5,border:`1px solid ${BORDER}`,background:CARD,fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DARK,outline:"none",cursor:"pointer" }} />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* KPI cards */}
+      <div style={{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:28 }}>
+        {[
+          { label:"Auto-Matched",     val:filteredAutoMatched.length, sub:$(autoTotal)+" matched automatically",               color:filteredAutoMatched.length>0?ACCENT2:DIM },
+          { label:"Needs Review",      val:needsReviewCount,          sub:$(reviewTotal)+" awaiting your input",                color:needsReviewCount>0?AMBER:ACCENT2 },
+          { label:"Fixed Costs",       val:filteredOverhead.length,    sub:$(filteredOverhead.reduce((s,o)=>s+o.amount,0))+" overhead", color:filteredOverhead.length>0?ACCENT2:DIM },
+          { label:"All Tagged",        val:filteredTagged.length,      sub:"confirmed + auto-matched + manual",                 color:ACCENT2 },
+        ].map((k,i) => (
+          <div key={i} className="kpi" style={{ cursor:"pointer" }} onClick={()=>setSection(sections[i].key)}>
+            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:12,fontWeight:500 }}>{k.label}</div>
+            <div style={{ fontFamily:"'Lora',serif",fontSize:28,fontWeight:500,color:k.color }}>{k.val}</div>
+            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>{k.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Section tabs */}
+      <div style={{ display:"flex",alignItems:"center",gap:0,marginBottom:24,borderBottom:`1px solid ${BORDER}` }}>
+        {sections.map(t => (
+          <button key={t.key} onClick={()=>setSection(t.key)} style={{
+            cursor:"pointer", padding:"10px 20px", fontSize:12, fontWeight:500,
+            fontFamily:"'DM Sans',sans-serif", border:"none", borderBottom:`2px solid ${section===t.key?ACCENT:BORDER}`,
+            background:"transparent", color:section===t.key?DARK:DIM,
+            marginBottom:-1, transition:"all 0.15s",
+          }}>
+            {t.label}
+            {t.count > 0 && (
+              <span style={{ marginLeft:7, padding:"1px 7px", borderRadius:10, fontSize:10, fontWeight:600,
+                background: section===t.key ? `${t.color}22` : BG2,
+                color: section===t.key ? t.color : DIM,
+              }}>{t.count}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* ── AUTO-MATCHED section ── */}
+      {section === "auto" && (
+        <div>
+          {filteredAutoMatched.length === 0 ? (
+            <div style={{ padding:40,textAlign:"center",color:DIM,fontFamily:"'DM Sans',sans-serif",fontSize:13 }}>No auto-matched expenses yet. Matching improves as you tag more expenses.</div>
+          ) : (
+            <div>
+              {/* Collapsed summary */}
+              <div style={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:6,marginBottom:16 }}>
+                <div onClick={()=>setExpandAuto(!expandAuto)} style={{ display:"flex",alignItems:"center",gap:12,padding:"16px 20px",cursor:"pointer" }}>
+                  <div style={{ width:32,height:32,borderRadius:"50%",background:"rgba(92,122,90,0.12)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                    <span style={{ color:ACCENT2,fontSize:14 }}>✓</span>
+                  </div>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:14,fontWeight:500,color:DARK }}>{filteredAutoMatched.length} expense{filteredAutoMatched.length!==1?"s":""} auto-matched</div>
+                    <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM,marginTop:2 }}>{$(autoTotal)} total · matched by vendor history</div>
+                  </div>
+                  <span style={{ fontSize:10,color:DIM }}>{expandAuto?"▲ Hide details":"▼ Show details"}</span>
+                </div>
+
+                {/* Summary rows by vendor→job */}
+                {!expandAuto && autoGrouped.length > 0 && (
+                  <div style={{ padding:"0 20px 14px" }}>
+                    {autoGrouped.slice(0, 5).map((g, i) => (
+                      <div key={i} style={{ display:"flex",alignItems:"center",gap:8,padding:"5px 0",fontFamily:"'DM Sans',sans-serif",fontSize:12,color:MID }}>
+                        <span style={{ fontWeight:500 }}>{g.vendor}</span>
+                        <span style={{ color:DIM }}>→</span>
+                        <span>{g.jobName}</span>
+                        <span style={{ marginLeft:"auto",fontFamily:"'DM Mono',monospace",fontSize:11,color:RED }}>–{$(g.total)}</span>
+                        <span style={{ fontSize:10,color:DIM }}>({g.items.length})</span>
+                      </div>
+                    ))}
+                    {autoGrouped.length > 5 && (
+                      <div style={{ fontSize:11,color:DIM,fontFamily:"'DM Sans',sans-serif",marginTop:4,cursor:"pointer" }} onClick={()=>setExpandAuto(true)}>+ {autoGrouped.length - 5} more vendor{autoGrouped.length - 5 !== 1 ? "s" : ""}...</div>
+                    )}
+                  </div>
+                )}
+
+                {/* Expanded: individual items with undo */}
+                {expandAuto && (
+                  <div style={{ borderTop:`1px solid ${BORDER}` }}>
+                    {filteredAutoMatched.map((item, idx) => {
+                      const job = jobLookup[item.taggedJobId];
+                      return (
+                        <div key={item.id} style={{ display:"flex",alignItems:"center",gap:12,padding:"12px 20px",borderBottom:idx<filteredAutoMatched.length-1?`1px solid ${BORDER}`:"none" }}>
+                          <div style={{ flex:1 }}>
+                            <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:4 }}>
+                              <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,fontWeight:500,color:DARK }}>{item.vendor}</span>
+                              <span className="mono" style={{ fontSize:10,color:DIM }}>{item.date}</span>
+                            </div>
+                            <div style={{ fontSize:12,color:MID,fontFamily:"'DM Sans',sans-serif" }}>{item.description}</div>
+                            <div style={{ fontSize:11,color:ACCENT2,fontFamily:"'DM Sans',sans-serif",marginTop:4 }}>→ {job?.label || 'Unknown'} · {Math.round((item.confidence || 0) * 100)}% confidence</div>
+                            {item.matchReason && <div style={{ fontSize:10,color:DIM,fontFamily:"'DM Sans',sans-serif",marginTop:2 }}>{item.matchReason}</div>}
+                          </div>
+                          <div style={{ fontFamily:"'DM Mono',monospace",fontSize:14,fontWeight:500,color:RED,minWidth:80,textAlign:"right" }}>–{$(item.amount)}</div>
+                          <button className="btn" onClick={()=>onUndoAutoMatch(item)} style={{ fontSize:11,whiteSpace:"nowrap" }}>Undo</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── NEEDS REVIEW section (suggested + needs attention) ── */}
+      {section === "review" && (
+        <div>
+          {needsReviewCount === 0 ? (
+            <div style={{ padding:40,textAlign:"center",color:DIM,fontFamily:"'DM Sans',sans-serif",fontSize:13 }}>All caught up — nothing needs review right now.</div>
+          ) : (
+            <div style={{ display:"flex",flexDirection:"column",gap:10 }}>
+              {/* Suggested matches first */}
+              {filteredSuggested.length > 0 && (
+                <div style={{ marginBottom:8 }}>
+                  <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,fontWeight:500,color:DIM,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12 }}>Suggested Matches · {filteredSuggested.length}</div>
+                  {filteredSuggested.map(item => {
+                    const job = jobLookup[item.suggestedJob];
+                    const hasOverride = !!selections[item.id];
+                    return (
+                      <div key={item.id} style={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:6,padding:"16px 20px",marginBottom:8 }}>
+                        <div style={{ display:"flex",alignItems:"flex-start",gap:16 }}>
+                          <div style={{ flex:1 }}>
+                            <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap" }}>
+                              <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:14,fontWeight:500,color:DARK }}>{item.vendor}</span>
+                              <span className="mono" style={{ fontSize:10,color:DIM }}>{item.docNumber}</span>
+                              <span className="mono" style={{ fontSize:10,color:DIM }}>{item.date}</span>
+                              <span className="tag">{item.paymentType}</span>
+                            </div>
+                            <div style={{ fontSize:12,color:MID,fontFamily:"'DM Sans',sans-serif",marginBottom:8 }}>{item.description}</div>
+                            <div style={{ display:"flex",alignItems:"center",gap:6,padding:"8px 12px",borderRadius:4,background:"rgba(92,122,90,0.06)",border:`1px solid rgba(92,122,90,0.15)` }}>
+                              <span style={{ fontSize:12,color:ACCENT2,fontFamily:"'DM Sans',sans-serif" }}>Suggested: <strong>{job?.label || 'Unknown'}</strong></span>
+                              <span style={{ fontSize:10,color:DIM,fontFamily:"'DM Sans',sans-serif" }}>· {Math.round((item.confidence || 0) * 100)}% match</span>
+                            </div>
+                            {item.matchReason && <div style={{ fontSize:11,color:DIM,fontFamily:"'DM Sans',sans-serif",marginTop:6 }}>{item.matchReason}</div>}
+                          </div>
+                          <div style={{ display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8,minWidth:260 }}>
+                            <div style={{ fontFamily:"'DM Mono',monospace",fontSize:16,fontWeight:500,color:RED }}>–{$(item.amount)}</div>
+                            <select className="job-select" value={selections[item.id]||""} onChange={e=>setSelections(prev=>({...prev,[item.id]:e.target.value}))}>
+                              <option value="">Change job...</option>
+                              {jobOptions.map(j=><option key={j.value} value={j.value}>{j.label}{j.client?` (${j.client})`:""}</option>)}
+                            </select>
+                            <div style={{ display:"flex",gap:6 }}>
+                              <button className="btn" onClick={()=>onMarkOverhead(item)} style={{ borderColor:"rgba(140,107,48,0.3)",color:AMBER }}>Fixed Cost</button>
+                              <button className="btn red" onClick={()=>onDismiss(item.id)}>Dismiss</button>
+                              {hasOverride ? (
+                                <button className="btn act" onClick={()=>handleChangeSuggestion(item)}>Assign →</button>
+                              ) : (
+                                <button className="btn act" onClick={()=>handleConfirmSuggestion(item)}>Confirm ✓</button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Needs attention (no match) */}
+              {filteredUntagged.length > 0 && (
+                <div>
+                  <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,fontWeight:500,color:DIM,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12 }}>Needs Attention · {filteredUntagged.length}</div>
+                  {filteredUntagged.map(item => (
+                    <div key={item.id} style={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:6,padding:"16px 20px",marginBottom:8 }}>
+                      <div style={{ display:"flex",alignItems:"flex-start",gap:16 }}>
+                        <div style={{ flex:1 }}>
+                          <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap" }}>
+                            <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:14,fontWeight:500,color:DARK }}>{item.vendor}</span>
+                            <span className="mono" style={{ fontSize:10,color:DIM }}>{item.docNumber}</span>
+                            <span className="mono" style={{ fontSize:10,color:DIM }}>{item.date}</span>
+                            <span className="tag">{item.paymentType}</span>
+                          </div>
+                          <div style={{ fontSize:12,color:MID,fontFamily:"'DM Sans',sans-serif" }}>{item.description}</div>
+                          <div style={{ fontSize:11,color:AMBER,fontFamily:"'DM Sans',sans-serif",marginTop:6 }}>No confident match found</div>
+                        </div>
+                        <div style={{ display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8,minWidth:260 }}>
+                          <div style={{ fontFamily:"'DM Mono',monospace",fontSize:16,fontWeight:500,color:RED }}>–{$(item.amount)}</div>
+                          <select className="job-select" value={selections[item.id]||""} onChange={e=>setSelections(prev=>({...prev,[item.id]:e.target.value}))}>
+                            <option value="">Assign to job...</option>
+                            {jobOptions.map(j=><option key={j.value} value={j.value}>{j.label}{j.client?` (${j.client})`:""}</option>)}
+                          </select>
+                          <div style={{ display:"flex",gap:6 }}>
+                            <button className="btn red" onClick={()=>onDismiss(item.id)}>Dismiss</button>
+                            <button className="btn" onClick={()=>onMarkOverhead(item)} style={{ borderColor:"rgba(140,107,48,0.3)",color:AMBER }}>Fixed Cost</button>
+                            <button className={`btn${selections[item.id]?" act":""}`} onClick={()=>handleAssign(item)} disabled={!selections[item.id]} style={{ opacity:selections[item.id]?1:0.45 }}>Assign →</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── FIXED COSTS section ── */}
+      {section === "fixed" && (
+        <div>
+          {filteredOverhead.length === 0 ? (
+            <div style={{ padding:40,textAlign:"center",color:DIM,fontFamily:"'DM Sans',sans-serif",fontSize:13 }}>No fixed cost expenses yet.</div>
+          ) : (
+            <div style={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:6 }}>
+              {filteredOverhead.map((item, idx) => (
+                <div key={item.id} style={{ display:"flex",alignItems:"center",gap:12,padding:"14px 20px",borderBottom:idx<filteredOverhead.length-1?`1px solid ${BORDER}`:"none" }}>
+                  <div style={{ flex:1 }}>
+                    <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:4 }}>
+                      <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,fontWeight:500,color:DARK }}>{item.vendor}</span>
+                      <span className="mono" style={{ fontSize:10,color:DIM }}>{item.date}</span>
+                    </div>
+                    <div style={{ fontSize:12,color:MID,fontFamily:"'DM Sans',sans-serif" }}>{item.description}</div>
+                  </div>
+                  <div style={{ fontFamily:"'DM Mono',monospace",fontSize:13,fontWeight:500,color:RED }}>–{$(item.amount)}</div>
+                  <button className="btn" onClick={()=>onRestore(item.id)} style={{ fontSize:11 }}>Restore</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── ALL TAGGED section (with re-tag) ── */}
+      {section === "tagged" && (
+        <div>
+          {/* Search bar */}
+          <div style={{ marginBottom:16 }}>
+            <input
+              type="text"
+              placeholder="Search tagged expenses by vendor or description..."
+              value={searchTagged}
+              onChange={e => setSearchTagged(e.target.value)}
+              style={{ width:"100%",maxWidth:400,padding:"8px 14px",borderRadius:5,border:`1px solid ${BORDER}`,background:CARD,fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DARK,outline:"none" }}
+            />
+          </div>
+
+          {filteredTagged.length === 0 ? (
+            <div style={{ padding:40,textAlign:"center",color:DIM,fontFamily:"'DM Sans',sans-serif",fontSize:13 }}>No tagged expenses yet.</div>
+          ) : (
+            <div style={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:6 }}>
+              {filteredTagged.map((item, idx) => {
+                const job = jobLookup[item.taggedJobId];
+                const isRetaging = retagItem?.id === item.id;
+                return (
+                  <div key={item.id} style={{ padding:"14px 20px",borderBottom:idx<filteredTagged.length-1?`1px solid ${BORDER}`:"none" }}>
+                    <div style={{ display:"flex",alignItems:"center",gap:12 }}>
+                      <div style={{ flex:1 }}>
+                        <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:4,flexWrap:"wrap" }}>
+                          <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,fontWeight:500,color:DARK }}>{item.vendor}</span>
+                          <span className="mono" style={{ fontSize:10,color:DIM }}>{item.date}</span>
+                          <span style={{ fontSize:10,padding:"2px 8px",borderRadius:3,background:`${ACCENT2}15`,color:ACCENT2,fontFamily:"'DM Sans',sans-serif",fontWeight:500 }}>→ {job?.label || item.taggedJobName || 'Unknown'}</span>
+                          {item.matchedBy && (
+                            <span style={{ fontSize:9,padding:"1px 6px",borderRadius:3,background:BG2,color:DIM,fontFamily:"'DM Sans',sans-serif" }}>{item.matchedBy === 'rule' ? 'auto' : item.matchedBy}</span>
+                          )}
+                        </div>
+                        <div style={{ fontSize:12,color:MID,fontFamily:"'DM Sans',sans-serif" }}>{item.description}</div>
+                      </div>
+                      <div style={{ fontFamily:"'DM Mono',monospace",fontSize:13,fontWeight:500,color:RED,minWidth:80,textAlign:"right" }}>–{$(item.amount)}</div>
+                      {!isRetaging && (
+                        <button className="btn" onClick={()=>{setRetagItem(item);setRetagJobId("");}} style={{ fontSize:11,whiteSpace:"nowrap" }}>Change job</button>
+                      )}
+                    </div>
+
+                    {/* Inline re-tag */}
+                    {isRetaging && (
+                      <div style={{ display:"flex",alignItems:"center",gap:8,marginTop:10,padding:"10px 14px",borderRadius:5,background:BG2,border:`1px solid ${BORDER}` }}>
+                        <span style={{ fontSize:12,color:MID,fontFamily:"'DM Sans',sans-serif",whiteSpace:"nowrap" }}>Move to:</span>
+                        <select className="job-select" value={retagJobId} onChange={e=>setRetagJobId(e.target.value)} style={{ flex:1 }}>
+                          <option value="">Select new job...</option>
+                          {jobOptions.map(j=><option key={j.value} value={j.value}>{j.label}{j.client?` (${j.client})`:""}</option>)}
+                        </select>
+                        <button className="btn" onClick={()=>{setRetagItem(null);setRetagJobId("");}}>Cancel</button>
+                        <button className={`btn${retagJobId?" act":""}`} onClick={handleRetagSubmit} disabled={!retagJobId} style={{ opacity:retagJobId?1:0.45 }}>Save →</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+// ─── TAB: EXPENSE INBOX (legacy — kept for reference) ────────────────────────
 
 function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, onBulkTag, onBulkMarkOverhead, onBulkDismiss, onSaveVendorRule, vendorRules, tagged, jobSummaries, overhead, dismissed, dateRange, setDateRange, customStart, setCustomStart, customEnd, setCustomEnd }) {
   const [selections, setSelections]           = useState({});
@@ -4331,7 +4737,10 @@ function Login({ onLogin }) {
 
 function useContractorData(userId, mockJobSummaries, mockUntagged) {
   const [liveJobSummaries, setLiveJobSummaries] = useState(null);
+  const [liveAutoMatched, setLiveAutoMatched]   = useState([]);
+  const [liveSuggested, setLiveSuggested]       = useState([]);
   const [liveUntagged, setLiveUntagged]         = useState(null);
+  const [liveTagged, setLiveTagged]             = useState([]);
   const [liveOverhead, setLiveOverhead]         = useState([]);
   const [liveDismissed, setLiveDismissed]       = useState([]);
   const [liveVendorRules, setLiveVendorRules]   = useState([]);
@@ -4353,25 +4762,30 @@ function useContractorData(userId, mockJobSummaries, mockUntagged) {
       const { data: transactions } = await supabase
         .from('transactions').select('*').eq('contractor_id', userId);
 
-      const { data: inboxItems } = await supabase
+      // Fetch all inbox items in one query, split by status client-side
+      const { data: allInboxItems } = await supabase
         .from('inbox_tags')
         .select('*')
-        .eq('contractor_id', userId)
-        .eq('status', 'pending');
+        .eq('contractor_id', userId);
 
-      // Fetch overhead (fixed cost) items
-      const { data: overheadItems } = await supabase
-        .from('inbox_tags')
-        .select('*')
-        .eq('contractor_id', userId)
-        .eq('status', 'overhead');
+      const autoMatchedItems = [];
+      const suggestedItems   = [];
+      const pendingItems     = [];
+      const taggedItems      = [];
+      const overheadItems    = [];
+      const dismissedItems   = [];
 
-      // Fetch dismissed items
-      const { data: dismissedItems } = await supabase
-        .from('inbox_tags')
-        .select('*')
-        .eq('contractor_id', userId)
-        .eq('status', 'dismissed');
+      (allInboxItems || []).forEach(item => {
+        switch (item.status) {
+          case 'auto_matched': autoMatchedItems.push(item); break;
+          case 'suggested':    suggestedItems.push(item);   break;
+          case 'pending':      pendingItems.push(item);     break;
+          case 'tagged':       taggedItems.push(item);      break;
+          case 'overhead':     overheadItems.push(item);    break;
+          case 'dismissed':    dismissedItems.push(item);   break;
+          default:             pendingItems.push(item);     break;
+        }
+      });
 
       // Fetch vendor rules (graceful — table may not exist yet)
       let vendorRulesData = [];
@@ -4383,32 +4797,6 @@ function useContractorData(userId, mockJobSummaries, mockUntagged) {
         vendorRulesData = vrData || [];
       } catch (e) { // eslint-disable-line no-unused-vars
         // vendor_rules table not yet created — skip silently
-      }
-
-      // Build rule map: vendor name -> rule_type
-      const vendorRuleMap = {};
-      vendorRulesData.forEach(r => { vendorRuleMap[r.vendor_name] = r.rule_type; });
-
-      // Auto-apply rules to newly synced pending items:
-      // - 'overhead' vendors get auto-tagged as fixed cost
-      // - 'dismiss' vendors get auto-dismissed
-      // - 'job_cost' vendors stay pending but get flagged for sorting priority
-      const autoOverheadIds = [];
-      const autoDismissIds  = [];
-      const pendingAfterRules = [];
-      (inboxItems || []).forEach(item => {
-        const rule = vendorRuleMap[item.vendor];
-        if (rule === 'overhead')     autoOverheadIds.push(item.id);
-        else if (rule === 'dismiss') autoDismissIds.push(item.id);
-        else pendingAfterRules.push({ ...item, vendorRule: rule || null });
-      });
-
-      // Batch-write auto-applied items to Supabase
-      if (autoOverheadIds.length > 0) {
-        await supabase.from('inbox_tags').update({ status: 'overhead' }).in('id', autoOverheadIds);
-      }
-      if (autoDismissIds.length > 0) {
-        await supabase.from('inbox_tags').update({ status: 'dismissed' }).in('id', autoDismissIds);
       }
 
       const liveSummaries = jobs.map(job => {
@@ -4444,31 +4832,27 @@ function useContractorData(userId, mockJobSummaries, mockUntagged) {
         };
       }).filter(j => j.revenue > 0 || j.costs > 0);
 
-      const parsedUntagged = pendingAfterRules.map(item => ({
-        id: item.id, docNumber: item.doc_number, vendor: item.vendor,
-        date: item.txn_date, amount: item.amount, description: item.description,
-        paymentType: item.payment_type || 'Check',
-        suggestedJob: item.suggested_job_id, suggestionReason: item.suggestion_reason,
-        vendorRule: item.vendorRule || null,
-      }));
-
-      const parsedOverhead = (overheadItems || []).map(item => ({
-        id: item.id, docNumber: item.doc_number, vendor: item.vendor,
-        date: item.txn_date, amount: item.amount, description: item.description,
-        paymentType: item.payment_type || 'Check',
-      }));
-
-      const parsedDismissed = (dismissedItems || []).map(item => ({
-        id: item.id, docNumber: item.doc_number, vendor: item.vendor,
-        date: item.txn_date, amount: item.amount, description: item.description,
-        paymentType: item.payment_type || 'Check',
-      }));
+      // Parse inbox items into frontend shape
+      function parseInboxItem(item) {
+        return {
+          id: item.id, docNumber: item.doc_number, vendor: item.vendor,
+          date: item.txn_date, amount: item.amount, description: item.description,
+          paymentType: item.payment_type || 'Check',
+          suggestedJob: item.suggested_job_id, suggestionReason: item.suggestion_reason,
+          taggedJobId: item.tagged_job_id || null,
+          confidence: item.confidence || null, matchTier: item.match_tier || null,
+          matchReason: item.match_reason || null, matchedBy: item.matched_by || null,
+        };
+      }
 
       if (liveSummaries.length > 0) {
         setLiveJobSummaries(liveSummaries);
-        setLiveUntagged(parsedUntagged);
-        setLiveOverhead(parsedOverhead);
-        setLiveDismissed(parsedDismissed);
+        setLiveAutoMatched(autoMatchedItems.map(parseInboxItem));
+        setLiveSuggested(suggestedItems.map(parseInboxItem));
+        setLiveUntagged(pendingItems.map(parseInboxItem));
+        setLiveTagged(taggedItems.map(parseInboxItem));
+        setLiveOverhead(overheadItems.map(parseInboxItem));
+        setLiveDismissed(dismissedItems.map(parseInboxItem));
         setLiveVendorRules(vendorRulesData);
         setDataSource('live');
       }
@@ -4482,7 +4866,10 @@ function useContractorData(userId, mockJobSummaries, mockUntagged) {
 
   return {
     jobSummaries: liveJobSummaries || mockJobSummaries,
+    autoMatched:  liveAutoMatched,
+    suggested:    liveSuggested,
     untagged:     liveUntagged     || mockUntagged,
+    tagged:       liveTagged,
     overhead:     liveOverhead,
     dismissed:    liveDismissed,
     vendorRules:  liveVendorRules,
@@ -4516,8 +4903,11 @@ export default function App() {
   // ── Live data hook — loads from Supabase, falls back to mock
   const mockJobSummaries = buildJobSummaries({});
   const {
-    jobSummaries: baseJobSummaries,
+    jobSummaries,
+    autoMatched,
+    suggested,
     untagged: baseUntagged,
+    tagged: dbTagged,
     overhead,
     dismissed,
     vendorRules,
@@ -4525,24 +4915,12 @@ export default function App() {
     refresh: refreshData,
   } = useContractorData(session?.user?.id, mockJobSummaries, INITIAL_UNTAGGED);
 
-  // Apply tagged expense costs on top of live/mock data
-  const extraCostsByJob = tagged.reduce((acc, t) => {
-    acc[t.taggedJobId] = (acc[t.taggedJobId] || 0) + t.amount;
-    return acc;
-  }, {});
+  // Untagged — filter out items tagged during this session (optimistic UI)
+  const sessionTaggedIds = new Set(tagged.map(t => t.id));
+  const untagged  = baseUntagged.filter(u => !sessionTaggedIds.has(u.id));
 
-  // Merge extra tagged costs into job summaries
-  const jobSummaries = baseJobSummaries.map(j => {
-    const extra = extraCostsByJob[j.id] || 0;
-    if (!extra) return j;
-    const costs  = j.costs + extra;
-    const profit = j.revenue - costs;
-    return { ...j, costs, profit, marginPct: j.revenue > 0 ? ((profit/j.revenue)*100).toFixed(1) : '0.0' };
-  });
-
-  // Untagged — filter out items already tagged this session
-  const taggedIds = new Set(tagged.map(t => t.id));
-  const untagged  = baseUntagged.filter(u => !taggedIds.has(u.id));
+  // Combined tagged list: DB-persisted + session-tagged (for display in "All Tagged" tab)
+  const allTagged = [...dbTagged, ...tagged.filter(t => !dbTagged.some(d => d.id === t.id))];
 
   // ── Trigger a QB sync after successful OAuth connect
   async function triggerSync(userId) {
@@ -4763,19 +5141,19 @@ export default function App() {
     }
   }
 
-  // ── Bulk inbox actions ────────────────────────────────────────────────────────
+  // ── Sync Review handlers ──────────────────────────────────────────────────────
 
-  async function handleBulkTag(items, jobId, jobName) {
-    if (!items.length || !jobId) return;
-    setTagged(prev => [...prev, ...items.map(item => ({ ...item, taggedJobId: jobId, taggedJobName: jobName }))]);
+  async function handleConfirmSuggestion(item, jobId, jobName) {
+    // Accept a suggested or auto-assigned match — works for both confirm and change-job
+    setTagged(prev => [...prev, { ...item, taggedJobId: jobId, taggedJobName: jobName }]);
     try {
       await supabase
         .from('inbox_tags')
-        .update({ status: 'tagged', tagged_job_id: jobId })
-        .in('id', items.map(i => i.id));
+        .update({ status: 'tagged', tagged_job_id: jobId, matched_by: 'manual' })
+        .eq('id', item.id);
       await supabase
         .from('transactions')
-        .upsert(items.map(item => ({
+        .upsert({
           id:            `${session.user.id}_inbox_${item.id}`,
           contractor_id: session.user.id,
           job_id:        jobId,
@@ -4785,37 +5163,66 @@ export default function App() {
           amount:        item.amount,
           description:   item.description,
           vendor:        item.vendor,
-        })), { onConflict: 'id' });
+        }, { onConflict: 'id' });
       await refreshData();
     } catch (err) {
-      console.error('Error bulk tagging:', err);
+      console.error('Error confirming suggestion:', err);
     }
   }
 
-  async function handleBulkMarkOverhead(items) {
-    if (!items.length) return;
+  async function handleRetag(item, newJobId, newJobName) {
+    // Change a tagged/auto-matched expense to a different job
     try {
+      // Update inbox_tags
       await supabase
         .from('inbox_tags')
-        .update({ status: 'overhead' })
-        .in('id', items.map(i => i.id));
+        .update({ status: 'tagged', tagged_job_id: newJobId, matched_by: 'manual' })
+        .eq('id', item.id);
+
+      // Delete old transaction rows that reference this inbox item
+      // Could be from auto-match (`_automatch_`) or manual tag (`_inbox_`)
+      const oldIds = [
+        `${session.user.id}_inbox_${item.id}`,
+        `${session.user.id}_automatch_${item.id}`,
+      ];
+      await supabase.from('transactions').delete().in('id', oldIds);
+
+      // Insert new transaction for the correct job
+      await supabase
+        .from('transactions')
+        .upsert({
+          id:            `${session.user.id}_inbox_${item.id}`,
+          contractor_id: session.user.id,
+          job_id:        newJobId,
+          type:          'expense',
+          doc_number:    item.docNumber,
+          txn_date:      item.date,
+          amount:        item.amount,
+          description:   item.description,
+          vendor:        item.vendor,
+        }, { onConflict: 'id' });
+
       await refreshData();
     } catch (err) {
-      console.error('Error bulk marking overhead:', err);
+      console.error('Error re-tagging expense:', err);
     }
   }
 
-  async function handleBulkDismiss(ids) {
-    if (!ids.length) return;
-    setTagged(prev => prev.filter(u => !ids.includes(u.id)));
+  async function handleUndoAutoMatch(item) {
+    // Move an auto-matched item back to pending (needs attention)
     try {
       await supabase
         .from('inbox_tags')
-        .update({ status: 'dismissed' })
-        .in('id', ids);
+        .update({ status: 'pending', tagged_job_id: null, match_tier: 'needs_attention', matched_by: null })
+        .eq('id', item.id);
+
+      // Remove the auto-matched transaction row
+      const autoTxnId = `${session.user.id}_automatch_${item.id}`;
+      await supabase.from('transactions').delete().eq('id', autoTxnId);
+
       await refreshData();
     } catch (err) {
-      console.error('Error bulk dismissing:', err);
+      console.error('Error undoing auto-match:', err);
     }
   }
 
@@ -4847,11 +5254,11 @@ export default function App() {
     }
   }
 
-  const inboxCount = untagged.length;
+  const reviewCount = (suggested || []).length + untagged.length;
 
   const TABS = [
     { key:"dashboard", label:"Dashboard",    icon:"⊡" },
-    ...(clientType === "quickbooks" ? [{ key:"inbox", label:"Expense Inbox", icon:"✉" }] : []),
+    ...(clientType === "quickbooks" ? [{ key:"inbox", label:"Sync Review", icon:"✉" }] : []),
     { key:"detail",    label:"Job Detail",   icon:"◈" },
     { key:"clients",   label:"Clients",      icon:"◉" },
     { key:"estimator", label:"Job Estimator", icon:"◇" },
@@ -4916,8 +5323,8 @@ export default function App() {
               style={{ color: tab===t.key ? "#F5EFE3" : SIDEBAR_TEXT }}>
               <span style={{ fontSize:15, opacity:0.75, flexShrink:0 }}>{t.icon}</span>
               <span style={{ flex:1 }}>{t.label}</span>
-              {t.key==="inbox" && inboxCount > 0 && <span className="badge">{inboxCount}</span>}
-              {t.key==="inbox" && inboxCount === 0 && tagged.length > 0 && <span className="badge done">✓</span>}
+              {t.key==="inbox" && reviewCount > 0 && <span className="badge">{reviewCount}</span>}
+              {t.key==="inbox" && reviewCount === 0 && allTagged.length > 0 && <span className="badge done">✓</span>}
               {t.key==="detail" && selectedJob && <span style={{ fontSize:10, color:SIDEBAR_DIM }}>· {selectedJob.name.split(" ")[0]}</span>}
               {t.key==="chat" && <span style={{ fontSize:9, padding:"2px 6px", borderRadius:3, background:"rgba(92,122,90,0.25)", color:ACCENT2, fontWeight:500 }}>AI</span>}
             </div>
@@ -5003,8 +5410,8 @@ export default function App() {
 
       {/* ── Content ── */}
       <div style={{ flex:1 }}>
-        {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} onEstimate={()=>setTab("estimator")} jobSummaries={jobSummaries} untagged={untagged} overhead={overhead} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
-        {tab==="inbox"     && <ExpenseInbox untagged={untagged} tagged={tagged} onTag={handleTag} onDismiss={handleDismiss} onMarkOverhead={handleMarkOverhead} onRestore={handleRestore} onBulkTag={handleBulkTag} onBulkMarkOverhead={handleBulkMarkOverhead} onBulkDismiss={handleBulkDismiss} onSaveVendorRule={handleSaveVendorRule} vendorRules={vendorRules} overhead={overhead} dismissed={dismissed} jobSummaries={jobSummaries} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
+        {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} onEstimate={()=>setTab("estimator")} jobSummaries={jobSummaries} untagged={[...untagged, ...(suggested||[])]} overhead={overhead} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
+        {tab==="inbox"     && <SyncReview autoMatched={autoMatched} suggested={suggested} untagged={untagged} allTagged={allTagged} overhead={overhead} dismissed={dismissed} jobSummaries={jobSummaries} vendorRules={vendorRules} onConfirmSuggestion={handleConfirmSuggestion} onTag={handleTag} onMarkOverhead={handleMarkOverhead} onDismiss={handleDismiss} onRestore={handleRestore} onRetag={handleRetag} onUndoAutoMatch={handleUndoAutoMatch} onSaveVendorRule={handleSaveVendorRule} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
         {tab==="detail"    && <JobDetail job={selectedJob} onBack={()=>setTab("dashboard")} untagged={untagged}/>}
         {tab==="clients"   && <ClientScorecard jobSummaries={jobSummaries}/>}
         {tab==="estimator" && <JobEstimator jobSummaries={jobSummaries} userId={session?.user?.id}/>}
