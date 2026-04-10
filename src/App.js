@@ -814,7 +814,8 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, d
   const [trendView, setTrendView]     = useState("cumulative");
   const [expenseView, setExpenseView] = useState("job");
   const [activeKpi, setActiveKpi]     = useState(null); // 'revenue' | 'expenses' | 'profit' | 'jobs' | 'quality'
-  const [heroPanel, setHeroPanel]     = useState("best"); // 'best' | 'worst' | 'recv'
+  const [alertsOpen, setAlertsOpen]   = useState(false);
+  const [jobTableRows, setJobTableRows] = useState(10); // rows shown in job table
 
   // Build monthly trend dynamically from live job summaries
   const dynamicTrend = useMemo(() => {
@@ -928,16 +929,6 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, d
   const totalRev    = typeFilteredJobs.reduce((s,j) => s + j.revenue, 0);
   const totalCost   = typeFilteredJobs.reduce((s,j) => s + j.costs, 0);
   const totalProfit = totalRev - totalCost;
-  const barData     = sorted.map(j => ({ name: j.name, fullName:j.name, profit:j.profit, margin:parseFloat(j.marginPct), revenue:j.revenue }));
-  const barMetric   = sort === "margin" ? "margin" : sort === "revenue" ? "revenue" : "profit";
-  const barFormatter= sort === "margin" ? (v => `${v}%`) : $k;
-  const barSubtitle = sort === "margin" ? "Jobs ranked by gross margin" : sort === "revenue" ? "Jobs ranked by revenue" : "Which jobs made money?";
-
-  // Hero panel — best/worst jobs, outstanding receivables
-  const bestJobs        = [...typeFilteredJobs].sort((a,b) => b.profit - a.profit).slice(0, 3);
-  const worstJobs       = [...typeFilteredJobs].sort((a,b) => a.profit - b.profit).slice(0, 3);
-  const outstandingJobs = typeFilteredJobs.filter(j => j.outstanding > 0).sort((a,b) => b.outstanding - a.outstanding);
-  const totalOutstanding = outstandingJobs.reduce((s,j) => s + j.outstanding, 0);
 
   // Data Quality Score — all four components filtered to the selected date range.
   // Dismissed items stay in the denominator so dismissing doesn't artificially inflate the score.
@@ -1072,50 +1063,66 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, d
         </div>
       )}
 
-      {/* ── Job Health Alerts ── */}
-      {(unbilledJobs.length > 0 || atRiskJobs.length > 0 || lossJobs.length > 0 || lowMarginJobs.length > 0) && (
-        <div style={{ display:"flex",flexDirection:"column",gap:8,marginBottom:20 }}>
-          {unbilledJobs.length > 0 && (
-            <div style={{ padding:"11px 18px",borderRadius:5,border:`1px solid rgba(140,64,64,0.25)`,background:"rgba(140,64,64,0.04)",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8 }}>
-              <div style={{ display:"flex",alignItems:"center",gap:10 }}>
-                <span style={{ fontSize:12,fontWeight:700,color:CARD,background:RED,borderRadius:3,padding:"1px 7px",fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.04em" }}>UNBILLED</span>
-                <span style={{ fontSize:13,color:RED,fontFamily:"'DM Sans',sans-serif",fontWeight:500 }}>{unbilledJobs.length} job{unbilledJobs.length!==1?"s":""} have costs but no invoice sent</span>
-                <span style={{ fontSize:12,color:MID,fontFamily:"'DM Sans',sans-serif" }}>· {$(unbilledJobs.reduce((s,j)=>s+j.costs,0))} potentially unbilled</span>
+      {/* ── Job Health Alerts card ── */}
+      {(() => {
+        const totalAlerts = unbilledJobs.length + atRiskJobs.length + lossJobs.length + lowMarginJobs.length;
+        const hasRed = unbilledJobs.length > 0 || lossJobs.length > 0;
+        const accentColor = hasRed ? RED : AMBER;
+        const alertGroups = [
+          { key:"unbilled",   label:"UNBILLED",   color:RED,   bg:"rgba(140,64,64,0.06)",   border:"rgba(140,64,64,0.25)",  filled:true,  jobs:unbilledJobs,   headline: j => `${j.length} job${j.length!==1?"s":""} have costs but no invoice sent`,   sub: j => `${$(j.reduce((s,x)=>s+x.costs,0))} potentially unbilled`,   names: j => j.slice(0,4).map(x=>x.name).join(" · ") + (j.length>4?` +${j.length-4} more`:"") },
+          { key:"atrisk",     label:"AT RISK",    color:AMBER, bg:"rgba(140,107,48,0.05)",  border:"rgba(140,107,48,0.25)", filled:true,  jobs:atRiskJobs,     headline: j => `${j.length} active job${j.length!==1?"s":""} trending toward a loss`,    sub: () => "costs above 85% of revenue so far",                          names: j => j.slice(0,4).map(x=>`${x.name} (${x.marginPct}%)`).join(" · ") + (j.length>4?` +${j.length-4} more`:"") },
+          { key:"loss",       label:"LOSS",       color:RED,   bg:"rgba(140,64,64,0.04)",   border:"rgba(140,64,64,0.2)",   filled:false, jobs:lossJobs,       headline: j => `${j.length} completed job${j.length!==1?"s":""} closed at a loss`,        sub: j => `${$(Math.abs(j.reduce((s,x)=>s+x.profit,0)))} total lost`,   names: j => j.slice(0,4).map(x=>`${x.name} (${x.marginPct}%)`).join(" · ") + (j.length>4?` +${j.length-4} more`:"") },
+          { key:"lowmargin",  label:"LOW MARGIN", color:AMBER, bg:"rgba(140,107,48,0.03)",  border:"rgba(140,107,48,0.15)", filled:false, jobs:lowMarginJobs,  headline: j => `${j.length} job${j.length!==1?"s":""} finished under 10% margin`,       sub: () => null,                                                         names: j => j.slice(0,4).map(x=>`${x.name} (${x.marginPct}%)`).join(" · ") + (j.length>4?` +${j.length-4} more`:"") },
+        ].filter(g => g.jobs.length > 0);
+
+        return (
+          <div style={{ marginBottom:20, borderRadius:6, border:`1px solid ${totalAlerts>0 ? `${accentColor}40` : BORDER}`, background:CARD, overflow:"hidden", boxShadow:"0 1px 4px rgba(44,36,22,0.06)" }}>
+            {/* Collapsed header — always visible */}
+            <div onClick={() => setAlertsOpen(o => !o)}
+              style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 18px", cursor:"pointer", userSelect:"none" }}>
+              {/* Severity dot */}
+              <div style={{ width:8, height:8, borderRadius:"50%", background: totalAlerts > 0 ? accentColor : ACCENT2, flexShrink:0 }}/>
+              {/* Title */}
+              <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, fontWeight:700, letterSpacing:"0.08em", color: totalAlerts > 0 ? accentColor : ACCENT2, textTransform:"uppercase" }}>
+                {totalAlerts > 0 ? `${totalAlerts} Alert${totalAlerts!==1?"s":""}` : "No Alerts"}
               </div>
-              <div style={{ fontSize:11,color:RED,fontFamily:"'DM Sans',sans-serif",fontWeight:500 }}>{unbilledJobs.slice(0,3).map(j=>j.name).join("  ·  ")}{unbilledJobs.length>3?` +${unbilledJobs.length-3} more`:""}</div>
+              {/* Chips */}
+              {totalAlerts > 0 && (
+                <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                  {alertGroups.map(g => (
+                    <span key={g.key} style={{ fontSize:10, fontWeight:700, fontFamily:"'DM Sans',sans-serif", letterSpacing:"0.05em", padding:"1px 8px", borderRadius:3, color: g.filled ? CARD : g.color, background: g.filled ? g.color : "transparent", border:`1px solid ${g.color}` }}>
+                      {g.label} {g.jobs.length}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {totalAlerts === 0 && (
+                <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DIM }}>All jobs looking healthy</span>
+              )}
+              {/* Chevron */}
+              <span style={{ marginLeft:"auto", fontSize:10, color:DIM }}>{alertsOpen ? "▲" : "▼"}</span>
             </div>
-          )}
-          {atRiskJobs.length > 0 && (
-            <div style={{ padding:"11px 18px",borderRadius:5,border:`1px solid rgba(140,107,48,0.25)`,background:"rgba(140,107,48,0.05)",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8 }}>
-              <div style={{ display:"flex",alignItems:"center",gap:10 }}>
-                <span style={{ fontSize:12,fontWeight:700,color:CARD,background:AMBER,borderRadius:3,padding:"1px 7px",fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.04em" }}>AT RISK</span>
-                <span style={{ fontSize:13,color:AMBER,fontFamily:"'DM Sans',sans-serif",fontWeight:500 }}>{atRiskJobs.length} active job{atRiskJobs.length!==1?"s":""} trending toward a loss</span>
-                <span style={{ fontSize:12,color:MID,fontFamily:"'DM Sans',sans-serif" }}>· costs above 85% of revenue so far</span>
+
+            {/* Expanded detail */}
+            {alertsOpen && totalAlerts > 0 && (
+              <div style={{ borderTop:`1px solid ${BORDER}` }}>
+                {alertGroups.map((g, gi) => (
+                  <div key={g.key} style={{ padding:"12px 18px", borderBottom: gi < alertGroups.length-1 ? `1px solid ${BORDER}` : "none", background: g.bg }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:5, flexWrap:"wrap" }}>
+                      <span style={{ fontSize:11, fontWeight:700, fontFamily:"'DM Sans',sans-serif", letterSpacing:"0.05em", padding:"1px 7px", borderRadius:3, color: g.filled ? CARD : g.color, background: g.filled ? g.color : "transparent", border:`1px solid ${g.color}` }}>
+                        {g.label}
+                      </span>
+                      <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:13, fontWeight:500, color: g.filled ? g.color : MID }}>{g.headline(g.jobs)}</span>
+                      {g.sub(g.jobs) && <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:MID }}>· {g.sub(g.jobs)}</span>}
+                    </div>
+                    <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:MID, paddingLeft:4 }}>{g.names(g.jobs)}</div>
+                  </div>
+                ))}
               </div>
-              <div style={{ fontSize:11,color:AMBER,fontFamily:"'DM Sans',sans-serif",fontWeight:500 }}>{atRiskJobs.slice(0,3).map(j=>`${j.name} (${j.marginPct}%)`).join("  ·  ")}{atRiskJobs.length>3?` +${atRiskJobs.length-3} more`:""}</div>
-            </div>
-          )}
-          {lossJobs.length > 0 && (
-            <div style={{ padding:"11px 18px",borderRadius:5,border:`1px solid rgba(140,64,64,0.2)`,background:"rgba(140,64,64,0.03)",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8 }}>
-              <div style={{ display:"flex",alignItems:"center",gap:10 }}>
-                <span style={{ fontSize:12,fontWeight:700,color:RED,border:`1px solid ${RED}`,borderRadius:3,padding:"1px 7px",fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.04em" }}>LOSS</span>
-                <span style={{ fontSize:13,color:MID,fontFamily:"'DM Sans',sans-serif",fontWeight:500 }}>{lossJobs.length} completed job{lossJobs.length!==1?"s":""} closed at a loss</span>
-                <span style={{ fontSize:12,color:MID,fontFamily:"'DM Sans',sans-serif" }}>· {$(Math.abs(lossJobs.reduce((s,j)=>s+j.profit,0)))} total lost</span>
-              </div>
-              <div style={{ fontSize:11,color:MID,fontFamily:"'DM Sans',sans-serif" }}>{lossJobs.slice(0,3).map(j=>`${j.name} (${j.marginPct}%)`).join("  ·  ")}{lossJobs.length>3?` +${lossJobs.length-3} more`:""}</div>
-            </div>
-          )}
-          {lowMarginJobs.length > 0 && (
-            <div style={{ padding:"11px 18px",borderRadius:5,border:`1px solid rgba(140,107,48,0.15)`,background:"rgba(140,107,48,0.03)",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8 }}>
-              <div style={{ display:"flex",alignItems:"center",gap:10 }}>
-                <span style={{ fontSize:12,fontWeight:700,color:AMBER,border:`1px solid ${AMBER}`,borderRadius:3,padding:"1px 7px",fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.04em" }}>LOW MARGIN</span>
-                <span style={{ fontSize:13,color:MID,fontFamily:"'DM Sans',sans-serif",fontWeight:500 }}>{lowMarginJobs.length} job{lowMarginJobs.length!==1?"s":""} finished under 10% margin</span>
-              </div>
-              <div style={{ fontSize:11,color:MID,fontFamily:"'DM Sans',sans-serif" }}>{lowMarginJobs.slice(0,3).map(j=>`${j.name} (${j.marginPct}%)`).join("  ·  ")}{lowMarginJobs.length>3?` +${lowMarginJobs.length-3} more`:""}</div>
-            </div>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        );
+      })()}
 
       {/* KPI Drilldown Modal */}
       {activeKpi && (
@@ -1137,191 +1144,85 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, d
         />
       )}
 
-      {/* ── Asymmetric Hero Strip ── */}
-      <div style={{ display:"flex", background:CARD, border:`1px solid ${BORDER}`, borderRadius:8, marginBottom:28, overflow:"hidden", boxShadow:"0 2px 10px rgba(44,36,22,0.08)" }}>
+      {/* ── KPI Hero Cards ── */}
+      <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr 1fr", gap:18, marginBottom:28 }}>
 
-        {/* LEFT — Profit hero (largest section) */}
-        <div className="pls" onClick={()=>setActiveKpi('profit')}
-          style={{ flex:1.5, padding:"18px 28px", cursor:"pointer", borderRight:`1px solid ${BORDER}`, borderTop:`3px solid ${heroColor}`, display:"flex", flexDirection:"column", justifyContent:"space-between" }}>
-          {/* Label + toggle */}
+        {/* PROFIT */}
+        <div className="pls card" onClick={()=>setActiveKpi('profit')}
+          style={{ padding:"22px 28px", cursor:"pointer", borderTop:`3px solid ${heroColor}`, display:"flex", flexDirection:"column", justifyContent:"space-between", minHeight:120 }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:13, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase" }}>
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase" }}>
               {heroIsNet ? "Net Profit" : "Gross Profit"}
             </div>
             <div style={{ display:"flex", border:`1px solid ${BORDER}`, borderRadius:3, overflow:"hidden" }} onClick={e=>e.stopPropagation()}>
               {[["job","Gross"],["fixed","Net"]].map(([k,l],i) => (
                 <button key={k} onClick={e=>{e.stopPropagation();setExpenseView(k);}}
-                  style={{ cursor:"pointer", padding:"4px 12px", fontSize:11, fontWeight:600, fontFamily:"'DM Sans',sans-serif", border:"none", borderRight:i===0?`1px solid ${BORDER}`:"none", background:expenseView===k?ACCENT2:CARD, color:expenseView===k?CARD:DIM, transition:"all 0.15s" }}>{l}</button>
+                  style={{ cursor:"pointer", padding:"3px 10px", fontSize:10, fontWeight:600, fontFamily:"'DM Sans',sans-serif", border:"none", borderRight:i===0?`1px solid ${BORDER}`:"none", background:expenseView===k?ACCENT2:CARD, color:expenseView===k?CARD:DIM, transition:"all 0.15s" }}>{l}</button>
               ))}
             </div>
           </div>
-          {/* Big number */}
-          <div style={{ fontFamily:"'Lora',serif", fontSize:44, fontWeight:600, color:heroColor, letterSpacing:"-0.03em", lineHeight:1.05, margin:"6px 0 4px" }}>{$(heroProfit)}</div>
-          {/* Delta or margin fallback */}
+          <div style={{ fontFamily:"'Lora',serif", fontSize:42, fontWeight:600, color:heroColor, letterSpacing:"-0.03em", lineHeight:1.05, margin:"8px 0 6px" }}>{$(heroProfit)}</div>
           {periodComparison?.profitPct != null ? (
             <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color: periodComparison.profitPct >= 0 ? ACCENT2 : RED, display:"flex", alignItems:"center", gap:5 }}>
-              <span style={{ fontSize:14 }}>{periodComparison.profitPct >= 0 ? "↑" : "↓"}</span>
+              <span style={{ fontSize:13 }}>{periodComparison.profitPct >= 0 ? "↑" : "↓"}</span>
               {Math.abs(periodComparison.profitPct)}% vs {periodComparison.prevMonth}
-              <span style={{ color:DIM, fontSize:10, marginLeft:4 }}>· {heroMargin}% {heroIsNet?"net":"gross"} margin</span>
+              <span style={{ color:DIM, fontSize:10, marginLeft:4 }}>· {heroMargin}% margin</span>
             </div>
           ) : (
             <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:DIM }}>{heroMargin}% {heroIsNet ? "net" : "gross"} margin</div>
           )}
         </div>
 
-        {/* CENTER — Revenue + Expenses stacked */}
-        <div style={{ flex:0.9, display:"flex", flexDirection:"column", borderRight:`1px solid ${BORDER}` }}>
-          <div className="pls" onClick={()=>setActiveKpi('revenue')}
-            style={{ flex:1, padding:"16px 22px", cursor:"pointer", borderBottom:`1px solid ${BORDER}`, borderTop:`3px solid ${ACCENT}` }}>
-            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:6 }}>Revenue</div>
-            <div style={{ display:"flex", alignItems:"baseline", gap:10 }}>
-              <span style={{ fontFamily:"'Lora',serif", fontSize:28, fontWeight:600, color:DARK }}>{$(totalRev)}</span>
+        {/* REVENUE */}
+        <div className="pls card" onClick={()=>setActiveKpi('revenue')}
+          style={{ padding:"22px 24px", cursor:"pointer", borderTop:`3px solid ${ACCENT}`, display:"flex", flexDirection:"column", justifyContent:"space-between", minHeight:120 }}>
+          <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase" }}>Revenue</div>
+          <div>
+            <div style={{ display:"flex", alignItems:"baseline", gap:10, margin:"8px 0 4px" }}>
+              <span style={{ fontFamily:"'Lora',serif", fontSize:32, fontWeight:600, color:DARK }}>{$(totalRev)}</span>
               {periodComparison?.revPct != null && (
                 <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color: periodComparison.revPct >= 0 ? ACCENT2 : RED }}>
                   {periodComparison.revPct >= 0 ? "↑" : "↓"} {Math.abs(periodComparison.revPct)}%
                 </span>
               )}
             </div>
-            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, marginTop:4 }}>{typeFilteredJobs.length} job{typeFilteredJobs.length!==1?"s":""} billed</div>
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM }}>{typeFilteredJobs.length} job{typeFilteredJobs.length!==1?"s":""} billed</div>
           </div>
-          <div className="pls" onClick={()=>setActiveKpi('expenses')}
-            style={{ flex:1, padding:"16px 22px", cursor:"pointer", borderTop:`3px solid ${AMBER}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-            {/* Left — expense totals */}
-            <div>
-              <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:6 }}>
-                {heroIsNet ? "Job + Fixed Expenses" : "Job Expenses"}
-              </div>
-              <div style={{ fontFamily:"'Lora',serif", fontSize:28, fontWeight:600, color:MID }}>
-                {heroIsNet ? $(totalCost + totalOverhead) : $(totalCost)}
-              </div>
-              <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, marginTop:4 }}>
-                {heroIsNet ? `${$(totalCost)} job + ${$(totalOverhead)} fixed` : `${typeFilteredJobs.reduce((s,j)=>s+j.purchases.length,0)} job-tagged`}
-              </div>
+        </div>
+
+        {/* EXPENSES */}
+        <div className="pls card" onClick={()=>setActiveKpi('expenses')}
+          style={{ padding:"22px 24px", cursor:"pointer", borderTop:`3px solid ${AMBER}`, display:"flex", flexDirection:"column", justifyContent:"space-between", minHeight:120 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase" }}>
+              {heroIsNet ? "Total Expenses" : "Job Expenses"}
             </div>
-            {/* Right — DQ badge button */}
+            {/* DQ badge */}
             {(() => {
               const untaggedActive = filteredUntagged.filter(u => u.status !== 'dismissed');
               const hasIssues = untaggedActive.length > 0;
-              const badgeColor = dqColor;
-              const bgTint = hasIssues ? `${AMBER}18` : `${ACCENT2}18`;
               return (
                 <div onClick={e => { e.stopPropagation(); setActiveKpi('quality'); }}
-                  style={{
-                    border:`1.5px solid ${badgeColor}`, borderRadius:6, background:bgTint,
-                    padding:"10px 14px", cursor:"pointer", textAlign:"center", minWidth:90,
-                    flexShrink:0, transition:"opacity 0.15s"
-                  }}
-                  onMouseEnter={e=>e.currentTarget.style.opacity="0.75"}
+                  style={{ border:`1.5px solid ${dqColor}`, borderRadius:5, background:`${dqColor}18`, padding:"4px 9px", cursor:"pointer", textAlign:"center", flexShrink:0, transition:"opacity 0.15s" }}
+                  onMouseEnter={e=>e.currentTarget.style.opacity="0.7"}
                   onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                  {/* Top: count (split-number) or clean state */}
-                  {hasIssues ? (
-                    <>
-                      <div style={{ fontFamily:"'DM Mono',monospace", fontSize:22, fontWeight:700, color:badgeColor, lineHeight:1 }}>
-                        {untaggedActive.length}
-                      </div>
-                      <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:700, letterSpacing:"0.06em", color:badgeColor, textTransform:"uppercase", marginTop:2 }}>
-                        untagged
-                      </div>
-                    </>
-                  ) : (
-                    <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:700, color:badgeColor, letterSpacing:"0.04em" }}>
-                      ✓ All tagged
-                    </div>
-                  )}
-                  {/* Middle: DQ score */}
-                  <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:600, color:badgeColor, marginTop:6 }}>
-                    {hasIssues ? "⚠" : "✓"} Quality = {dataQuality}%
+                  <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:700, color:dqColor, letterSpacing:"0.04em" }}>
+                    {hasIssues ? `${untaggedActive.length} untagged` : "All tagged"}
                   </div>
-                  {/* Bottom: CTA */}
-                  <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, color:badgeColor, opacity:0.7, marginTop:4 }}>
-                    View quality →
+                  <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, color:dqColor, marginTop:2 }}>
+                    {dataQuality}% quality
                   </div>
                 </div>
               );
             })()}
           </div>
-        </div>
-
-        {/* RIGHT — Toggleable panel: Best / Worst / Receivables */}
-        <div style={{ flex:0.8, display:"flex", flexDirection:"column" }}>
-          {/* Toggle buttons */}
-          <div style={{ padding:"14px 16px 10px", borderBottom:`1px solid ${BORDER}`, display:"flex", gap:6 }}>
-            {[["best","Best Jobs"],["worst","Worst Jobs"],["recv","Receivables"]].map(([key, label]) => (
-              <button key={key}
-                onClick={() => setHeroPanel(key)}
-                style={{
-                  flex:1, padding:"5px 0", border:`1px solid ${heroPanel===key ? ACCENT2 : BORDER}`,
-                  borderRadius:3, background: heroPanel===key ? `${ACCENT2}18` : "transparent",
-                  color: heroPanel===key ? ACCENT2 : DIM,
-                  fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:600,
-                  cursor:"pointer", letterSpacing:"0.03em", transition:"all 0.15s"
-                }}>
-                {label}
-              </button>
-            ))}
-          </div>
-          {/* Panel content */}
-          <div style={{ flex:1, padding:"14px 16px", overflowY:"auto" }}>
-            {heroPanel === "best" && (
-              <>
-                <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:10 }}>Top performers</div>
-                {bestJobs.length === 0
-                  ? <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DIM, fontStyle:"italic" }}>No jobs in period</div>
-                  : bestJobs.map((j, i) => (
-                    <div key={j.id || i} onClick={() => onJobClick && onJobClick(j)}
-                      style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 0",
-                        borderBottom: i < bestJobs.length - 1 ? `1px solid ${BORDER}` : "none", cursor: onJobClick ? "pointer" : "default" }}>
-                      <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DARK, fontWeight:500,
-                        maxWidth:"60%", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}
-                        title={j.name}>{j.name}</div>
-                      <div style={{ fontFamily:"'DM Mono',monospace", fontSize:11, color:j.profit >= 0 ? ACCENT2 : RED, fontWeight:600 }}>
-                        {j.profit >= 0 ? "+" : ""}{$k(j.profit)}
-                      </div>
-                    </div>
-                  ))}
-              </>
-            )}
-            {heroPanel === "worst" && (
-              <>
-                <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:10 }}>Needs attention</div>
-                {worstJobs.length === 0
-                  ? <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DIM, fontStyle:"italic" }}>No jobs in period</div>
-                  : worstJobs.map((j, i) => (
-                    <div key={j.id || i} onClick={() => onJobClick && onJobClick(j)}
-                      style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 0",
-                        borderBottom: i < worstJobs.length - 1 ? `1px solid ${BORDER}` : "none", cursor: onJobClick ? "pointer" : "default" }}>
-                      <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DARK, fontWeight:500,
-                        maxWidth:"60%", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}
-                        title={j.name}>{j.name}</div>
-                      <div style={{ fontFamily:"'DM Mono',monospace", fontSize:11, color:j.profit >= 0 ? ACCENT2 : RED, fontWeight:600 }}>
-                        {j.profit >= 0 ? "+" : ""}{$k(j.profit)}
-                      </div>
-                    </div>
-                  ))}
-              </>
-            )}
-            {heroPanel === "recv" && (
-              <>
-                <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", marginBottom:6 }}>Outstanding</div>
-                {outstandingJobs.length === 0 ? (
-                  <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:ACCENT2, fontWeight:500 }}>✓ All invoices paid</div>
-                ) : (
-                  <>
-                    <div style={{ fontFamily:"'Lora',serif", fontSize:20, fontWeight:600, color:AMBER, marginBottom:10 }}>{$(totalOutstanding)}</div>
-                    {outstandingJobs.map((j, i) => (
-                      <div key={j.id || i} onClick={() => onJobClick && onJobClick(j)}
-                        style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"7px 0",
-                          borderBottom: i < outstandingJobs.length - 1 ? `1px solid ${BORDER}` : "none", cursor: onJobClick ? "pointer" : "default" }}>
-                        <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DARK, fontWeight:500,
-                          maxWidth:"60%", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}
-                          title={j.name}>{j.name}</div>
-                        <div style={{ fontFamily:"'DM Mono',monospace", fontSize:11, color:AMBER, fontWeight:600 }}>{$(j.outstanding)}</div>
-                      </div>
-                    ))}
-                  </>
-                )}
-              </>
-            )}
+          <div>
+            <div style={{ fontFamily:"'Lora',serif", fontSize:32, fontWeight:600, color:MID, margin:"8px 0 4px" }}>
+              {heroIsNet ? $(totalCost + totalOverhead) : $(totalCost)}
+            </div>
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM }}>
+              {heroIsNet ? `${$(totalCost)} job + ${$(totalOverhead)} fixed` : `${typeFilteredJobs.reduce((s,j)=>s+j.purchases.length,0)} job-tagged`}
+            </div>
           </div>
         </div>
 
@@ -1329,50 +1230,70 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, d
 
       <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:18,marginBottom:28 }}>
         <div className="card" style={{ padding:"22px 26px" }}>
-          <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20 }}>
+          {/* Header */}
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16 }}>
             <div>
               <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:5,fontWeight:500 }}>Profit by Job</div>
-              <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>{barSubtitle}</div>
-            </div>
-            <div style={{ display:"flex",gap:6 }}>
-              {[["profit","$ Profit"],["margin","% Margin"],["revenue","Revenue"]].map(([k,l]) => (
-                <button key={k} className={`btn${sort===k?" act":""}`} onClick={()=>setSort(k)}>{l}</button>
-              ))}
+              <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>{sorted.length} job{sorted.length!==1?"s":""} · click headers to sort</div>
             </div>
           </div>
-          {barData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={barData} margin={{ top:4,right:4,left:12,bottom:60 }}>
-                <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false}/>
-                <XAxis dataKey="name" interval={0} height={80} tick={({ x, y, payload }) => (
-                  <g transform={`translate(${x},${y})`}>
-                    <text x={0} y={0} dy={4} textAnchor="end" fill={DIM} fontSize={9} fontFamily="DM Mono" transform="rotate(-45)">
-                      {payload.value.length > 18 ? payload.value.slice(0, 18) + "…" : payload.value}
-                    </text>
-                  </g>
-                )}/>
-                <YAxis tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} tickFormatter={barFormatter} axisLine={false} tickLine={false} width={52}/>
-                <Tooltip content={({ active,payload }) => {
-                  if (!active||!payload?.length) return null;
-                  const d = payload[0].payload;
-                  const valDisplay = barMetric === "margin"
-                    ? <div style={{ color:d.profit>=0?ACCENT2:RED,fontSize:14,fontWeight:600 }}>{d.margin.toFixed(1)}% margin</div>
-                    : barMetric === "revenue"
-                      ? <div style={{ color:ACCENT,fontSize:14,fontWeight:600 }}>{$(d.revenue)}</div>
-                      : <div style={{ color:d.profit>=0?ACCENT2:RED,fontSize:14,fontWeight:600 }}>{d.profit>=0?"+":""}{$(d.profit)}</div>;
-                  return <div style={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:5,padding:"10px 14px",fontFamily:"'DM Mono',monospace",fontSize:11,boxShadow:"0 4px 12px rgba(44,36,22,0.12)" }}>
-                    <div style={{ color:DIM,marginBottom:4,fontFamily:"'DM Sans',sans-serif",fontSize:10 }}>{d.fullName}</div>
-                    {valDisplay}
-                  </div>;
-                }}/>
-                <ReferenceLine y={0} stroke={BORDER}/>
-                <Bar dataKey={barMetric} radius={[3,3,0,0]}>
-                  {barData.map((e,i) => <Cell key={i} fill={barMetric==="revenue"?ACCENT:e.profit>=0?ACCENT2:RED} opacity={0.85}/>)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+          {sorted.length === 0 ? (
+            <div style={{ padding:"40px 0",textAlign:"center",color:DIM,fontSize:13,fontFamily:"'DM Sans',sans-serif",fontStyle:"italic" }}>No jobs in this period</div>
           ) : (
-            <div style={{ height:280,display:"flex",alignItems:"center",justifyContent:"center",color:DIM,fontSize:13,fontFamily:"'DM Sans',sans-serif",fontStyle:"italic" }}>No jobs in this period</div>
+            <>
+              {/* Table */}
+              <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12, fontFamily:"'DM Sans',sans-serif" }}>
+                <thead>
+                  <tr style={{ borderBottom:`2px solid ${BORDER}` }}>
+                    {[
+                      { col:"name",    label:"Job",      align:"left"  },
+                      { col:"revenue", label:"Revenue",  align:"right" },
+                      { col:"costs",   label:"Costs",    align:"right" },
+                      { col:"profit",  label:"Profit",   align:"right" },
+                      { col:"margin",  label:"Margin",   align:"right" },
+                    ].map(({ col, label, align }) => (
+                      <th key={col} onClick={() => handleColSort(col)}
+                        style={{ padding:"7px 10px", textAlign:align, fontSize:9, letterSpacing:"0.08em", textTransform:"uppercase", color: sort===col ? DARK : DIM, fontWeight:600, cursor:"pointer", userSelect:"none", whiteSpace:"nowrap" }}>
+                        {label}
+                        {sort===col
+                          ? <span style={{ marginLeft:4, color:ACCENT }}>{sortDir==="asc"?"↑":"↓"}</span>
+                          : <span style={{ marginLeft:4, opacity:0.25 }}>↕</span>
+                        }
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sorted.slice(0, jobTableRows).map((j, i) => (
+                    <tr key={j.id || i}
+                      onClick={() => onJobClick && onJobClick(j)}
+                      style={{ borderBottom:`1px solid ${BORDER}`, cursor: onJobClick ? "pointer" : "default", transition:"background 0.1s" }}
+                      onMouseOver={e => e.currentTarget.style.background = BG2}
+                      onMouseOut={e => e.currentTarget.style.background = "transparent"}>
+                      <td style={{ padding:"9px 10px", color:DARK, fontWeight:500, maxWidth:160, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={j.name}>{j.name}</td>
+                      <td style={{ padding:"9px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, color:MID }}>{$(j.revenue)}</td>
+                      <td style={{ padding:"9px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, color:MID }}>{$(j.costs)}</td>
+                      <td style={{ padding:"9px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, fontWeight:600, color: j.profit >= 0 ? ACCENT2 : RED }}>{j.profit >= 0 ? "+" : ""}{$(j.profit)}</td>
+                      <td style={{ padding:"9px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, color: parseFloat(j.marginPct) >= 20 ? ACCENT2 : parseFloat(j.marginPct) >= 10 ? MID : RED }}>{j.marginPct}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {/* Show more / show less */}
+              {sorted.length > 10 && (
+                <div style={{ marginTop:12, textAlign:"center" }}>
+                  {jobTableRows < sorted.length ? (
+                    <button className="btn" onClick={() => setJobTableRows(sorted.length)} style={{ fontSize:11, color:ACCENT }}>
+                      Show all {sorted.length} jobs ↓
+                    </button>
+                  ) : (
+                    <button className="btn" onClick={() => setJobTableRows(10)} style={{ fontSize:11, color:DIM }}>
+                      Show less ↑
+                    </button>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
 
