@@ -240,7 +240,21 @@ export default async function handler(req, res) {
     const purchases  = purchaseResponse?.Purchase  || [];
     const bills      = billResponse?.Bill          || [];
 
-    console.log(`QB fetch complete: ${customers.length} customers, ${invoices.length} invoices, ${purchases.length} purchases, ${bills.length} bills`);
+    // Fetch tracked vendor rules from Supabase.
+    // If the user has set up tracked vendors, only expenses from those vendors are processed.
+    // If no tracked vendors exist yet (first sync / setup not done), everything is processed
+    // so the VendorSetup modal has data to work with.
+    const { data: trackedRules } = await supabase
+      .from('vendor_rules')
+      .select('vendor_name')
+      .eq('contractor_id', userId)
+      .eq('rule_type', 'tracked');
+
+    const trackedVendors = trackedRules && trackedRules.length > 0
+      ? new Set(trackedRules.map(r => r.vendor_name))
+      : null; // null = no filter active (first run)
+
+    console.log(`QB fetch complete: ${customers.length} customers, ${invoices.length} invoices, ${purchases.length} purchases, ${bills.length} bills${trackedVendors ? ` · vendor filter active (${trackedVendors.size} tracked)` : ' · no vendor filter (first sync)'}`);
 
     // Build client map and jobs
     const clientMap    = {};
@@ -302,7 +316,13 @@ export default async function handler(req, res) {
     const inboxToUpsert = [];
 
     purchases.forEach(p => {
+      const vendorName = p.EntityRef?.name || 'Unknown Vendor';
+
+      // If tracked vendors are configured, skip anything not on the list
+      if (trackedVendors && !trackedVendors.has(vendorName)) return;
+
       const lines = p.Line || [];
+      if (lines.length === 0) return;
       let hasTaggedLine = false;
 
       // Header-level CustomerRef fallback (used when all lines belong to one job)
@@ -341,7 +361,7 @@ export default async function handler(req, res) {
             id:                `${userId}_inbox_${p.Id}`,
             contractor_id:     userId,
             doc_number:        p.DocNumber || p.Id,
-            vendor:            p.EntityRef?.name || 'Unknown Vendor',
+            vendor:            vendorName,
             txn_date:          p.TxnDate,
             amount:            totalAmt,
             description:       lines[0]?.Description || 'Untagged expense',
@@ -359,7 +379,13 @@ export default async function handler(req, res) {
     let billCounter = 1;
 
     bills.forEach(b => {
+      const billVendorName = b.VendorRef?.name || 'Unknown Vendor';
+
+      // If tracked vendors are configured, skip anything not on the list
+      if (trackedVendors && !trackedVendors.has(billVendorName)) return;
+
       const lines = b.Line || [];
+      if (lines.length === 0) return;
       let hasTaggedLine = false;
 
       lines.forEach(line => {
@@ -379,7 +405,7 @@ export default async function handler(req, res) {
             txn_date:      b.TxnDate,
             amount:        amount,
             description:   line.Description || 'Bill expense',
-            vendor:        b.VendorRef?.name || 'Unknown Vendor',
+            vendor:        billVendorName,
           });
         }
       });
@@ -391,7 +417,7 @@ export default async function handler(req, res) {
             id:                `${userId}_inbox_bill_${b.Id}`,
             contractor_id:     userId,
             doc_number:        b.DocNumber || b.Id,
-            vendor:            b.VendorRef?.name || 'Unknown Vendor',
+            vendor:            billVendorName,
             txn_date:          b.TxnDate,
             amount:            totalAmt,
             description:       lines[0]?.Description || 'Untagged bill',
