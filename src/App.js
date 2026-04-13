@@ -318,15 +318,17 @@ const css = `
   .chip.a { background:rgba(140,107,48,0.1);color:${AMBER}; }
   .trow { display:grid;border-bottom:1px solid ${BORDER};cursor:pointer;transition:background 0.12s; }
   .trow:hover { background:${BG2}; }
-  .tcell { padding:14px 18px;font-size:13px;display:flex;align-items:center;font-family:'DM Sans',sans-serif; }
+  .tcell { padding:16px 18px;font-size:13px;display:flex;align-items:center;font-family:'DM Sans',sans-serif; }
   .thead { display:grid;background:${BG2};border-bottom:1px solid ${BORDER}; }
   .th { padding:10px 18px;font-size:11px;letter-spacing:0.08em;color:${MID};text-transform:uppercase;font-family:'DM Sans',sans-serif;font-weight:700; }
-  .btn { cursor:pointer;padding:8px 16px;border-radius:6px;font-size:12px;font-weight:500;letter-spacing:0.02em;transition:all 0.15s;border:1px solid ${BORDER};color:${MID};background:${CARD};font-family:'DM Sans',sans-serif; }
-  .btn:hover { border-color:${ACCENT};color:${ACCENT}; }
+  .btn { cursor:pointer;padding:8px 16px;border-radius:6px;font-size:12px;font-weight:500;letter-spacing:0.02em;transition:all 0.15s;border:1.5px solid ${BORDER};color:${MID};background:${CARD};font-family:'DM Sans',sans-serif; }
+  .btn:hover { border-color:${ACCENT};color:${ACCENT};box-shadow:0 2px 8px rgba(44,36,22,0.10); }
+  .btn:focus-visible { outline:2px solid ${ACCENT};outline-offset:2px; }
   .btn.act { border-color:${ACCENT2};color:#fff;background:${ACCENT2}; }
-  .btn.act:hover { background:#4E6B4C;border-color:#4E6B4C; }
+  .btn.act:hover { background:#4E6B4C;border-color:#4E6B4C;box-shadow:0 2px 10px rgba(92,122,90,0.3); }
   .btn.red { border-color:rgba(140,64,64,0.3);color:${RED};background:transparent; }
   .btn.red:hover { border-color:${RED};background:rgba(140,64,64,0.06); }
+  .btn:disabled { opacity:0.45;cursor:not-allowed;pointer-events:none; }
   .card { background:${CARD};border:1px solid ${BORDER};border-radius:8px;box-shadow:0 2px 8px rgba(44,36,22,0.07); }
   .mono { font-family:'DM Mono',monospace; }
   .chat-bubble-user { background:${BG2};border:1px solid ${BORDER};border-radius:12px 12px 3px 12px;padding:12px 16px;font-size:13px;color:${DARK};max-width:80%;align-self:flex-end;font-family:'DM Sans',sans-serif; }
@@ -353,7 +355,11 @@ const css = `
   @keyframes bounce { 0%,60%,100%{transform:translateY(0);opacity:0.3} 30%{transform:translateY(-5px);opacity:0.8} }
   @keyframes slideIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
   @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+  @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
   .slide-in { animation:slideIn 0.2s ease; }
+  .spinner { width:14px;height:14px;border:2px solid rgba(92,122,90,0.25);border-top-color:${ACCENT2};border-radius:50%;animation:spin 0.75s linear infinite;display:inline-block;flex-shrink:0; }
+  .trow:nth-child(even) { background:rgba(44,36,22,0.018); }
+  .trow:nth-child(even):hover { background:${BG2}; }
   .kpi-tooltip { position:relative; }
   .kpi-tooltip .tooltip-text { visibility:hidden;opacity:0;position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);background:${DARK};color:#FDF8F0;font-size:10px;font-family:'DM Sans',sans-serif;padding:8px 12px;border-radius:4px;width:220px;line-height:1.5;text-align:center;z-index:200;transition:opacity 0.15s;pointer-events:none; }
   .kpi-tooltip:hover .tooltip-text { visibility:visible;opacity:1; }
@@ -495,14 +501,14 @@ function TutorialModal({ onClose, qbConnected }) {
 
 function KpiModal({ type, expenseView, jobSummaries, allJobSummaries, overhead, untagged,
                     totalRev, totalCost, totalOverhead, totalProfit, accountedFor, totalExpenses,
-                    onClose, onJobClick }) {
+                    onClose, onJobClick, onJumpToInbox }) {
 
   const isNet = expenseView === "fixed";
 
   // Shared modal shell
   function ModalShell({ title, subtitle, children }) {
     return (
-      <div style={{ position:"fixed",inset:0,background:"rgba(44,36,22,0.52)",zIndex:550,display:"flex",alignItems:"center",justifyContent:"center",padding:24 }}
+      <div role="dialog" aria-modal="true" onKeyDown={e => e.key === 'Escape' && onClose()} style={{ position:"fixed",inset:0,background:"rgba(44,36,22,0.52)",zIndex:550,display:"flex",alignItems:"center",justifyContent:"center",padding:24 }}
         onClick={onClose}>
         <div style={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:8,width:"100%",maxWidth:680,maxHeight:"85vh",overflowY:"auto",boxShadow:"0 24px 72px rgba(44,36,22,0.22)" }}
           onClick={e=>e.stopPropagation()}>
@@ -512,7 +518,7 @@ function KpiModal({ type, expenseView, jobSummaries, allJobSummaries, overhead, 
               <div style={{ fontFamily:"'Lora',serif",fontSize:18,fontWeight:500,color:DARK,letterSpacing:"-0.01em" }}>{title}</div>
               {subtitle && <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM,marginTop:3 }}>{subtitle}</div>}
             </div>
-            <button onClick={onClose} style={{ background:"none",border:"none",cursor:"pointer",color:DIM,fontSize:22,lineHeight:1,padding:"2px 6px" }}>×</button>
+            <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:DIM,fontSize:22,lineHeight:1,padding:"2px 6px" }}>×</button>
           </div>
           {/* Body */}
           <div style={{ padding:"24px 28px" }}>{children}</div>
@@ -789,7 +795,14 @@ function KpiModal({ type, expenseView, jobSummaries, allJobSummaries, overhead, 
             />
             {untagged.length > 10 && (
               <div style={{ marginTop:8,fontSize:11,color:DIM,fontFamily:"'DM Sans',sans-serif",fontStyle:"italic" }}>
-                + {untagged.length - 10} more in the Expense Inbox
+                + {untagged.length - 10} more untagged expenses
+              </div>
+            )}
+            {onJumpToInbox && (
+              <div style={{ marginTop:16 }}>
+                <button className="btn act" onClick={() => { onClose(); onJumpToInbox(); }} style={{ fontSize:11, padding:"7px 18px" }}>
+                  Go to Sync Review →
+                </button>
               </div>
             )}
           </>
@@ -807,7 +820,7 @@ function KpiModal({ type, expenseView, jobSummaries, allJobSummaries, overhead, 
 
 // ─── TAB: DASHBOARD ───────────────────────────────────────────────────────────
 
-function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, dismissed, qbConnected, userId, clientType, dateRange, setDateRange, customStart, setCustomStart, customEnd, setCustomEnd }) {
+function Dashboard({ onJobClick, onEstimate, onJumpToInbox, jobSummaries, untagged, overhead, dismissed, qbConnected, userId, clientType, dateRange, setDateRange, customStart, setCustomStart, customEnd, setCustomEnd }) {
   const [sort, setSort]             = useState("profit");
   const [sortDir, setSortDir]       = useState("desc");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -1141,6 +1154,7 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, d
           totalExpenses={totalExpenses}
           onClose={() => setActiveKpi(null)}
           onJobClick={(job) => { setActiveKpi(null); onJobClick(job); }}
+          onJumpToInbox={onJumpToInbox}
         />
       )}
 
@@ -1166,10 +1180,20 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, d
             <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color: periodComparison.profitPct >= 0 ? ACCENT2 : RED, display:"flex", alignItems:"center", gap:5 }}>
               <span style={{ fontSize:13 }}>{periodComparison.profitPct >= 0 ? "↑" : "↓"}</span>
               {Math.abs(periodComparison.profitPct)}% vs {periodComparison.prevMonth}
-              <span style={{ color:DIM, fontSize:10, marginLeft:4 }}>· {heroMargin}% margin</span>
+              <span className="kpi-tooltip" style={{ color:DIM, fontSize:10, marginLeft:4, display:"inline-flex" }}>
+                · {heroMargin}% margin
+                <span className="tooltip-text" style={{ width:200 }}>
+                  {heroIsNet ? "Net margin" : "Gross margin"} = Profit ÷ Revenue. {heroIsNet ? "Accounts for fixed costs." : "Job costs only."}
+                </span>
+              </span>
             </div>
           ) : (
-            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:DIM }}>{heroMargin}% {heroIsNet ? "net" : "gross"} margin</div>
+            <div className="kpi-tooltip" style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:DIM, display:"inline-flex" }}>
+              {heroMargin}% {heroIsNet ? "net" : "gross"} margin
+              <span className="tooltip-text" style={{ width:200 }}>
+                {heroIsNet ? "Net margin" : "Gross margin"} = Profit ÷ Revenue. {heroIsNet ? "Accounts for fixed costs." : "Job costs only."}
+              </span>
+            </div>
           )}
         </div>
 
@@ -1197,12 +1221,12 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, d
             <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase" }}>
               {heroIsNet ? "Total Expenses" : "Job Expenses"}
             </div>
-            {/* DQ badge */}
+            {/* DQ badge with tooltip */}
             {(() => {
               const untaggedActive = filteredUntagged.filter(u => u.status !== 'dismissed');
               const hasIssues = untaggedActive.length > 0;
               return (
-                <div onClick={e => { e.stopPropagation(); setActiveKpi('quality'); }}
+                <div className="kpi-tooltip" onClick={e => { e.stopPropagation(); setActiveKpi('quality'); }}
                   style={{ border:`1.5px solid ${dqColor}`, borderRadius:5, background:`${dqColor}18`, padding:"4px 9px", cursor:"pointer", textAlign:"center", flexShrink:0, transition:"opacity 0.15s" }}
                   onMouseEnter={e=>e.currentTarget.style.opacity="0.7"}
                   onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
@@ -1212,6 +1236,9 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, d
                   <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, color:dqColor, marginTop:2 }}>
                     {dataQuality}% quality
                   </div>
+                  <span className="tooltip-text" style={{ width:200 }}>
+                    Data Quality Score: {dataQuality}% of expenses are tagged to a job or marked as overhead. Higher = more accurate profitability.
+                  </span>
                 </div>
               );
             })()}
@@ -1238,7 +1265,10 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, d
             </div>
           </div>
           {sorted.length === 0 ? (
-            <div style={{ padding:"40px 0",textAlign:"center",color:DIM,fontSize:13,fontFamily:"'DM Sans',sans-serif",fontStyle:"italic" }}>No jobs in this period</div>
+            <div style={{ padding:"36px 0",textAlign:"center" }}>
+              <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic",marginBottom:6 }}>No jobs in this period</div>
+              {dateRange !== "all" && <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM }}>Try selecting a wider date range above.</div>}
+            </div>
           ) : (
             <>
               {/* Table */}
@@ -1246,19 +1276,22 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, d
                 <thead>
                   <tr style={{ borderBottom:`2px solid ${BORDER}` }}>
                     {[
-                      { col:"name",    label:"Job",      align:"left"  },
-                      { col:"revenue", label:"Revenue",  align:"right" },
-                      { col:"costs",   label:"Costs",    align:"right" },
-                      { col:"profit",  label:"Profit",   align:"right" },
-                      { col:"margin",  label:"Margin",   align:"right" },
-                    ].map(({ col, label, align }) => (
+                      { col:"name",    label:"Job",      align:"left",  tip: null },
+                      { col:"revenue", label:"Revenue",  align:"right", tip: null },
+                      { col:"costs",   label:"Costs",    align:"right", tip: null },
+                      { col:"profit",  label:"Profit",   align:"right", tip: null },
+                      { col:"margin",  label:"Margin",   align:"right", tip: "Gross margin = Profit ÷ Revenue. Shows what % of revenue becomes profit after job costs." },
+                    ].map(({ col, label, align, tip }) => (
                       <th key={col} onClick={() => handleColSort(col)}
-                        style={{ padding:"7px 10px", textAlign:align, fontSize:9, letterSpacing:"0.08em", textTransform:"uppercase", color: sort===col ? DARK : DIM, fontWeight:600, cursor:"pointer", userSelect:"none", whiteSpace:"nowrap" }}>
-                        {label}
-                        {sort===col
-                          ? <span style={{ marginLeft:4, color:ACCENT }}>{sortDir==="asc"?"↑":"↓"}</span>
-                          : <span style={{ marginLeft:4, opacity:0.25 }}>↕</span>
-                        }
+                        style={{ padding:"7px 10px", textAlign:align, fontSize:9, letterSpacing:"0.08em", textTransform:"uppercase", color: sort===col ? DARK : DIM, fontWeight:600, cursor:"pointer", userSelect:"none", whiteSpace:"nowrap", position:"relative" }}>
+                        <span className={tip ? "kpi-tooltip" : undefined} style={{ display:"inline-flex", alignItems:"center", gap:3 }}>
+                          {label}
+                          {sort===col
+                            ? <span style={{ marginLeft:4, color:ACCENT }}>{sortDir==="asc"?"↑":"↓"}</span>
+                            : <span style={{ marginLeft:4, opacity:0.25 }}>↕</span>
+                          }
+                          {tip && <span className="tooltip-text" style={{ width:220, left:"auto", right:0, transform:"none", textTransform:"none", letterSpacing:"normal", fontWeight:400 }}>{tip}</span>}
+                        </span>
                       </th>
                     ))}
                   </tr>
@@ -1459,13 +1492,28 @@ function Dashboard({ onJobClick, onEstimate, jobSummaries, untagged, overhead, d
             </div>
           );
         }) : (
-          <div style={{ padding:"40px 20px",textAlign:"center",color:DIM,fontSize:13,fontFamily:"'DM Sans',sans-serif",fontStyle:"italic" }}>
-            No jobs had activity in this period
+          <div style={{ padding:"48px 20px",textAlign:"center" }}>
+            <div style={{ fontSize:28,marginBottom:12,opacity:0.3 }}>◈</div>
+            <div style={{ fontFamily:"'Lora',serif",fontSize:15,color:MID,fontStyle:"italic",marginBottom:6 }}>No jobs found in this period</div>
+            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM,marginBottom:16 }}>
+              {dateRange !== "all" ? "Try expanding the date range or selecting All." : "No job data has been synced yet."}
+            </div>
+            {dateRange !== "all" && (
+              <button className="btn" onClick={() => setDateRange("all")} style={{ fontSize:11, color:ACCENT }}>
+                Show all time →
+              </button>
+            )}
           </div>
         )}
       </div>
 
       {/* ── Vendor Cost Leaderboard ── */}
+      {vendorLeaderboard.length === 0 && typeFilteredJobs.length > 0 && (
+        <div className="card" style={{ marginTop:24,padding:"28px 26px",textAlign:"center" }}>
+          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,fontWeight:700,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:8 }}>Vendor Cost Breakdown</div>
+          <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>No vendor data yet — expenses will appear here after syncing.</div>
+        </div>
+      )}
       {vendorLeaderboard.length > 0 && (
         <div className="card" style={{ marginTop:24,padding:"22px 26px" }}>
           <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18 }}>
@@ -5301,6 +5349,8 @@ export default function App() {
   const [syncNudge, setSyncNudge]       = useState(null);  // { auto, suggested, needs_attention }
   const [showVendorSetup, setShowVendorSetup] = useState(false);
   const [vendorSetupIsFirstRun, setVendorSetupIsFirstRun] = useState(false);
+  const [appToast, setAppToast]          = useState(null); // { msg, color }
+  const appToastTimer                    = useRef(null);
 
   // ── Live data hook — loads from Supabase, falls back to mock
   const mockJobSummaries = buildJobSummaries({});
@@ -5465,6 +5515,12 @@ export default function App() {
   const clientType     = profile?.client_type || "quickbooks";
   const contractorName = profile?.name || session?.user?.email || "Your Account";
 
+  function showAppToast(msg, color = ACCENT2) {
+    clearTimeout(appToastTimer.current);
+    setAppToast({ msg, color });
+    appToastTimer.current = setTimeout(() => setAppToast(null), 3000);
+  }
+
   function handleJobClick(job) {
     setSelectedJob(job);
     setTab("detail");
@@ -5502,10 +5558,12 @@ export default function App() {
 
       // Refresh live data so Data Quality Score and job costs update
       await refreshData();
+      showAppToast(`Tagged to ${jobName}`);
     } catch (err) {
       console.error('Error saving tag to Supabase:', err);
       // Roll back optimistic update so item reappears in inbox
       setTagged(prev => prev.filter(t => t.id !== item.id));
+      showAppToast('Failed to save tag — please try again', RED);
     }
   }
 
@@ -5520,8 +5578,10 @@ export default function App() {
         .eq('id', item.id);
 
       await refreshData();
+      showAppToast('Marked as fixed cost overhead');
     } catch (err) {
       console.error('Error marking as overhead:', err);
+      showAppToast('Failed to update — please try again', RED);
     }
   }
 
@@ -5533,8 +5593,10 @@ export default function App() {
         .update({ status: 'dismissed' })
         .eq('id', id);
       await refreshData();
+      showAppToast('Expense dismissed', AMBER);
     } catch (err) {
       console.error('Error saving dismissal to Supabase:', err);
+      showAppToast('Failed to dismiss — please try again', RED);
     }
   }
 
@@ -5545,8 +5607,10 @@ export default function App() {
         .update({ status: 'pending' })
         .eq('id', id);
       await refreshData();
+      showAppToast('Expense restored to inbox');
     } catch (err) {
       console.error('Error restoring expense:', err);
+      showAppToast('Failed to restore — please try again', RED);
     }
   }
 
@@ -5574,10 +5638,12 @@ export default function App() {
           vendor:        item.vendor,
         }, { onConflict: 'id' });
       await refreshData();
+      showAppToast(`Confirmed — tagged to ${jobName}`);
     } catch (err) {
       console.error('Error confirming suggestion:', err);
       // Roll back optimistic update so item reappears
       setTagged(prev => prev.filter(t => t.id !== item.id));
+      showAppToast('Failed to confirm — please try again', RED);
     }
   }
 
@@ -5614,8 +5680,10 @@ export default function App() {
         .eq('id', item.id);
 
       await refreshData();
+      showAppToast(`Retagged to ${newJobName}`);
     } catch (err) {
       console.error('Error re-tagging expense:', err);
+      showAppToast('Failed to retag — please try again', RED);
     }
   }
 
@@ -5632,8 +5700,10 @@ export default function App() {
       await supabase.from('transactions').delete().eq('id', autoTxnId);
 
       await refreshData();
+      showAppToast('Auto-match undone — moved back to needs attention', AMBER);
     } catch (err) {
       console.error('Error undoing auto-match:', err);
+      showAppToast('Failed to undo — please try again', RED);
     }
   }
 
@@ -5698,7 +5768,7 @@ export default function App() {
 
       {/* ── First-login disclaimer modal ── */}
       {showDisclaimer && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(44,36,22,0.5)", zIndex:500, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
+        <div role="dialog" aria-modal="true" aria-label="Data disclaimer" onKeyDown={e => e.key === 'Escape' && setShowDisclaimer(false)} style={{ position:"fixed", inset:0, background:"rgba(44,36,22,0.5)", zIndex:500, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
           <div style={{ background:CARD, border:`1px solid ${BORDER}`, borderRadius:8, width:"100%", maxWidth:520, boxShadow:"0 20px 60px rgba(44,36,22,0.2)", padding:"32px 36px" }}>
             <div style={{ display:"flex", alignItems:"flex-start", gap:14, marginBottom:20 }}>
               <div style={{ width:36, height:36, borderRadius:6, background:"rgba(140,107,48,0.1)", border:`1px solid rgba(140,107,48,0.25)`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontSize:16 }}>ℹ</div>
@@ -5741,11 +5811,41 @@ export default function App() {
             </div>
           ))}
         </nav>
+        {/* Getting Started checklist — shown until all 3 steps complete */}
+        {clientType === "quickbooks" && (() => {
+          const step1 = qbConnected;
+          const step2 = allTagged.length > 0 || (autoMatched || []).length > 0;
+          const step3 = jobSummaries.length > 0 && dataSource === 'live';
+          const allDone = step1 && step2 && step3;
+          if (allDone) return null;
+          const steps = [
+            { label: "Connect QuickBooks", done: step1 },
+            { label: "Review your sync",   done: step2 },
+            { label: "View profitability", done: step3 },
+          ];
+          return (
+            <div style={{ margin:"0 12px 10px", borderRadius:6, border:"1px solid rgba(255,255,255,0.09)", background:"rgba(255,255,255,0.04)", padding:"12px 14px" }}>
+              <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase", color:"rgba(245,239,227,0.4)", marginBottom:10 }}>Getting Started</div>
+              {steps.map((s, i) => (
+                <div key={i} style={{ display:"flex", alignItems:"center", gap:9, marginBottom:7 }}>
+                  <div style={{ width:16, height:16, borderRadius:"50%", border:`1.5px solid ${s.done ? ACCENT2 : "rgba(255,255,255,0.2)"}`, background: s.done ? `${ACCENT2}22` : "transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontSize:9, color:ACCENT2 }}>
+                    {s.done ? "✓" : ""}
+                  </div>
+                  <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color: s.done ? "rgba(245,239,227,0.45)" : "rgba(245,239,227,0.75)", textDecoration: s.done ? "line-through" : "none" }}>{s.label}</span>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+
         {/* QB status */}
         {clientType === "quickbooks" && (
           <div style={{ padding:"14px 20px", borderTop:"1px solid rgba(255,255,255,0.07)" }}>
             <div style={{ display:"flex", alignItems:"center", gap:7 }}>
-              <div style={{ width:6, height:6, borderRadius:"50%", background: qbConnected ? ACCENT2 : AMBER, flexShrink:0 }}/>
+              {syncing
+                ? <span className="spinner" style={{ width:10, height:10, borderWidth:1.5 }}/>
+                : <div style={{ width:6, height:6, borderRadius:"50%", background: qbConnected ? ACCENT2 : AMBER, flexShrink:0 }}/>
+              }
               <span style={{ fontSize:11, fontFamily:"'DM Sans',sans-serif", color: qbConnected ? ACCENT2 : AMBER }}>
                 {syncing ? "Syncing…" : qbConnected ? "QuickBooks" : "Not connected"}
               </span>
@@ -5779,13 +5879,21 @@ export default function App() {
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ fontSize:11, fontFamily:"'DM Sans',sans-serif", color:"#F5EFE3", fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{contractorName}</div>
           </div>
-          <button className="help-btn" onClick={()=>setShowTutorial(true)} title="Tutorial" style={{ width:26, height:26, fontSize:11, flexShrink:0, background:"rgba(255,255,255,0.07)", borderColor:"rgba(255,255,255,0.12)", color:SIDEBAR_TEXT }}>?</button>
-          <button onClick={handleSignOut} style={{ background:"none", border:"none", cursor:"pointer", fontSize:10, color:SIDEBAR_DIM, fontFamily:"'DM Sans',sans-serif", padding:0, flexShrink:0 }}>Out</button>
+          <button className="help-btn" onClick={()=>setShowTutorial(true)} title="Open tutorial" aria-label="Open tutorial" style={{ width:26, height:26, fontSize:11, flexShrink:0, background:"rgba(255,255,255,0.07)", borderColor:"rgba(255,255,255,0.12)", color:SIDEBAR_TEXT }}>?</button>
+          <button onClick={handleSignOut} aria-label="Sign out" style={{ background:"none", border:"none", cursor:"pointer", fontSize:10, color:SIDEBAR_DIM, fontFamily:"'DM Sans',sans-serif", padding:0, flexShrink:0 }}>Out</button>
         </div>
       </div>
 
       {/* ── Right content wrapper ── */}
-      <div style={{ flex:1, display:"flex", flexDirection:"column", minWidth:0 }}>
+      <div style={{ flex:1, display:"flex", flexDirection:"column", minWidth:0, position:"relative" }}>
+
+      {/* ── App-level toast ── */}
+      {appToast && (
+        <div style={{ position:"fixed", bottom:32, left:"50%", transform:"translateX(-50%)", zIndex:900, background:DARK, color:"#F5EFE3", fontFamily:"'DM Sans',sans-serif", fontSize:13, fontWeight:500, padding:"11px 22px", borderRadius:7, boxShadow:"0 6px 24px rgba(44,36,22,0.22)", border:`1.5px solid ${appToast.color}`, display:"flex", alignItems:"center", gap:10, animation:"slideIn 0.2s ease", pointerEvents:"none" }}>
+          <span style={{ width:8, height:8, borderRadius:"50%", background:appToast.color, flexShrink:0 }}/>
+          {appToast.msg}
+        </div>
+      )}
 
       {/* ── QB error banner ── */}
       {qbError && (
@@ -5802,10 +5910,13 @@ export default function App() {
       {qbConnected && dataSource === 'mock' && (
         <div style={{ background: syncError ? "rgba(180,60,60,0.06)" : "rgba(92,122,90,0.06)", borderBottom:`1px solid ${syncError ? "rgba(180,60,60,0.25)" : "rgba(92,122,90,0.25)"}`, padding:"11px 36px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            <div style={{ width:6, height:6, borderRadius:"50%", background: syncError ? RED : ACCENT2 }}/>
+            {syncing
+              ? <span className="spinner"/>
+              : <div style={{ width:6, height:6, borderRadius:"50%", background: syncError ? RED : ACCENT2 }}/>
+            }
             <div style={{ fontSize:13, color: syncError ? RED : ACCENT2, fontFamily:"'DM Sans',sans-serif", fontWeight:500 }}>
               {syncing
-                ? "⏳ Syncing your QuickBooks data — this may take a minute for large accounts…"
+                ? "Syncing your QuickBooks data — this may take a minute for large accounts…"
                 : syncError
                   ? syncError
                   : "QuickBooks connected — click to load your real data"}
@@ -5834,7 +5945,7 @@ export default function App() {
 
       {/* ── Content ── */}
       <div style={{ flex:1 }}>
-        {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} onEstimate={()=>setTab("estimator")} jobSummaries={jobSummaries} untagged={[...untagged, ...(suggested||[])]} overhead={overhead} dismissed={dismissed} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
+        {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} onEstimate={()=>setTab("estimator")} onJumpToInbox={()=>setTab("inbox")} jobSummaries={jobSummaries} untagged={[...untagged, ...(suggested||[])]} overhead={overhead} dismissed={dismissed} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
         {tab==="inbox"     && <SyncReview autoMatched={autoMatched} suggested={suggested} untagged={untagged} allTagged={allTagged} overhead={overhead} dismissed={dismissed} jobSummaries={jobSummaries} vendorRules={vendorRules} onConfirmSuggestion={handleConfirmSuggestion} onTag={handleTag} onMarkOverhead={handleMarkOverhead} onDismiss={handleDismiss} onRestore={handleRestore} onRetag={handleRetag} onUndoAutoMatch={handleUndoAutoMatch} onSaveVendorRule={handleSaveVendorRule} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
         {tab==="detail"    && <JobDetail job={selectedJob} onBack={()=>setTab("dashboard")} untagged={untagged}/>}
         {tab==="clients"   && <ClientScorecard jobSummaries={jobSummaries}/>}
