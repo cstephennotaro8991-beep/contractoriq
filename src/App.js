@@ -128,10 +128,10 @@ const ACCENT = "#B8622A";   // terracotta / burnt sienna (primary action, highli
 const ACCENT2 = "#3E6B40";  // deep forest green (profit / positive)
 const RED    = "#9C3535";   // red-clay (losses / at-risk)
 const AMBER  = "#C49020";   // rich mustard amber (warnings / secondary)
-const BG     = "#D6CBBA";   // medium warm taupe (darker for contrast)
-const BG2    = "#C9BBAA";   // deeper taupe (hover/alternate rows)
-const CARD   = "#FEFDFB";   // near-white cream (high contrast against BG)
-const BORDER = "#C4B89E";   // defined taupe border
+const BG     = "#EEEAE0";   // warm linen (light, readable contrast with cards)
+const BG2    = "#E4DED2";   // slightly deeper taupe (hover/alternate rows)
+const CARD   = "#FEFDFB";   // near-white cream (pops cleanly against BG)
+const BORDER = "#D4CCBC";   // soft taupe border
 const DIM    = "#9C8A74";   // lighter warm grey (widens label/value contrast)
 const MID    = "#6B5E4E";   // medium walnut
 const DARK   = "#2C2416";   // deep walnut text
@@ -191,27 +191,30 @@ const MONTHLY_TREND = [
 
 // Date range options — "All" is handled separately as a standalone button
 const DATE_RANGES = [
-  { key: "30d",  label: "30 days",   months: 1  },
-  { key: "90d",  label: "90 days",   months: 3  },
-  { key: "6m",   label: "6 months",  months: 6  },
-  { key: "12m",  label: "12 months", months: 12 },
-  { key: "ytd",  label: "YTD",       months: null }, // special case
+  { key: "mtd",        label: "MTD"        },
+  { key: "qtd",        label: "QTD"        },
+  { key: "ytd",        label: "YTD"        },
+  { key: "prior_year", label: "Prior Year" },
 ];
 
 // Use actual current date for date range calculations
 const MOCK_TODAY = new Date();
 
 function getDateCutoff(rangeKey) {
-  if (!rangeKey || rangeKey === "all" || rangeKey === "custom") return null;
-  if (rangeKey === "ytd") return new Date(`${MOCK_TODAY.getFullYear()}-01-01`);
-  const range = DATE_RANGES.find(r => r.key === rangeKey);
-  if (!range) return null;
-  const cutoff = new Date(MOCK_TODAY);
-  cutoff.setMonth(cutoff.getMonth() - range.months);
-  return cutoff;
+  if (!rangeKey || rangeKey === "all" || rangeKey === "custom" || rangeKey === "prior_year") return null;
+  const y = MOCK_TODAY.getFullYear();
+  const m = MOCK_TODAY.getMonth(); // 0-indexed
+  if (rangeKey === "mtd")  return new Date(y, m, 1);
+  if (rangeKey === "qtd")  return new Date(y, Math.floor(m / 3) * 3, 1);
+  if (rangeKey === "ytd")  return new Date(y, 0, 1);
+  return null;
 }
 
 function filterJobsByDate(jobs, rangeKey, customStart, customEnd) {
+  if (rangeKey === "prior_year") {
+    const py = MOCK_TODAY.getFullYear() - 1;
+    return filterJobsByDate(jobs, "custom", `${py}-01-01`, `${py}-12-31`);
+  }
   if (rangeKey === "custom") {
     const start = customStart ? new Date(customStart) : null;
     const end   = customEnd   ? new Date(customEnd + "T23:59:59") : null;
@@ -260,6 +263,10 @@ function filterJobsByDate(jobs, rangeKey, customStart, customEnd) {
 
 function filterUntaggedByDate(items, rangeKey, customStart, customEnd) {
   if (rangeKey === "all") return items;
+  if (rangeKey === "prior_year") {
+    const py = MOCK_TODAY.getFullYear() - 1;
+    return filterUntaggedByDate(items, "custom", `${py}-01-01`, `${py}-12-31`);
+  }
   if (rangeKey === "custom") {
     const start = customStart ? new Date(customStart) : null;
     const end   = customEnd   ? new Date(customEnd + "T23:59:59") : null;
@@ -274,20 +281,6 @@ function filterUntaggedByDate(items, rangeKey, customStart, customEnd) {
   return items.filter(u => new Date(u.date) >= cutoff);
 }
 
-function filterTrendByDate(trend, rangeKey, customStart, customEnd) {
-  if (rangeKey === "custom") {
-    const start = customStart ? new Date(customStart) : null;
-    const end   = customEnd   ? new Date(customEnd + "T23:59:59") : null;
-    if (!start && !end) return trend;
-    return trend.filter(d => {
-      const date = new Date(d.date);
-      return (!start || date >= start) && (!end || date <= end);
-    });
-  }
-  const cutoff = getDateCutoff(rangeKey);
-  if (!cutoff) return trend;
-  return trend.filter(d => new Date(d.date) >= cutoff);
-}
 
 const JOB_OPTIONS = QB_CUSTOMERS.filter(c => c.Job).map(j => ({
   value: j.Id,
@@ -820,60 +813,28 @@ function KpiModal({ type, expenseView, jobSummaries, allJobSummaries, overhead, 
 
 // ─── TAB: DASHBOARD ───────────────────────────────────────────────────────────
 
-function Dashboard({ onJobClick, onEstimate, onJumpToInbox, jobSummaries, untagged, overhead, dismissed, qbConnected, userId, clientType, dateRange, setDateRange, customStart, setCustomStart, customEnd, setCustomEnd }) {
+function Dashboard({ onJobClick, onEstimate, onJumpToInbox, onClientClick, jobSummaries, untagged, overhead, dismissed, qbConnected, userId, clientType, dateRange, setDateRange, customStart, setCustomStart, customEnd, setCustomEnd }) {
   const [sort, setSort]             = useState("profit");
   const [sortDir, setSortDir]       = useState("desc");
   const [expenseView, setExpenseView] = useState("job");
   const [activeKpi, setActiveKpi]     = useState(null); // 'revenue' | 'expenses' | 'profit' | 'jobs' | 'quality'
   const [alertsOpen, setAlertsOpen]   = useState(false);
   const [jobTableRows, setJobTableRows] = useState(10); // rows shown in job table
+  const [searchQ, setSearchQ]           = useState("");
+  const [searchOpen, setSearchOpen]     = useState(false);
+  const searchRef                       = useRef(null);
 
-  // Build monthly trend dynamically from live job summaries
-  const dynamicTrend = useMemo(() => {
-    const monthMap = {};
-    jobSummaries.forEach(j => {
-      j.invoices.forEach(inv => {
-        if (!inv.TxnDate) return;
-        const d     = new Date(inv.TxnDate);
-        const key   = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-        const month = d.toLocaleDateString('en-US', { month:'short' });
-        const year  = String(d.getFullYear()).slice(-2);
-        const label = `${month} '${year}`;
-        if (!monthMap[key]) monthMap[key] = { month: label, date: key+'-01', revenue:0, costs:0 };
-        monthMap[key].revenue += inv.TotalAmt || 0;
-      });
-      j.purchases.forEach(p => {
-        if (!p.TxnDate) return;
-        const d   = new Date(p.TxnDate);
-        const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-        const month = d.toLocaleDateString('en-US', { month:'short' });
-        const year  = String(d.getFullYear()).slice(-2);
-        const label = `${month} '${year}`;
-        if (!monthMap[key]) monthMap[key] = { month: label, date: key+'-01', revenue:0, costs:0 };
-        monthMap[key].costs += p.TotalAmt || 0;
-      });
-    });
-    return Object.values(monthMap)
-      .sort((a,b) => a.date.localeCompare(b.date))
-      .map(d => ({ ...d, profit: d.revenue - d.costs }));
-  }, [jobSummaries]);
-
-  const TREND = dynamicTrend.length > 0 ? dynamicTrend : MONTHLY_TREND;
+  // Close search dropdown on outside click
+  useEffect(() => {
+    function handleClick(e) { if (searchRef.current && !searchRef.current.contains(e.target)) setSearchOpen(false); }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
 
   // Apply date filter
   const filteredJobs     = dateRange === "all" ? jobSummaries : filterJobsByDate(jobSummaries, dateRange, customStart, customEnd);
-  const filteredTrend    = dateRange === "all" ? TREND : filterTrendByDate(TREND, dateRange, customStart, customEnd);
   const filteredUntagged = filterUntaggedByDate(untagged, dateRange, customStart, customEnd);
 
-
-  // Period comparison — most recent month vs the one before it
-  const periodComparison = useMemo(() => {
-    if (filteredTrend.length < 2) return null;
-    const cur  = filteredTrend[filteredTrend.length - 1];
-    const prev = filteredTrend[filteredTrend.length - 2];
-    const pct  = (val, base) => base !== 0 ? Math.round(((val - base) / Math.abs(base)) * 100) : null;
-    return { profitPct: pct(cur.profit, prev.profit), revPct: pct(cur.revenue, prev.revenue), prevMonth: prev.month };
-  }, [filteredTrend]);
 
   // Job type filter
   const typeFilteredJobs = filteredJobs;
@@ -920,6 +881,51 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, jobSummaries, untagg
   const heroMargin = totalRev > 0 ? ((heroProfit / totalRev) * 100).toFixed(1) : "0.0";
   const heroColor  = heroProfit >= 0 ? ACCENT2 : RED;
 
+  // ── Prior-period comparison — used for % change in KPI cards ──
+  // Computes the equivalent previous window for each range key, then sums job data.
+  const priorPeriodComparison = useMemo(() => {
+    if (dateRange === "all" || dateRange === "custom") return null;
+    const y = MOCK_TODAY.getFullYear();
+    const m = MOCK_TODAY.getMonth(); // 0-indexed
+    const d = MOCK_TODAY.getDate();
+    let priorStart, priorEnd;
+    if (dateRange === "mtd") {
+      const prevM = m === 0 ? 11 : m - 1;
+      const prevY = m === 0 ? y - 1 : y;
+      const maxDay = new Date(prevY, prevM + 1, 0).getDate();
+      const lastDay = Math.min(d, maxDay);
+      priorStart = `${prevY}-${String(prevM+1).padStart(2,'0')}-01`;
+      priorEnd   = `${prevY}-${String(prevM+1).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+    } else if (dateRange === "qtd") {
+      const curQ = Math.floor(m / 3);
+      const prevQ = curQ === 0 ? 3 : curQ - 1;
+      const prevQYear = curQ === 0 ? y - 1 : y;
+      const prevQStartM = prevQ * 3;
+      const msIntoCurQ = MOCK_TODAY - new Date(y, curQ * 3, 1);
+      const priorEndDate = new Date(new Date(prevQYear, prevQStartM, 1).getTime() + msIntoCurQ);
+      priorStart = `${prevQYear}-${String(prevQStartM+1).padStart(2,'0')}-01`;
+      priorEnd   = priorEndDate.toISOString().split('T')[0];
+    } else if (dateRange === "ytd") {
+      priorStart = `${y-1}-01-01`;
+      priorEnd   = `${y-1}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    } else if (dateRange === "prior_year") {
+      priorStart = `${y-2}-01-01`;
+      priorEnd   = `${y-2}-12-31`;
+    }
+    if (!priorStart || !priorEnd) return null;
+    const pJobs  = filterJobsByDate(jobSummaries, "custom", priorStart, priorEnd);
+    const pRev   = pJobs.reduce((s, j) => s + j.revenue, 0);
+    const pCost  = pJobs.reduce((s, j) => s + j.costs, 0);
+    const pProfit = pRev - pCost;
+    const lbl = { mtd:"vs prior month", qtd:"vs prior quarter", ytd:"vs prior year", prior_year:"vs year before" }[dateRange] || "vs prior period";
+    return { pRev, pCost, pProfit, lbl };
+  }, [jobSummaries, dateRange]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const ppcRevPct    = priorPeriodComparison && priorPeriodComparison.pRev    !== 0 ? Math.round(((totalRev    - priorPeriodComparison.pRev)    / Math.abs(priorPeriodComparison.pRev))    * 100) : null;
+  const ppcCostPct   = priorPeriodComparison && priorPeriodComparison.pCost   !== 0 ? Math.round(((totalCost   - priorPeriodComparison.pCost)   / Math.abs(priorPeriodComparison.pCost))   * 100) : null;
+  const ppcProfitPct = priorPeriodComparison && priorPeriodComparison.pProfit !== 0 ? Math.round(((heroProfit  - priorPeriodComparison.pProfit) / Math.abs(priorPeriodComparison.pProfit)) * 100) : null;
+  const ppcLbl = priorPeriodComparison?.lbl ?? "";
+
   // Mid-job margin alerts
   const atRiskJobs = typeFilteredJobs.filter(j =>
     j.status === "In Progress" && j.revenue > 0 && (j.costs / j.revenue) > 0.85
@@ -936,47 +942,114 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, jobSummaries, untagg
     ? `All jobs · ${firstDate} – ${lastDate}`
     : firstDate ? `All jobs · ${firstDate}` : "All jobs";
 
-  const rangeLabel = dateRange === "all"
-    ? allTimeLabel
-    : dateRange === "custom"
-      ? `${customStart || "…"} → ${customEnd || "…"} · ${typeFilteredJobs.length} job${typeFilteredJobs.length!==1?"s":""}`
-      : `${DATE_RANGES.find(r=>r.key===dateRange)?.label} · ${typeFilteredJobs.length} job${typeFilteredJobs.length!==1?"s":""}`;
+  const rangeLabel = dateRange === "custom"
+    ? `${customStart || "…"} → ${customEnd || "…"} · ${typeFilteredJobs.length} job${typeFilteredJobs.length!==1?"s":""}`
+    : dateRange === "all"
+      ? allTimeLabel
+      : `${DATE_RANGES.find(r=>r.key===dateRange)?.label ?? dateRange.toUpperCase()} · ${typeFilteredJobs.length} job${typeFilteredJobs.length!==1?"s":""}`;
 
   // ── Additional alert types ──
   const lossJobs      = typeFilteredJobs.filter(j => j.status !== "In Progress" && j.profit < 0);
   const lowMarginJobs = typeFilteredJobs.filter(j => j.status !== "In Progress" && j.profit >= 0 && parseFloat(j.marginPct) < 10 && j.revenue > 0);
 
-  // ── Vendor cost leaderboard — top vendors by total spend across filtered jobs ──
-  const vendorLeaderboard = useMemo(() => {
-    const map = {};
-    typeFilteredJobs.forEach(job => {
-      Object.entries(job.costByVendor || {}).forEach(([vendor, amount]) => {
-        if (!map[vendor]) map[vendor] = { vendor, total: 0, jobCount: 0 };
-        map[vendor].total    += amount;
-        map[vendor].jobCount += 1;
-      });
-    });
-    return Object.values(map).sort((a, b) => b.total - a.total).slice(0, 10);
-  }, [typeFilteredJobs]);
-  const vendorTotal = vendorLeaderboard.reduce((s, v) => s + v.total, 0);
+  // ── Search — jobs and unique clients across all (unfiltered) summaries ──
+  const uniqueClients = useMemo(() => {
+    const seen = new Set();
+    return jobSummaries.map(j => j.clientName).filter(n => n && !seen.has(n) && seen.add(n)).sort();
+  }, [jobSummaries]);
+
+  const searchResults = useMemo(() => {
+    const q = searchQ.trim().toLowerCase();
+    if (!q) return { jobs: [], clients: [] };
+    return {
+      jobs:    jobSummaries.filter(j => j.name.toLowerCase().includes(q)).slice(0, 6),
+      clients: uniqueClients.filter(c => c.toLowerCase().includes(q)).slice(0, 4),
+    };
+  }, [searchQ, jobSummaries, uniqueClients]);
+
+  const hasSearchResults = searchResults.jobs.length > 0 || searchResults.clients.length > 0;
 
   return (
     <div style={{ padding:"32px 36px", background:BG, minHeight:"100vh" }}>
 
-      {/* Page title + date slicer */}
-      <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:28 }}>
-        <div>
+      {/* Page title + search + date slicer */}
+      <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:28,gap:20 }}>
+        <div style={{ flexShrink:0 }}>
           <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em" }}>Job Profitability Overview</h1>
           <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>{rangeLabel}</p>
         </div>
-        <div style={{ display:"flex",alignItems:"center",gap:6,marginTop:4,flexWrap:"wrap" }}>
+
+        {/* ── Search bar ── */}
+        <div ref={searchRef} style={{ position:"relative", flex:"0 0 260px" }}>
+          <div style={{ position:"relative" }}>
+            <span style={{ position:"absolute", left:11, top:"50%", transform:"translateY(-50%)", fontSize:13, color:DIM, pointerEvents:"none" }}>⌕</span>
+            <input
+              type="text"
+              placeholder="Search jobs or clients…"
+              value={searchQ}
+              onChange={e => { setSearchQ(e.target.value); setSearchOpen(true); }}
+              onFocus={e => { e.currentTarget.style.borderColor = ACCENT; setSearchOpen(true); }}
+              onBlur={e => { e.currentTarget.style.borderColor = BORDER; }}
+              style={{ width:"100%", boxSizing:"border-box", padding:"8px 12px 8px 32px", borderRadius:6, border:`1px solid ${BORDER}`, background:CARD, fontFamily:"'DM Sans',sans-serif", fontSize:12, color:DARK, outline:"none", transition:"border 0.15s", boxShadow:"0 1px 3px rgba(44,36,22,0.06)" }}
+            />
+            {searchQ && (
+              <button onClick={() => { setSearchQ(""); setSearchOpen(false); }}
+                style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", fontSize:14, color:DIM, lineHeight:1, padding:0 }}>×</button>
+            )}
+          </div>
+          {searchOpen && searchQ.trim() && (
+            <div style={{ position:"absolute", top:"calc(100% + 6px)", left:0, right:0, background:CARD, border:`1px solid ${BORDER}`, borderRadius:7, boxShadow:"0 8px 24px rgba(44,36,22,0.14)", zIndex:200, overflow:"hidden" }}>
+              {!hasSearchResults ? (
+                <div style={{ padding:"14px 16px", fontFamily:"'DM Sans',sans-serif", fontSize:12, color:DIM, fontStyle:"italic" }}>No results found</div>
+              ) : (
+                <>
+                  {searchResults.jobs.length > 0 && (
+                    <div>
+                      <div style={{ padding:"8px 14px 4px", fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase", color:DIM }}>Jobs</div>
+                      {searchResults.jobs.map(j => (
+                        <div key={j.id} onClick={() => { setSearchQ(""); setSearchOpen(false); onJobClick && onJobClick(j); }}
+                          style={{ padding:"9px 14px", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center", borderTop:`1px solid ${BORDER}`, transition:"background 0.1s" }}
+                          onMouseOver={e => e.currentTarget.style.background = BG2}
+                          onMouseOut={e => e.currentTarget.style.background = "transparent"}>
+                          <div>
+                            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:DARK, fontWeight:500 }}>{j.name}</div>
+                            {j.clientName && <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, marginTop:1 }}>{j.clientName}</div>}
+                          </div>
+                          <span style={{ fontFamily:"'DM Mono',monospace", fontSize:11, color: j.profit >= 0 ? ACCENT2 : RED, fontWeight:600 }}>
+                            {j.profit >= 0 ? "+" : ""}{$(j.profit)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {searchResults.clients.length > 0 && (
+                    <div>
+                      <div style={{ padding:"8px 14px 4px", fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase", color:DIM, borderTop: searchResults.jobs.length > 0 ? `1px solid ${BORDER}` : "none" }}>Clients</div>
+                      {searchResults.clients.map(c => (
+                        <div key={c} onClick={() => { setSearchQ(""); setSearchOpen(false); onClientClick && onClientClick(); }}
+                          style={{ padding:"9px 14px", cursor:"pointer", display:"flex", alignItems:"center", gap:10, borderTop:`1px solid ${BORDER}`, transition:"background 0.1s" }}
+                          onMouseOver={e => e.currentTarget.style.background = BG2}
+                          onMouseOut={e => e.currentTarget.style.background = "transparent"}>
+                          <span style={{ fontSize:14, color:DIM }}>◉</span>
+                          <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:DARK }}>{c}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── Date range controls ── */}
+        <div style={{ display:"flex",alignItems:"center",gap:6,marginTop:4,flexWrap:"wrap",flexShrink:0 }}>
           <div style={{ display:"flex",border:`1px solid ${BORDER}`,borderRadius:5,overflow:"hidden",background:CARD }}>
             {DATE_RANGES.map((r,i) => (
               <button key={r.key} onClick={()=>setDateRange(r.key)} style={{ cursor:"pointer",padding:"7px 13px",fontSize:11,fontWeight:500,fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.03em",border:"none",borderRight:i<DATE_RANGES.length-1?`1px solid ${BORDER}`:"none",background:dateRange===r.key?ACCENT:CARD,color:dateRange===r.key?CARD:MID,transition:"all 0.15s" }}>{r.label}</button>
             ))}
           </div>
           <button onClick={()=>setDateRange("custom")} style={{ cursor:"pointer",padding:"7px 14px",fontSize:11,fontWeight:500,fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.03em",border:`1px solid ${BORDER}`,borderRadius:5,background:dateRange==="custom"?ACCENT:CARD,color:dateRange==="custom"?CARD:MID,transition:"all 0.15s" }}>Custom</button>
-          <button onClick={()=>setDateRange("all")} style={{ cursor:"pointer",padding:"7px 14px",fontSize:11,fontWeight:500,fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.03em",border:`1px solid ${BORDER}`,borderRadius:5,background:dateRange==="all"?DARK:CARD,color:dateRange==="all"?CARD:MID,transition:"all 0.15s" }}>All</button>
           {dateRange === "custom" && (
             <div style={{ display:"flex",alignItems:"center",gap:6,marginLeft:4 }}>
               <input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)}
@@ -1107,25 +1180,20 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, jobSummaries, untagg
             </div>
           </div>
           <div style={{ fontFamily:"'Lora',serif", fontSize:46, fontWeight:700, color:heroColor, letterSpacing:"-0.03em", lineHeight:1.05, margin:"8px 0 6px" }}>{$(heroProfit)}</div>
-          {periodComparison?.profitPct != null ? (
-            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color: periodComparison.profitPct >= 0 ? ACCENT2 : RED, display:"flex", alignItems:"center", gap:5 }}>
-              <span style={{ fontSize:13 }}>{periodComparison.profitPct >= 0 ? "↑" : "↓"}</span>
-              {Math.abs(periodComparison.profitPct)}% vs {periodComparison.prevMonth}
-              <span className="kpi-tooltip" style={{ color:DIM, fontSize:10, marginLeft:4, display:"inline-flex" }}>
-                · {heroMargin}% margin
-                <span className="tooltip-text" style={{ width:200 }}>
-                  {heroIsNet ? "Net margin" : "Gross margin"} = Profit ÷ Revenue. {heroIsNet ? "Accounts for fixed costs." : "Job costs only."}
-                </span>
+          <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
+            {ppcProfitPct != null && (
+              <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, fontWeight:600, color: ppcProfitPct >= 0 ? ACCENT2 : RED, display:"flex", alignItems:"center", gap:3 }}>
+                {ppcProfitPct >= 0 ? "↑" : "↓"} {Math.abs(ppcProfitPct)}%
+                <span style={{ fontWeight:400, color:DIM, fontSize:10 }}>&nbsp;{ppcLbl}</span>
               </span>
-            </div>
-          ) : (
-            <div className="kpi-tooltip" style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:DIM, display:"inline-flex" }}>
+            )}
+            <div className="kpi-tooltip" style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DIM, display:"inline-flex" }}>
               {heroMargin}% {heroIsNet ? "net" : "gross"} margin
               <span className="tooltip-text" style={{ width:200 }}>
                 {heroIsNet ? "Net margin" : "Gross margin"} = Profit ÷ Revenue. {heroIsNet ? "Accounts for fixed costs." : "Job costs only."}
               </span>
             </div>
-          )}
+          </div>
         </div>
 
         {/* REVENUE */}
@@ -1133,14 +1201,13 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, jobSummaries, untagg
           style={{ padding:"22px 24px", cursor:"pointer", borderTop:`4px solid ${ACCENT}`, display:"flex", flexDirection:"column", justifyContent:"space-between", minHeight:130 }}>
           <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:700, letterSpacing:"0.12em", color:DIM, textTransform:"uppercase" }}>Revenue</div>
           <div>
-            <div style={{ display:"flex", alignItems:"baseline", gap:10, margin:"8px 0 4px" }}>
-              <span style={{ fontFamily:"'Lora',serif", fontSize:38, fontWeight:700, color:DARK }}>{$(totalRev)}</span>
-              {periodComparison?.revPct != null && (
-                <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:600, color: periodComparison.revPct >= 0 ? ACCENT2 : RED }}>
-                  {periodComparison.revPct >= 0 ? "↑" : "↓"} {Math.abs(periodComparison.revPct)}%
-                </span>
-              )}
-            </div>
+            <div style={{ fontFamily:"'Lora',serif", fontSize:38, fontWeight:700, color:DARK, margin:"8px 0 4px" }}>{$(totalRev)}</div>
+            {ppcRevPct != null ? (
+              <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:600, color: ppcRevPct >= 0 ? ACCENT2 : RED, display:"flex", alignItems:"center", gap:3, marginBottom:2 }}>
+                {ppcRevPct >= 0 ? "↑" : "↓"} {Math.abs(ppcRevPct)}%
+                <span style={{ fontWeight:400, color:DIM, fontSize:10 }}>&nbsp;{ppcLbl}</span>
+              </div>
+            ) : null}
             <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM }}>{typeFilteredJobs.length} job{typeFilteredJobs.length!==1?"s":""} billed</div>
           </div>
         </div>
@@ -1178,6 +1245,12 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, jobSummaries, untagg
             <div style={{ fontFamily:"'Lora',serif", fontSize:38, fontWeight:700, color:MID, margin:"8px 0 4px" }}>
               {heroIsNet ? $(totalCost + totalOverhead) : $(totalCost)}
             </div>
+            {ppcCostPct != null ? (
+              <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:600, color: ppcCostPct <= 0 ? ACCENT2 : RED, display:"flex", alignItems:"center", gap:3, marginBottom:2 }}>
+                {ppcCostPct <= 0 ? "↓" : "↑"} {Math.abs(ppcCostPct)}%
+                <span style={{ fontWeight:400, color:DIM, fontSize:10 }}>&nbsp;{ppcLbl}</span>
+              </div>
+            ) : null}
             <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM }}>
               {heroIsNet ? `${$(totalCost)} job + ${$(totalOverhead)} fixed` : `${typeFilteredJobs.reduce((s,j)=>s+j.purchases.length,0)} job-tagged`}
             </div>
@@ -1186,129 +1259,93 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, jobSummaries, untagg
 
       </div>
 
-      <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:18,marginBottom:28 }}>
-        <div className="card" style={{ padding:"22px 26px" }}>
-          {/* Header */}
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16 }}>
-            <div>
-              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:5,fontWeight:500 }}>Profit by Job</div>
-              <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>{sorted.length} job{sorted.length!==1?"s":""} · click headers to sort</div>
-            </div>
+      {/* ── Active Jobs table — full width ── */}
+      <div className="card" style={{ padding:"22px 26px", marginBottom:28 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16 }}>
+          <div>
+            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:5,fontWeight:500 }}>Active Jobs</div>
+            <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>{sorted.length} job{sorted.length!==1?"s":""} · click headers to sort</div>
           </div>
-          {sorted.length === 0 ? (
-            <div style={{ padding:"36px 0",textAlign:"center" }}>
-              <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic",marginBottom:6 }}>No jobs in this period</div>
-              {dateRange !== "all" && <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM }}>Try selecting a wider date range above.</div>}
-            </div>
-          ) : (
-            <>
-              {/* Table */}
-              <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12, fontFamily:"'DM Sans',sans-serif" }}>
-                <thead>
-                  <tr style={{ borderBottom:`2px solid ${BORDER}` }}>
-                    {[
-                      { col:"name",    label:"Job",      align:"left",  tip: null },
-                      { col:"revenue", label:"Revenue",  align:"right", tip: null },
-                      { col:"costs",   label:"Costs",    align:"right", tip: null },
-                      { col:"profit",  label:"Profit",   align:"right", tip: null },
-                      { col:"margin",  label:"Margin",   align:"right", tip: "Gross margin = Profit ÷ Revenue. Shows what % of revenue becomes profit after job costs." },
-                    ].map(({ col, label, align, tip }) => (
-                      <th key={col} onClick={() => handleColSort(col)}
-                        style={{ padding:"7px 10px", textAlign:align, fontSize:9, letterSpacing:"0.08em", textTransform:"uppercase", color: sort===col ? DARK : DIM, fontWeight:600, cursor:"pointer", userSelect:"none", whiteSpace:"nowrap", position:"relative" }}>
-                        <span className={tip ? "kpi-tooltip" : undefined} style={{ display:"inline-flex", alignItems:"center", gap:3 }}>
-                          {label}
-                          {sort===col
-                            ? <span style={{ marginLeft:4, color:ACCENT }}>{sortDir==="asc"?"↑":"↓"}</span>
-                            : <span style={{ marginLeft:4, opacity:0.25 }}>↕</span>
-                          }
-                          {tip && <span className="tooltip-text" style={{ width:220, left:"auto", right:0, transform:"none", textTransform:"none", letterSpacing:"normal", fontWeight:400 }}>{tip}</span>}
-                        </span>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {(() => {
-                    const maxM = Math.max(...sorted.map(j => Math.max(0, parseFloat(j.marginPct))), 1);
-                    return sorted.slice(0, jobTableRows).map((j, i) => {
-                      const m = parseFloat(j.marginPct);
-                      const profitColor = j.profit < 0 ? RED : m >= 20 ? ACCENT2 : m >= 10 ? AMBER : DIM;
-                      const barW = j.profit < 0 ? 0 : Math.min(100, (m / maxM) * 100);
-                      const barColor = m >= 20 ? ACCENT2 : m >= 10 ? AMBER : RED;
-                      return (
-                        <tr key={j.id || i}
-                          onClick={() => onJobClick && onJobClick(j)}
-                          style={{ borderBottom:`1px solid ${BORDER}`, cursor: onJobClick ? "pointer" : "default", transition:"background 0.1s" }}
-                          onMouseOver={e => e.currentTarget.style.background = BG2}
-                          onMouseOut={e => e.currentTarget.style.background = "transparent"}>
-                          <td style={{ padding:"9px 10px", color:DARK, fontWeight:500, maxWidth:160, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={j.name}>{j.name}</td>
-                          <td style={{ padding:"9px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, color:MID }}>{$(j.revenue)}</td>
-                          <td style={{ padding:"9px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, color:MID }}>{$(j.costs)}</td>
-                          <td style={{ padding:"9px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, fontWeight:700, color:profitColor }}>{j.profit >= 0 ? "+" : ""}{$(j.profit)}</td>
-                          <td style={{ padding:"9px 10px", textAlign:"right" }}>
-                            <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:3 }}>
-                              <span style={{ fontFamily:"'DM Mono',monospace", fontSize:11, fontWeight:600, color:barColor }}>{j.marginPct}%</span>
-                              <div style={{ width:52, height:3, background:BORDER, borderRadius:2, overflow:"hidden" }}>
-                                <div style={{ height:"100%", width:`${barW}%`, background:barColor, borderRadius:2, transition:"width 0.3s" }}/>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    });
-                  })()}
-                </tbody>
-              </table>
-              {/* Show more / show less */}
-              {sorted.length > 10 && (
-                <div style={{ marginTop:12, textAlign:"center" }}>
-                  {jobTableRows < sorted.length ? (
-                    <button className="btn" onClick={() => setJobTableRows(sorted.length)} style={{ fontSize:11, color:ACCENT }}>
-                      Show all {sorted.length} jobs ↓
-                    </button>
-                  ) : (
-                    <button className="btn" onClick={() => setJobTableRows(10)} style={{ fontSize:11, color:DIM }}>
-                      Show less ↑
-                    </button>
-                  )}
-                </div>
-              )}
-            </>
-          )}
         </div>
-
-        {/* Vendor Cost Breakdown — replaces Profitability Trend */}
-        {vendorLeaderboard.length === 0 ? (
-          <div className="card" style={{ padding:"28px 26px", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", textAlign:"center" }}>
-            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,fontWeight:700,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:10 }}>Vendor Cost Breakdown</div>
-            <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>No vendor data yet — expenses will appear here after syncing.</div>
+        {sorted.length === 0 ? (
+          <div style={{ padding:"36px 0",textAlign:"center" }}>
+            <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic",marginBottom:6 }}>No jobs in this period</div>
+            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM }}>Try selecting a different date range above.</div>
           </div>
         ) : (
-          <div className="card" style={{ padding:"22px 26px" }}>
-            <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18 }}>
-              <div>
-                <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:4,fontWeight:500 }}>Vendor Cost Breakdown</div>
-                <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>Where your money is going — top {vendorLeaderboard.length} vendors</div>
+          <>
+            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12, fontFamily:"'DM Sans',sans-serif" }}>
+              <thead>
+                <tr style={{ borderBottom:`2px solid ${BORDER}` }}>
+                  {[
+                    { col:"name",    label:"Job",      align:"left"  },
+                    { col:"client",  label:"Client",   align:"left"  },
+                    { col:"revenue", label:"Revenue",  align:"right" },
+                    { col:"costs",   label:"Costs",    align:"right" },
+                    { col:"profit",  label:"Profit",   align:"right" },
+                    { col:"margin",  label:"Margin",   align:"right", tip:"Gross margin = Profit ÷ Revenue. Shows what % of revenue becomes profit after job costs." },
+                  ].map(({ col, label, align, tip }) => (
+                    <th key={col} onClick={() => handleColSort(col)}
+                      style={{ padding:"7px 10px", textAlign:align, fontSize:9, letterSpacing:"0.08em", textTransform:"uppercase", color: sort===col ? DARK : DIM, fontWeight:600, cursor:"pointer", userSelect:"none", whiteSpace:"nowrap", position:"relative" }}>
+                      <span className={tip ? "kpi-tooltip" : undefined} style={{ display:"inline-flex", alignItems:"center", gap:3 }}>
+                        {label}
+                        {sort===col
+                          ? <span style={{ marginLeft:4, color:ACCENT }}>{sortDir==="asc"?"↑":"↓"}</span>
+                          : <span style={{ marginLeft:4, opacity:0.25 }}>↕</span>
+                        }
+                        {tip && <span className="tooltip-text" style={{ width:220, left:"auto", right:0, transform:"none", textTransform:"none", letterSpacing:"normal", fontWeight:400 }}>{tip}</span>}
+                      </span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  const maxM = Math.max(...sorted.map(j => Math.max(0, parseFloat(j.marginPct))), 1);
+                  return sorted.slice(0, jobTableRows).map((j, i) => {
+                    const m = parseFloat(j.marginPct);
+                    const profitColor = j.profit < 0 ? RED : m >= 20 ? ACCENT2 : m >= 10 ? AMBER : DIM;
+                    const barW = j.profit < 0 ? 0 : Math.min(100, (m / maxM) * 100);
+                    const barColor = m >= 20 ? ACCENT2 : m >= 10 ? AMBER : RED;
+                    return (
+                      <tr key={j.id || i}
+                        onClick={() => onJobClick && onJobClick(j)}
+                        style={{ borderBottom:`1px solid ${BORDER}`, cursor: onJobClick ? "pointer" : "default", transition:"background 0.1s" }}
+                        onMouseOver={e => e.currentTarget.style.background = BG2}
+                        onMouseOut={e => e.currentTarget.style.background = "transparent"}>
+                        <td style={{ padding:"9px 10px", color:DARK, fontWeight:500, maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={j.name}>{j.name}</td>
+                        <td style={{ padding:"9px 10px", color:MID, maxWidth:180, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={j.clientName}>{j.clientName || "—"}</td>
+                        <td style={{ padding:"9px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, color:MID }}>{$(j.revenue)}</td>
+                        <td style={{ padding:"9px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, color:MID }}>{$(j.costs)}</td>
+                        <td style={{ padding:"9px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, fontWeight:700, color:profitColor }}>{j.profit >= 0 ? "+" : ""}{$(j.profit)}</td>
+                        <td style={{ padding:"9px 10px", textAlign:"right" }}>
+                          <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:3 }}>
+                            <span style={{ fontFamily:"'DM Mono',monospace", fontSize:11, fontWeight:600, color:barColor }}>{j.marginPct}%</span>
+                            <div style={{ width:52, height:3, background:BORDER, borderRadius:2, overflow:"hidden" }}>
+                              <div style={{ height:"100%", width:`${barW}%`, background:barColor, borderRadius:2, transition:"width 0.3s" }}/>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  });
+                })()}
+              </tbody>
+            </table>
+            {sorted.length > 10 && (
+              <div style={{ marginTop:12, textAlign:"center" }}>
+                {jobTableRows < sorted.length ? (
+                  <button className="btn" onClick={() => setJobTableRows(sorted.length)} style={{ fontSize:11, color:ACCENT }}>
+                    Show all {sorted.length} jobs ↓
+                  </button>
+                ) : (
+                  <button className="btn" onClick={() => setJobTableRows(10)} style={{ fontSize:11, color:DIM }}>
+                    Show less ↑
+                  </button>
+                )}
               </div>
-              <div style={{ fontFamily:"'DM Mono',monospace",fontSize:13,color:DIM }}>{$(Math.round(vendorTotal))} total</div>
-            </div>
-            <div style={{ display:"flex",flexDirection:"column",gap:9 }}>
-              {vendorLeaderboard.map((v, i) => {
-                const pct = vendorTotal > 0 ? (v.total / vendorTotal) * 100 : 0;
-                return (
-                  <div key={v.vendor} style={{ display:"flex",alignItems:"center",gap:12 }}>
-                    <div style={{ width:20,textAlign:"right",fontFamily:"'DM Mono',monospace",fontSize:10,color:DIM }}>{i+1}</div>
-                    <div style={{ width:160,fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DARK,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{v.vendor}</div>
-                    <div style={{ flex:1,height:8,background:BORDER,borderRadius:4,overflow:"hidden" }}>
-                      <div style={{ height:"100%",width:`${pct}%`,background:i===0?ACCENT:i===1?ACCENT2:MID,borderRadius:4,transition:"width 0.4s",opacity:1-i*0.06 }}/>
-                    </div>
-                    <div style={{ width:72,textAlign:"right",fontFamily:"'DM Mono',monospace",fontSize:12,color:DARK,fontWeight:500 }}>{$(Math.round(v.total))}</div>
-                    <div style={{ width:32,textAlign:"right",fontFamily:"'DM Mono',monospace",fontSize:10,color:DIM }}>{pct.toFixed(0)}%</div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+            )}
+          </>
         )}
       </div>
 
@@ -1755,7 +1792,6 @@ function SyncReview({ autoMatched, suggested, untagged, allTagged, overhead, dis
             ))}
           </div>
           <button onClick={()=>setDateRange("custom")} style={{ cursor:"pointer",padding:"7px 14px",fontSize:11,fontWeight:500,fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.03em",border:`1px solid ${BORDER}`,borderRadius:5,background:dateRange==="custom"?ACCENT:CARD,color:dateRange==="custom"?CARD:MID,transition:"all 0.15s" }}>Custom</button>
-          <button onClick={()=>setDateRange("all")} style={{ cursor:"pointer",padding:"7px 14px",fontSize:11,fontWeight:500,fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.03em",border:`1px solid ${BORDER}`,borderRadius:5,background:dateRange==="all"?DARK:CARD,color:dateRange==="all"?CARD:MID,transition:"all 0.15s" }}>All</button>
           {dateRange === "custom" && (
             <div style={{ display:"flex",alignItems:"center",gap:6,marginLeft:4 }}>
               <input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)} style={{ padding:"5px 10px",borderRadius:5,border:`1px solid ${BORDER}`,background:CARD,fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DARK,outline:"none",cursor:"pointer" }} />
@@ -2359,7 +2395,6 @@ function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, o
             ))}
           </div>
           <button onClick={()=>setDateRange("custom")} style={{ cursor:"pointer",padding:"7px 14px",fontSize:11,fontWeight:500,fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.03em",border:`1px solid ${BORDER}`,borderRadius:5,background:dateRange==="custom"?ACCENT:CARD,color:dateRange==="custom"?CARD:MID,transition:"all 0.15s" }}>Custom</button>
-          <button onClick={()=>setDateRange("all")} style={{ cursor:"pointer",padding:"7px 14px",fontSize:11,fontWeight:500,fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.03em",border:`1px solid ${BORDER}`,borderRadius:5,background:dateRange==="all"?DARK:CARD,color:dateRange==="all"?CARD:MID,transition:"all 0.15s" }}>All</button>
           {dateRange === "custom" && (
             <div style={{ display:"flex",alignItems:"center",gap:6,marginLeft:4 }}>
               <input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)}
@@ -5731,7 +5766,7 @@ export default function App() {
 
       {/* ── Content ── */}
       <div style={{ flex:1 }}>
-        {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} onEstimate={()=>setTab("estimator")} onJumpToInbox={()=>setTab("inbox")} jobSummaries={jobSummaries} untagged={[...untagged, ...(suggested||[])]} overhead={overhead} dismissed={dismissed} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
+        {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} onEstimate={()=>setTab("estimator")} onJumpToInbox={()=>setTab("inbox")} onClientClick={()=>setTab("clients")} jobSummaries={jobSummaries} untagged={[...untagged, ...(suggested||[])]} overhead={overhead} dismissed={dismissed} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
         {tab==="inbox"     && <SyncReview autoMatched={autoMatched} suggested={suggested} untagged={untagged} allTagged={allTagged} overhead={overhead} dismissed={dismissed} jobSummaries={jobSummaries} vendorRules={vendorRules} onConfirmSuggestion={handleConfirmSuggestion} onTag={handleTag} onMarkOverhead={handleMarkOverhead} onDismiss={handleDismiss} onRestore={handleRestore} onRetag={handleRetag} onUndoAutoMatch={handleUndoAutoMatch} onSaveVendorRule={handleSaveVendorRule} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
         {tab==="detail"    && <JobDetail job={selectedJob} onBack={()=>setTab("dashboard")} untagged={untagged} onJumpToInbox={clientType==="quickbooks"?()=>setTab("inbox"):null}/>}
         {tab==="clients"   && <ClientScorecard jobSummaries={jobSummaries}/>}
