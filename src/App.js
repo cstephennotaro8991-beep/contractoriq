@@ -883,11 +883,6 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, jobSummaries, untagg
     else { setSort(col); setSortDir("desc"); }
   }
 
-  function SortIcon({ col }) {
-    if (sort !== col) return <span style={{ opacity:0.25, marginLeft:4 }}>↕</span>;
-    return <span style={{ marginLeft:4, color:ACCENT }}>{sortDir === "asc" ? "↑" : "↓"}</span>;
-  }
-
   const sorted = [...typeFilteredJobs].sort((a,b) => {
     let diff = 0;
     if (sort==="profit")       diff = b.profit - a.profit;
