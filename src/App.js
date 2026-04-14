@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { BarChart, Bar, LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine, PieChart, Pie, Legend } from "recharts";
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine, PieChart, Pie, Legend } from "recharts";
 import { createClient } from "@supabase/supabase-js";
 
 // ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
@@ -128,10 +128,10 @@ const ACCENT = "#B8622A";   // terracotta / burnt sienna (primary action, highli
 const ACCENT2 = "#3E6B40";  // deep forest green (profit / positive)
 const RED    = "#9C3535";   // red-clay (losses / at-risk)
 const AMBER  = "#C49020";   // rich mustard amber (warnings / secondary)
-const BG     = "#EDE6D8";   // rich warm linen
-const BG2    = "#E3D9C8";   // deeper taupe
-const CARD   = "#FAF8F2";   // clean cream (high contrast against BG)
-const BORDER = "#D0C8B5";   // defined taupe border
+const BG     = "#D6CBBA";   // medium warm taupe (darker for contrast)
+const BG2    = "#C9BBAA";   // deeper taupe (hover/alternate rows)
+const CARD   = "#FEFDFB";   // near-white cream (high contrast against BG)
+const BORDER = "#C4B89E";   // defined taupe border
 const DIM    = "#9C8A74";   // lighter warm grey (widens label/value contrast)
 const MID    = "#6B5E4E";   // medium walnut
 const DARK   = "#2C2416";   // deep walnut text
@@ -801,7 +801,7 @@ function KpiModal({ type, expenseView, jobSummaries, allJobSummaries, overhead, 
             {onJumpToInbox && (
               <div style={{ marginTop:16 }}>
                 <button className="btn act" onClick={() => { onClose(); onJumpToInbox(); }} style={{ fontSize:11, padding:"7px 18px" }}>
-                  Go to Sync Review →
+                  Go to Expense Management →
                 </button>
               </div>
             )}
@@ -823,8 +823,6 @@ function KpiModal({ type, expenseView, jobSummaries, allJobSummaries, overhead, 
 function Dashboard({ onJobClick, onEstimate, onJumpToInbox, jobSummaries, untagged, overhead, dismissed, qbConnected, userId, clientType, dateRange, setDateRange, customStart, setCustomStart, customEnd, setCustomEnd }) {
   const [sort, setSort]             = useState("profit");
   const [sortDir, setSortDir]       = useState("desc");
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [trendView, setTrendView]     = useState("cumulative");
   const [expenseView, setExpenseView] = useState("job");
   const [activeKpi, setActiveKpi]     = useState(null); // 'revenue' | 'expenses' | 'profit' | 'jobs' | 'quality'
   const [alertsOpen, setAlertsOpen]   = useState(false);
@@ -867,42 +865,6 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, jobSummaries, untagg
   const filteredTrend    = dateRange === "all" ? TREND : filterTrendByDate(TREND, dateRange, customStart, customEnd);
   const filteredUntagged = filterUntaggedByDate(untagged, dateRange, customStart, customEnd);
 
-  // Cumulative profit data — running total across months
-  const cumulativeData = useMemo(() => {
-    let running = 0;
-    return filteredTrend.map(d => {
-      running += d.profit;
-      return { ...d, cumulativeProfit: running };
-    });
-  }, [filteredTrend]);
-
-  // Linear regression trend line for "By Month" profit bars
-  const trendLineData = useMemo(() => {
-    const n = filteredTrend.length;
-    if (n < 2) return [];
-    const xs = filteredTrend.map((_, i) => i);
-    const ys = filteredTrend.map(d => d.profit);
-    const sumX  = xs.reduce((s,x) => s+x, 0);
-    const sumY  = ys.reduce((s,y) => s+y, 0);
-    const sumXY = xs.reduce((s,x,i) => s + x*ys[i], 0);
-    const sumX2 = xs.reduce((s,x) => s + x*x, 0);
-    const slope = (n*sumXY - sumX*sumY) / (n*sumX2 - sumX*sumX);
-    const intercept = (sumY - slope*sumX) / n;
-    return filteredTrend.map((d, i) => ({ ...d, trend: Math.round(slope*i + intercept) }));
-  }, [filteredTrend]);
-
-  // Regression slope ($/month) — used for "trending up/down" label
-  const trendSlope = useMemo(() => {
-    const n = filteredTrend.length;
-    if (n < 2) return 0;
-    const xs   = filteredTrend.map((_, i) => i);
-    const ys   = filteredTrend.map(d => d.profit);
-    const sumX  = xs.reduce((s, x) => s + x, 0);
-    const sumY  = ys.reduce((s, y) => s + y, 0);
-    const sumXY = xs.reduce((s, x, i) => s + x * ys[i], 0);
-    const sumX2 = xs.reduce((s, x) => s + x * x, 0);
-    return (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
-  }, [filteredTrend]);
 
   // Period comparison — most recent month vs the one before it
   const periodComparison = useMemo(() => {
@@ -914,8 +876,7 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, jobSummaries, untagg
   }, [filteredTrend]);
 
   // Job type filter
-  const allTypes = ["all", ...Array.from(new Set(jobSummaries.map(j => j.type).filter(Boolean))).sort()];
-  const typeFilteredJobs = typeFilter === "all" ? filteredJobs : filteredJobs.filter(j => j.type === typeFilter);
+  const typeFilteredJobs = filteredJobs;
 
   function handleColSort(col) {
     if (sort === col) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -985,31 +946,6 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, jobSummaries, untagg
     : dateRange === "custom"
       ? `${customStart || "…"} → ${customEnd || "…"} · ${typeFilteredJobs.length} job${typeFilteredJobs.length!==1?"s":""}`
       : `${DATE_RANGES.find(r=>r.key===dateRange)?.label} · ${typeFilteredJobs.length} job${typeFilteredJobs.length!==1?"s":""}`;
-
-  // ── Trend commentary — plain-English summary of slope + MoM change + best month ──
-  const trendCommentary = useMemo(() => {
-    if (filteredTrend.length < 3) return null;
-    const parts = [];
-    const slope = trendSlope;
-    const best  = filteredTrend.reduce((b, m) => m.profit > b.profit ? m : b, filteredTrend[0]);
-    const worst = filteredTrend.reduce((b, m) => m.profit < b.profit ? m : b, filteredTrend[0]);
-    if (Math.abs(slope) < 300) {
-      parts.push("Profit has been relatively stable across this period.");
-    } else if (slope > 0) {
-      parts.push(`Profit is trending up about ${$k(Math.round(slope))}/month — solid growth trajectory.`);
-    } else {
-      parts.push(`Profit is trending down about ${$k(Math.abs(Math.round(slope)))}/month — worth a closer look.`);
-    }
-    if (periodComparison && periodComparison.profitPct !== null) {
-      const pct = periodComparison.profitPct;
-      const prev = periodComparison.prevMonth;
-      if (pct > 20) parts.push(`Most recent month was ${pct}% stronger than ${prev}.`);
-      else if (pct < -20) parts.push(`Profit dropped ${Math.abs(pct)}% versus ${prev} — a soft month.`);
-    }
-    if (best.profit > 0) parts.push(`Best month so far: ${best.month} at ${$(Math.round(best.profit))} profit.`);
-    else if (worst.profit < 0) parts.push(`Toughest month: ${worst.month} at ${$(Math.round(worst.profit))}.`);
-    return parts.join("  ");
-  }, [filteredTrend, trendSlope, periodComparison]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Additional alert types ──
   const lossJobs      = typeFilteredJobs.filter(j => j.status !== "In Progress" && j.profit < 0);
@@ -1346,224 +1282,41 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, jobSummaries, untagg
           )}
         </div>
 
-        <div className="card" style={{ padding:"22px 26px" }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20 }}>
-            <div>
-              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:5,fontWeight:500 }}>Profitability Trend</div>
-              <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>
-                {trendView === "cumulative" ? "Running total profit over time" : "Monthly revenue, costs & profit"}
-              </div>
-            </div>
-            {/* View toggle */}
-            <div style={{ display:"flex", border:`1px solid ${BORDER}`, borderRadius:5, overflow:"hidden", background:CARD }}>
-              {[["monthly","By Month"],["cumulative","Cumulative"]].map(([k,l],i) => (
-                <button key={k} onClick={()=>setTrendView(k)} style={{ cursor:"pointer", padding:"6px 12px", fontSize:10, fontWeight:500, fontFamily:"'DM Sans',sans-serif", letterSpacing:"0.03em", border:"none", borderRight:i===0?`1px solid ${BORDER}`:"none", background:trendView===k?ACCENT:CARD, color:trendView===k?CARD:MID, transition:"all 0.15s" }}>{l}</button>
-              ))}
-            </div>
+        {/* Vendor Cost Breakdown — replaces Profitability Trend */}
+        {vendorLeaderboard.length === 0 ? (
+          <div className="card" style={{ padding:"28px 26px", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", textAlign:"center" }}>
+            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,fontWeight:700,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:10 }}>Vendor Cost Breakdown</div>
+            <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>No vendor data yet — expenses will appear here after syncing.</div>
           </div>
-
-          {trendView === "monthly" ? (
-            <>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={filteredTrend} margin={{ top:4,right:16,left:12,bottom:20 }}>
-                  <CartesianGrid strokeDasharray="2 4" stroke={BG2} vertical={false}/>
-                  <XAxis dataKey="month" tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} axisLine={false} tickLine={false} height={40}/>
-                  <YAxis tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} tickFormatter={$k} axisLine={false} tickLine={false} width={52}/>
-                  <Tooltip content={ChartTip}/>
-                  <ReferenceLine y={0} stroke={BORDER} strokeWidth={1.5}/>
-                  <Line type="monotone" dataKey="revenue" stroke={DIM} strokeWidth={1.5} dot={false} name="Revenue"/>
-                  <Line type="monotone" dataKey="costs" stroke={RED} strokeWidth={1.5} dot={false} name="Costs" strokeDasharray="4 2"/>
-                  <Line type="monotone" dataKey="profit" stroke={ACCENT} strokeWidth={3} dot={{ r:3,fill:ACCENT }} name="Profit"/>
-                  {/* Linear regression trend line on profit */}
-                  {trendLineData.length > 1 && (
-                    <Line type="linear" data={trendLineData} dataKey="trend" stroke={ACCENT2} strokeWidth={1.5} dot={false} strokeDasharray="6 3" name="Trend" legendType="none"/>
-                  )}
-                </LineChart>
-              </ResponsiveContainer>
-              <div style={{ display:"flex",gap:20,marginTop:12,justifyContent:"flex-end",flexWrap:"wrap" }}>
-                {[["Revenue",DIM,false],["Costs",RED,true],["Profit",ACCENT,false],["Trend",ACCENT2,true]].map(([l,c,d]) => (
-                  <div key={l} style={{ display:"flex",alignItems:"center",gap:6,fontSize:10,color:DIM,fontFamily:"'DM Sans',sans-serif" }}>
-                    <div style={{ width:16,height:2,background:d?"transparent":c,borderRadius:2,borderBottom:d?`2px dashed ${c}`:"none" }}/>
-                    {l}
+        ) : (
+          <div className="card" style={{ padding:"22px 26px" }}>
+            <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18 }}>
+              <div>
+                <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:4,fontWeight:500 }}>Vendor Cost Breakdown</div>
+                <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>Where your money is going — top {vendorLeaderboard.length} vendors</div>
+              </div>
+              <div style={{ fontFamily:"'DM Mono',monospace",fontSize:13,color:DIM }}>{$(Math.round(vendorTotal))} total</div>
+            </div>
+            <div style={{ display:"flex",flexDirection:"column",gap:9 }}>
+              {vendorLeaderboard.map((v, i) => {
+                const pct = vendorTotal > 0 ? (v.total / vendorTotal) * 100 : 0;
+                return (
+                  <div key={v.vendor} style={{ display:"flex",alignItems:"center",gap:12 }}>
+                    <div style={{ width:20,textAlign:"right",fontFamily:"'DM Mono',monospace",fontSize:10,color:DIM }}>{i+1}</div>
+                    <div style={{ width:160,fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DARK,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{v.vendor}</div>
+                    <div style={{ flex:1,height:8,background:BORDER,borderRadius:4,overflow:"hidden" }}>
+                      <div style={{ height:"100%",width:`${pct}%`,background:i===0?ACCENT:i===1?ACCENT2:MID,borderRadius:4,transition:"width 0.4s",opacity:1-i*0.06 }}/>
+                    </div>
+                    <div style={{ width:72,textAlign:"right",fontFamily:"'DM Mono',monospace",fontSize:12,color:DARK,fontWeight:500 }}>{$(Math.round(v.total))}</div>
+                    <div style={{ width:32,textAlign:"right",fontFamily:"'DM Mono',monospace",fontSize:10,color:DIM }}>{pct.toFixed(0)}%</div>
                   </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <>
-              <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={cumulativeData} margin={{ top:4,right:16,left:12,bottom:20 }}>
-                  <defs>
-                    <linearGradient id="profitGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={ACCENT} stopOpacity={0.18}/>
-                      <stop offset="95%" stopColor={ACCENT} stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="2 4" stroke={BG2} vertical={false}/>
-                  <XAxis dataKey="month" tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} axisLine={false} tickLine={false} height={40}/>
-                  <YAxis tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} tickFormatter={$k} axisLine={false} tickLine={false} width={52}/>
-                  <Tooltip content={({ active, payload, label }) => {
-                    if (!active||!payload?.length) return null;
-                    const d = payload[0]?.payload;
-                    return (
-                      <div style={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:5,padding:"10px 14px",fontFamily:"'DM Mono',monospace",fontSize:11,boxShadow:"0 4px 12px rgba(44,36,22,0.12)" }}>
-                        <div style={{ color:DIM,marginBottom:6,fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.06em",textTransform:"uppercase" }}>{label}</div>
-                        <div style={{ color:ACCENT,marginBottom:3 }}>Cumulative profit: {$k(d?.cumulativeProfit||0)}</div>
-                        <div style={{ color:DIM,fontSize:10 }}>This month: {d?.profit>=0?"+":""}{$k(d?.profit||0)}</div>
-                      </div>
-                    );
-                  }}/>
-                  <ReferenceLine y={0} stroke={BORDER} strokeWidth={1.5}/>
-                  <Area type="monotone" dataKey="cumulativeProfit" stroke={ACCENT} strokeWidth={2.5} fill="url(#profitGradient)" dot={{ r:3,fill:ACCENT,strokeWidth:0 }} name="Cumulative Profit"/>
-                </AreaChart>
-              </ResponsiveContainer>
-              <div style={{ display:"flex",gap:20,marginTop:12,justifyContent:"space-between",alignItems:"center" }}>
-                <div style={{ fontSize:11,color:DIM,fontFamily:"'DM Sans',sans-serif",fontStyle:"italic" }}>
-                  {filteredTrend.length > 1 && (() => {
-                    const isUp = trendSlope >= 0;
-                    return <span style={{ color: isUp ? ACCENT2 : RED }}>
-                      {isUp ? "↑" : "↓"} Monthly profit {isUp ? "trending up" : "trending down"} — {isUp ? "growing" : "declining"} ~{$k(Math.abs(trendSlope))}/month on average
-                    </span>;
-                  })()}
-                </div>
-                <div style={{ display:"flex",alignItems:"center",gap:6,fontSize:10,color:DIM,fontFamily:"'DM Sans',sans-serif" }}>
-                  <div style={{ width:16,height:2,background:ACCENT,borderRadius:2 }}/>
-                  Cumulative profit
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Trend commentary */}
-          {trendCommentary && (
-            <div style={{ marginTop:14,paddingTop:12,borderTop:`1px solid ${BORDER}`,fontFamily:"'DM Sans',sans-serif",fontSize:12,color:MID,lineHeight:1.7,fontStyle:"italic" }}>
-              {trendCommentary}
+                );
+              })}
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* Job table with Job Type filter */}
-      <div className="card" style={{ overflow:"hidden" }}>
-        <div style={{ padding:"18px 20px",borderBottom:`1px solid ${BORDER}`,display:"flex",justifyContent:"space-between",alignItems:"center",background:BG,flexWrap:"wrap",gap:12 }}>
-          <div style={{ display:"flex",alignItems:"center",gap:14 }}>
-            <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>
-              {typeFilteredJobs.length > 0 ? `${typeFilteredJobs.length} job${typeFilteredJobs.length!==1?"s":""} — click any row to see the full breakdown` : "No jobs in this period"}
-            </div>
-            {onEstimate && (
-              <button onClick={onEstimate}
-                style={{ cursor:"pointer",padding:"5px 14px",borderRadius:4,fontSize:11,fontWeight:500,fontFamily:"'DM Sans',sans-serif",border:`1px solid ${ACCENT}`,background:`${ACCENT}10`,color:ACCENT,transition:"all 0.15s",whiteSpace:"nowrap" }}
-                onMouseEnter={e=>{e.currentTarget.style.background=ACCENT;e.currentTarget.style.color=CARD;}}
-                onMouseLeave={e=>{e.currentTarget.style.background=`${ACCENT}10`;e.currentTarget.style.color=ACCENT;}}>
-                ◇ Price a Job
-              </button>
-            )}
-          </div>
-          <div style={{ display:"flex",alignItems:"center",gap:8,flexWrap:"wrap" }}>
-            {/* Job type filter pills */}
-            <div style={{ display:"flex",gap:5,flexWrap:"wrap" }}>
-              {allTypes.map(t => (
-                <button key={t} onClick={()=>setTypeFilter(t)} style={{ cursor:"pointer",padding:"4px 11px",borderRadius:20,fontSize:10,fontWeight:500,fontFamily:"'DM Sans',sans-serif",border:`1px solid ${typeFilter===t?ACCENT:BORDER}`,background:typeFilter===t?ACCENT:CARD,color:typeFilter===t?CARD:MID,transition:"all 0.15s",letterSpacing:"0.02em" }}>
-                  {t === "all" ? "All Types" : t}
-                </button>
-              ))}
-            </div>
-            <div style={{ display:"flex",gap:16,alignItems:"center",fontSize:10,color:DIM,fontFamily:"'DM Sans',sans-serif",paddingLeft:8,borderLeft:`1px solid ${BORDER}` }}>
-              <span style={{ display:"flex",alignItems:"center",gap:5 }}><span style={{ width:8,height:8,borderRadius:"50%",background:ACCENT2,display:"inline-block" }}/> Profitable</span>
-              <span style={{ display:"flex",alignItems:"center",gap:5 }}><span style={{ width:8,height:8,borderRadius:"50%",background:RED,display:"inline-block" }}/> Losing</span>
-            </div>
-          </div>
-        </div>
-        <div className="thead" style={{ gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 90px" }}>
-          {[["name","Job Name"],["client","Client"],["revenue","Revenue"],["costs","Costs"],["profit","Profit / Loss"],["status","Status"]].map(([col,label]) => (
-            <div key={col} className="th" onClick={() => handleColSort(col)} style={{ cursor:"pointer", userSelect:"none", display:"flex", alignItems:"center" }}>
-              {label}<SortIcon col={col}/>
-            </div>
-          ))}
-        </div>
-        {sorted.length > 0 ? sorted.map(j => {
-          const win = j.profit > 0;
-          const atRisk = j.status === "In Progress" && j.revenue > 0 && (j.costs / j.revenue) > 0.85;
-          // Untagged flags — strong if inbox item suggests this job, soft if any untagged exist
-          const hasSuggestedUntagged = filteredUntagged.some(u => u.suggestedJob === j.id);
-          const hasAnyUntagged       = filteredUntagged.length > 0;
-          return (
-            <div key={j.id} className="trow" style={{ gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 90px",borderLeft:`3px solid ${win?ACCENT2:RED}`,opacity:win?1:0.92 }} onClick={()=>onJobClick(j)}>
-              <div className="tcell" style={{ flexDirection:"column",alignItems:"flex-start",gap:3 }}>
-                <div style={{ display:"flex",alignItems:"center",gap:8 }}>
-                  <span style={{ color:DARK,fontWeight:500,fontFamily:"'DM Sans',sans-serif" }}>{j.name}</span>
-                  {atRisk && <span style={{ fontSize:9,padding:"2px 7px",borderRadius:3,background:"rgba(140,107,48,0.1)",color:AMBER,fontWeight:500,fontFamily:"'DM Sans',sans-serif" }}>⚠ at risk</span>}
-                </div>
-                <span style={{ fontSize:10,color:DIM,fontFamily:"'DM Sans',sans-serif" }}>{j.type}</span>
-              </div>
-              <div className="tcell" style={{ color:MID,fontFamily:"'DM Sans',sans-serif" }}>{j.clientName}</div>
-              <div className="tcell mono" style={{ color:MID,fontSize:12 }}>{$(j.revenue)}</div>
-              <div className="tcell mono" style={{ color:MID,fontSize:12 }}>{$(j.costs)}</div>
-              <div className="tcell" style={{ flexDirection:"column",alignItems:"flex-start",gap:4 }}>
-                <span className={`chip ${win?"g":"r"}`}>{win?"+":"-"}{$(j.profit)} ({j.marginPct}%)</span>
-                {hasSuggestedUntagged && (
-                  <span style={{ fontSize:9,color:AMBER,fontFamily:"'DM Sans',sans-serif",fontWeight:500 }} title="Untagged expenses in the inbox may belong to this job — profit may be lower than shown">⚠ est. — untagged expenses likely</span>
-                )}
-                {!hasSuggestedUntagged && hasAnyUntagged && (
-                  <span style={{ fontSize:9,color:DIM,fontFamily:"'DM Sans',sans-serif" }} title="Untagged expenses exist — profit figures may be incomplete">~ est.</span>
-                )}
-              </div>
-              <div className="tcell" style={{ fontSize:11,color:j.status==="Complete"?DIM:AMBER,letterSpacing:"0.03em",fontFamily:"'DM Sans',sans-serif" }}>
-                {j.status==="Complete"?"Complete":"● Active"}
-              </div>
-            </div>
-          );
-        }) : (
-          <div style={{ padding:"48px 20px",textAlign:"center" }}>
-            <div style={{ fontSize:28,marginBottom:12,opacity:0.3 }}>◈</div>
-            <div style={{ fontFamily:"'Lora',serif",fontSize:15,color:MID,fontStyle:"italic",marginBottom:6 }}>No jobs found in this period</div>
-            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM,marginBottom:16 }}>
-              {dateRange !== "all" ? "Try expanding the date range or selecting All." : "No job data has been synced yet."}
-            </div>
-            {dateRange !== "all" && (
-              <button className="btn" onClick={() => setDateRange("all")} style={{ fontSize:11, color:ACCENT }}>
-                Show all time →
-              </button>
-            )}
           </div>
         )}
       </div>
 
-      {/* ── Vendor Cost Leaderboard ── */}
-      {vendorLeaderboard.length === 0 && typeFilteredJobs.length > 0 && (
-        <div className="card" style={{ marginTop:24,padding:"28px 26px",textAlign:"center" }}>
-          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,fontWeight:700,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:8 }}>Vendor Cost Breakdown</div>
-          <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>No vendor data yet — expenses will appear here after syncing.</div>
-        </div>
-      )}
-      {vendorLeaderboard.length > 0 && (
-        <div className="card" style={{ marginTop:24,padding:"22px 26px" }}>
-          <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18 }}>
-            <div>
-              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:4,fontWeight:500 }}>Vendor Cost Breakdown</div>
-              <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>Where your money is going — top {vendorLeaderboard.length} vendors by spend</div>
-            </div>
-            <div style={{ fontFamily:"'DM Mono',monospace",fontSize:13,color:DIM }}>{$(Math.round(vendorTotal))} total</div>
-          </div>
-          <div style={{ display:"flex",flexDirection:"column",gap:7 }}>
-            {vendorLeaderboard.map((v, i) => {
-              const pct = vendorTotal > 0 ? (v.total / vendorTotal) * 100 : 0;
-              return (
-                <div key={v.vendor} style={{ display:"flex",alignItems:"center",gap:12 }}>
-                  <div style={{ width:20,textAlign:"right",fontFamily:"'DM Mono',monospace",fontSize:10,color:DIM }}>{i+1}</div>
-                  <div style={{ width:180,fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DARK,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{v.vendor}</div>
-                  <div style={{ flex:1,height:8,background:BORDER,borderRadius:4,overflow:"hidden" }}>
-                    <div style={{ height:"100%",width:`${pct}%`,background:i===0?ACCENT:i===1?ACCENT2:MID,borderRadius:4,transition:"width 0.4s",opacity:1-i*0.06 }}/>
-                  </div>
-                  <div style={{ width:80,textAlign:"right",fontFamily:"'DM Mono',monospace",fontSize:12,color:DARK,fontWeight:500 }}>{$(Math.round(v.total))}</div>
-                  <div style={{ width:36,textAlign:"right",fontFamily:"'DM Mono',monospace",fontSize:10,color:DIM }}>{pct.toFixed(0)}%</div>
-                  <div style={{ width:60,textAlign:"right",fontFamily:"'DM Sans',sans-serif",fontSize:10,color:DIM }}>{v.jobCount} job{v.jobCount!==1?"s":""}</div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -1996,7 +1749,7 @@ function SyncReview({ autoMatched, suggested, untagged, allTagged, overhead, dis
       {/* Header */}
       <div style={{ marginBottom:20, display:"flex", alignItems:"flex-start", justifyContent:"space-between", flexWrap:"wrap", gap:12 }}>
         <div>
-          <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em" }}>Sync Review</h1>
+          <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em" }}>Expense Management</h1>
           <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>Review how Canopy matched your expenses to jobs. Confirm, correct, or assign what needs attention.</p>
         </div>
         {/* Date range toggle */}
@@ -3010,7 +2763,7 @@ function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, o
 
 // ─── TAB: JOB DETAIL ─────────────────────────────────────────────────────────
 
-function JobDetail({ job, onBack, untagged }) {
+function JobDetail({ job, onBack, untagged, onJumpToInbox }) {
   if (!job) return (
     <div style={{ padding:80,textAlign:"center",color:DIM,background:BG,minHeight:"100vh" }}>
       <div style={{ fontFamily:"'Lora',serif",fontSize:18,color:MID,fontStyle:"italic",marginBottom:8 }}>No job selected</div>
@@ -3075,15 +2828,30 @@ function JobDetail({ job, onBack, untagged }) {
         <div className="card" style={{ padding:"22px 26px" }}>
           <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:5,fontWeight:500 }}>Cost Breakdown by Vendor</div>
           <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,marginBottom:18,fontStyle:"italic" }}>Where did the money go?</div>
-          <ResponsiveContainer width="100%" height={200}>
-            <PieChart>
-              <Pie data={vendorData} dataKey="value" nameKey="name" cx="40%" cy="50%" outerRadius={80} innerRadius={48} paddingAngle={2}>
-                {vendorData.map((_,i) => <Cell key={i} fill={COLORS[i%COLORS.length]} opacity={0.85}/>)}
-              </Pie>
-              <Legend formatter={v => <span style={{ fontSize:11,color:MID,fontFamily:"'DM Sans',sans-serif" }}>{v}</span>}/>
-              <Tooltip formatter={v => [$(v),"Cost"]} contentStyle={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:5,fontFamily:"'DM Mono',monospace",fontSize:11 }}/>
-            </PieChart>
-          </ResponsiveContainer>
+          {vendorData.length === 0 ? (
+            <div style={{ padding:"32px 0",textAlign:"center" }}>
+              <div style={{ fontSize:26,marginBottom:12,opacity:0.25 }}>✉</div>
+              <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic",marginBottom:6 }}>No expenses tagged to this job yet</div>
+              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM,marginBottom:16,lineHeight:1.6 }}>
+                Tag expenses to this job in <strong style={{ color:MID }}>Expense Management</strong> to see a breakdown here.
+              </div>
+              {onJumpToInbox && (
+                <button className="btn act" onClick={onJumpToInbox} style={{ fontSize:11,padding:"7px 18px" }}>
+                  Go to Expense Management →
+                </button>
+              )}
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={200}>
+              <PieChart>
+                <Pie data={vendorData} dataKey="value" nameKey="name" cx="40%" cy="50%" outerRadius={80} innerRadius={48} paddingAngle={2}>
+                  {vendorData.map((_,i) => <Cell key={i} fill={COLORS[i%COLORS.length]} opacity={0.85}/>)}
+                </Pie>
+                <Legend formatter={v => <span style={{ fontSize:11,color:MID,fontFamily:"'DM Sans',sans-serif" }}>{v}</span>}/>
+                <Tooltip formatter={v => [$(v),"Cost"]} contentStyle={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:5,fontFamily:"'DM Mono',monospace",fontSize:11 }}/>
+              </PieChart>
+            </ResponsiveContainer>
+          )}
         </div>
         <div className="card" style={{ padding:"22px 26px" }}>
           <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:5,fontWeight:500 }}>Revenue vs Costs</div>
@@ -4466,7 +4234,7 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
         <div>
           <h1 style={{ fontFamily: "'Lora',serif", fontSize: 24, fontWeight: 600, color: DARK, letterSpacing: "-0.02em", marginBottom: 4 }}>
-            Job Estimator
+            Quote Generator
           </h1>
           <p style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: DIM }}>
             Price out a job, see your projected margin, and compare to your real history.
@@ -5361,7 +5129,7 @@ export default function App() {
   const [tagged, setTagged]             = useState([]);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [showTutorial, setShowTutorial]     = useState(false);
-  const [dateRange, setDateRange]       = useState("all");
+  const [dateRange, setDateRange]       = useState("ytd");
   const [customStart, setCustomStart]   = useState("");
   const [customEnd, setCustomEnd]       = useState("");
   const [qbConnected, setQbConnected]       = useState(false);
@@ -5757,17 +5525,18 @@ export default function App() {
     }
   }
 
-  const reviewCount = (suggested || []).length + untagged.length;
+  const reviewCount = filterUntaggedByDate(suggested || [], dateRange, customStart, customEnd).length
+                   + filterUntaggedByDate(untagged,        dateRange, customStart, customEnd).length;
 
   const TABS = [
-    { key:"dashboard", label:"Dashboard",    icon:"⊡" },
-    ...(clientType === "quickbooks" ? [{ key:"inbox", label:"Sync Review", icon:"✉" }] : []),
-    { key:"detail",    label:"Job Detail",   icon:"◈" },
-    { key:"clients",   label:"Clients",      icon:"◉" },
-    { key:"estimator", label:"Job Estimator", icon:"◇" },
-    { key:"reports",   label:"Reports",      icon:"≡" },
-    { key:"chat",      label:"AI Analyst",   icon:"◆" },
-    ...(clientType === "quickbooks" ? [{ key:"raw", label:"Raw Data",     icon:"⊞" }] : []),
+    { key:"dashboard", label:"Dashboard",         icon:"⊡" },
+    { key:"clients",   label:"Clients",           icon:"◉" },
+    ...(clientType === "quickbooks" ? [{ key:"inbox", label:"Expense Management", icon:"✉" }] : []),
+    { key:"detail",    label:"Job Detail",        icon:"◈" },
+    { key:"estimator", label:"Quote Generator",   icon:"◇" },
+    { key:"reports",   label:"Reports",           icon:"≡" },
+    { key:"chat",      label:"AI Analyst",        icon:"◆" },
+    ...(clientType === "quickbooks" ? [{ key:"raw", label:"Raw Data",             icon:"⊞" }] : []),
   ];
 
   return (
@@ -5969,7 +5738,7 @@ export default function App() {
       <div style={{ flex:1 }}>
         {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} onEstimate={()=>setTab("estimator")} onJumpToInbox={()=>setTab("inbox")} jobSummaries={jobSummaries} untagged={[...untagged, ...(suggested||[])]} overhead={overhead} dismissed={dismissed} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
         {tab==="inbox"     && <SyncReview autoMatched={autoMatched} suggested={suggested} untagged={untagged} allTagged={allTagged} overhead={overhead} dismissed={dismissed} jobSummaries={jobSummaries} vendorRules={vendorRules} onConfirmSuggestion={handleConfirmSuggestion} onTag={handleTag} onMarkOverhead={handleMarkOverhead} onDismiss={handleDismiss} onRestore={handleRestore} onRetag={handleRetag} onUndoAutoMatch={handleUndoAutoMatch} onSaveVendorRule={handleSaveVendorRule} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
-        {tab==="detail"    && <JobDetail job={selectedJob} onBack={()=>setTab("dashboard")} untagged={untagged}/>}
+        {tab==="detail"    && <JobDetail job={selectedJob} onBack={()=>setTab("dashboard")} untagged={untagged} onJumpToInbox={clientType==="quickbooks"?()=>setTab("inbox"):null}/>}
         {tab==="clients"   && <ClientScorecard jobSummaries={jobSummaries}/>}
         {tab==="estimator" && <JobEstimator jobSummaries={jobSummaries} userId={session?.user?.id}/>}
         {tab==="reports"   && <Reports jobSummaries={jobSummaries}/>}
