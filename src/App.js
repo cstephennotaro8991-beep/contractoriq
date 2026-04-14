@@ -3093,7 +3093,7 @@ function JobDetail({ job, onBack, untagged }) {
                   <td className="mono">{l.date}</td>
                   <td className="mono">{l.doc}</td>
                   <td><span style={{ display:"inline-block",padding:"2px 9px",borderRadius:3,fontSize:10,fontWeight:500,fontFamily:"'DM Sans',sans-serif",background:l.type==="Revenue"?"rgba(92,122,90,0.1)":"rgba(140,64,64,0.08)",color:l.type==="Revenue"?ACCENT2:RED }}>{l.type}</span></td>
-                  <td style={{ color:MID,maxWidth:320 }}>{l.vendor?<span style={{ color:DIM,marginRight:8,fontFamily:"'DM Mono',monospace",fontSize:11 }}>[{l.vendor}]</span>:null}{l.desc}</td>
+                  <td style={{ color:MID,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }} title={l.vendor?`[${l.vendor}] ${l.desc||""}`:l.desc||""}>{l.vendor?<span style={{ color:DIM,marginRight:8,fontFamily:"'DM Mono',monospace",fontSize:11 }}>[{l.vendor}]</span>:null}{l.desc}</td>
                   <td className="mono" style={{ color:l.type==="Revenue"?ACCENT2:RED }}>{l.type==="Revenue"?"+":"–"}{$(l.amount)}</td>
                 </tr>
               ))}
