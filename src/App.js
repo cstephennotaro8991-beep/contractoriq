@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine, PieChart, Pie, Legend } from "recharts";
+import { BarChart, Bar, LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine, PieChart, Pie, Legend } from "recharts";
 import { createClient } from "@supabase/supabase-js";
 
 // ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
@@ -124,19 +124,19 @@ const $k = n => {
 };
 
 // Earth-tone palette — warm, professional, non-tech
-const ACCENT = "#7A6B4E";   // warm walnut brown (primary action)
-const ACCENT2 = "#5C7A5A";  // sage green (profit / positive)
-const RED    = "#8C4040";   // muted terracotta red
-const AMBER  = "#8C6B30";   // burnished amber
-const BG     = "#E8DFD0";   // deeper warm linen
-const BG2    = "#DDD5C2";   // rich taupe
-const CARD   = "#F5F0E6";   // warm cream card (lighter than BG for contrast)
-const BORDER = "#CEC5B0";   // deeper taupe border
-const DIM    = "#A89880";   // muted warm grey
+const ACCENT = "#B8622A";   // terracotta / burnt sienna (primary action, highlights)
+const ACCENT2 = "#3E6B40";  // deep forest green (profit / positive)
+const RED    = "#9C3535";   // red-clay (losses / at-risk)
+const AMBER  = "#C49020";   // rich mustard amber (warnings / secondary)
+const BG     = "#EDE6D8";   // rich warm linen
+const BG2    = "#E3D9C8";   // deeper taupe
+const CARD   = "#FAF8F2";   // clean cream (high contrast against BG)
+const BORDER = "#D0C8B5";   // defined taupe border
+const DIM    = "#9C8A74";   // lighter warm grey (widens label/value contrast)
 const MID    = "#6B5E4E";   // medium walnut
 const DARK   = "#2C2416";   // deep walnut text
-const SIDEBAR_BG   = "#231D13";  // near-black walnut sidebar
-const SIDEBAR_TEXT = "#C4B49A";  // warm parchment sidebar text
+const SIDEBAR_BG   = "#1E1810";  // deep espresso sidebar
+const SIDEBAR_TEXT = "#C8B89E";  // warm parchment sidebar text
 const SIDEBAR_DIM  = "#6B5E4E";  // muted sidebar labels
 
 // Bump this string whenever Privacy Policy or EULA changes materially.
@@ -308,28 +308,28 @@ const css = `
   .nav-tab:hover { color:${MID}; }
   .nav-tab.active { color:${DARK}; border-bottom-color:${ACCENT}; font-weight:500; }
   .badge { display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;font-size:9px;font-weight:600;background:${AMBER};color:#FDF8F0;margin-left:7px;line-height:1;font-family:'DM Sans',sans-serif; }
-  .badge.done { background:rgba(92,122,90,0.15);color:${ACCENT2}; }
-  .kpi { background:${CARD}; border:1px solid ${BORDER}; border-radius:8px; padding:22px 26px; box-shadow:0 2px 8px rgba(44,36,22,0.08); transition:box-shadow 0.2s; }
-  .kpi:hover { box-shadow:0 4px 16px rgba(44,36,22,0.13); }
-  .kpi.hi { border-color:rgba(92,122,90,0.35); background:linear-gradient(135deg,${CARD},#EDF5EC); }
-  .chip { display:inline-flex;align-items:center;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:500;font-family:'DM Sans',sans-serif;letter-spacing:0.02em; }
-  .chip.g { background:rgba(92,122,90,0.1);color:${ACCENT2}; }
-  .chip.r { background:rgba(140,64,64,0.09);color:${RED}; }
-  .chip.a { background:rgba(140,107,48,0.1);color:${AMBER}; }
+  .badge.done { background:rgba(62,107,64,0.15);color:${ACCENT2}; }
+  .kpi { background:${CARD}; border:1px solid ${BORDER}; border-radius:8px; padding:22px 26px; box-shadow:0 2px 10px rgba(44,36,22,0.09); transition:box-shadow 0.2s; }
+  .kpi:hover { box-shadow:0 5px 20px rgba(44,36,22,0.15); }
+  .kpi.hi { border-color:rgba(62,107,64,0.35); background:linear-gradient(135deg,${CARD},#EEF5EE); }
+  .chip { display:inline-flex;align-items:center;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;font-family:'DM Sans',sans-serif;letter-spacing:0.02em; }
+  .chip.g { background:rgba(62,107,64,0.12);color:${ACCENT2}; }
+  .chip.r { background:rgba(156,53,53,0.10);color:${RED}; }
+  .chip.a { background:rgba(196,144,32,0.12);color:${AMBER}; }
   .trow { display:grid;border-bottom:1px solid ${BORDER};cursor:pointer;transition:background 0.12s; }
   .trow:hover { background:${BG2}; }
   .tcell { padding:16px 18px;font-size:13px;display:flex;align-items:center;font-family:'DM Sans',sans-serif; }
-  .thead { display:grid;background:${BG2};border-bottom:1px solid ${BORDER}; }
-  .th { padding:10px 18px;font-size:11px;letter-spacing:0.08em;color:${MID};text-transform:uppercase;font-family:'DM Sans',sans-serif;font-weight:700; }
+  .thead { display:grid;background:${BG2};border-bottom:2px solid ${BORDER}; }
+  .th { padding:10px 18px;font-size:10px;letter-spacing:0.1em;color:${DIM};text-transform:uppercase;font-family:'DM Sans',sans-serif;font-weight:700; }
   .btn { cursor:pointer;padding:8px 16px;border-radius:6px;font-size:12px;font-weight:500;letter-spacing:0.02em;transition:all 0.15s;border:1.5px solid ${BORDER};color:${MID};background:${CARD};font-family:'DM Sans',sans-serif; }
   .btn:hover { border-color:${ACCENT};color:${ACCENT};box-shadow:0 2px 8px rgba(44,36,22,0.10); }
   .btn:focus-visible { outline:2px solid ${ACCENT};outline-offset:2px; }
   .btn.act { border-color:${ACCENT2};color:#fff;background:${ACCENT2}; }
-  .btn.act:hover { background:#4E6B4C;border-color:#4E6B4C;box-shadow:0 2px 10px rgba(92,122,90,0.3); }
-  .btn.red { border-color:rgba(140,64,64,0.3);color:${RED};background:transparent; }
-  .btn.red:hover { border-color:${RED};background:rgba(140,64,64,0.06); }
+  .btn.act:hover { background:#2E5230;border-color:#2E5230;box-shadow:0 2px 10px rgba(62,107,64,0.35); }
+  .btn.red { border-color:rgba(156,53,53,0.3);color:${RED};background:transparent; }
+  .btn.red:hover { border-color:${RED};background:rgba(156,53,53,0.06); }
   .btn:disabled { opacity:0.45;cursor:not-allowed;pointer-events:none; }
-  .card { background:${CARD};border:1px solid ${BORDER};border-radius:8px;box-shadow:0 2px 8px rgba(44,36,22,0.07); }
+  .card { background:${CARD};border:1px solid ${BORDER};border-radius:8px;box-shadow:0 2px 10px rgba(44,36,22,0.08); }
   .mono { font-family:'DM Mono',monospace; }
   .chat-bubble-user { background:${BG2};border:1px solid ${BORDER};border-radius:12px 12px 3px 12px;padding:12px 16px;font-size:13px;color:${DARK};max-width:80%;align-self:flex-end;font-family:'DM Sans',sans-serif; }
   .chat-bubble-ai { background:${CARD};border:1px solid ${BORDER};border-radius:12px 12px 12px 3px;padding:14px 18px;font-size:13px;color:${MID};max-width:88%;align-self:flex-start;line-height:1.7;font-family:'DM Sans',sans-serif; }
@@ -347,17 +347,17 @@ const css = `
   .thinking span:nth-child(3) { animation-delay:0.4s; }
   .inbox-row { background:${CARD};border:1px solid ${BORDER};border-radius:6px;padding:20px 22px;transition:all 0.15s;box-shadow:0 1px 3px rgba(44,36,22,0.04); }
   .inbox-row:hover { border-color:${DIM}; box-shadow:0 2px 8px rgba(44,36,22,0.08); }
-  .inbox-row.tagged { border-color:rgba(92,122,90,0.4);background:rgba(92,122,90,0.03); }
+  .inbox-row.tagged { border-color:rgba(62,107,64,0.45);background:rgba(62,107,64,0.04); }
   .job-select { background:${CARD};border:1px solid ${BORDER};border-radius:4px;padding:9px 12px;color:${DARK};font-size:12px;font-family:'DM Sans',sans-serif;outline:none;cursor:pointer;transition:border 0.15s;width:100%; }
   .job-select:focus { border-color:${ACCENT}; }
-  .suggestion-pill { display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:20px;font-size:11px;background:rgba(140,107,48,0.08);color:${AMBER};border:1px solid rgba(140,107,48,0.2);cursor:pointer;transition:all 0.15s;font-family:'DM Sans',sans-serif; }
-  .suggestion-pill:hover { background:rgba(140,107,48,0.14); }
+  .suggestion-pill { display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:20px;font-size:11px;background:rgba(196,144,32,0.09);color:${AMBER};border:1px solid rgba(196,144,32,0.25);cursor:pointer;transition:all 0.15s;font-family:'DM Sans',sans-serif; }
+  .suggestion-pill:hover { background:rgba(196,144,32,0.16); }
   @keyframes bounce { 0%,60%,100%{transform:translateY(0);opacity:0.3} 30%{transform:translateY(-5px);opacity:0.8} }
   @keyframes slideIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
   @keyframes fadeIn { from{opacity:0} to{opacity:1} }
   @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
   .slide-in { animation:slideIn 0.2s ease; }
-  .spinner { width:14px;height:14px;border:2px solid rgba(92,122,90,0.25);border-top-color:${ACCENT2};border-radius:50%;animation:spin 0.75s linear infinite;display:inline-block;flex-shrink:0; }
+  .spinner { width:14px;height:14px;border:2px solid rgba(62,107,64,0.22);border-top-color:${ACCENT2};border-radius:50%;animation:spin 0.75s linear infinite;display:inline-block;flex-shrink:0; }
   .trow:nth-child(even) { background:rgba(44,36,22,0.018); }
   .trow:nth-child(even):hover { background:${BG2}; }
   .kpi-tooltip { position:relative; }
@@ -1079,13 +1079,13 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, jobSummaries, untagg
       {/* ── Job Health Alerts card ── */}
       {(() => {
         const totalAlerts = unbilledJobs.length + atRiskJobs.length + lossJobs.length + lowMarginJobs.length;
-        const hasRed = unbilledJobs.length > 0 || lossJobs.length > 0;
-        const accentColor = hasRed ? RED : AMBER;
+        const accentColor = unbilledJobs.length > 0 ? "#C45C2A" : lossJobs.length > 0 ? RED : AMBER;
+        const BURNT_ORANGE = "#C45C2A";
         const alertGroups = [
-          { key:"unbilled",   label:"UNBILLED",   color:RED,   bg:"rgba(140,64,64,0.06)",   border:"rgba(140,64,64,0.25)",  filled:true,  jobs:unbilledJobs,   headline: j => `${j.length} job${j.length!==1?"s":""} have costs but no invoice sent`,   sub: j => `${$(j.reduce((s,x)=>s+x.costs,0))} potentially unbilled`,   names: j => j.slice(0,4).map(x=>x.name).join(" · ") + (j.length>4?` +${j.length-4} more`:"") },
-          { key:"atrisk",     label:"AT RISK",    color:AMBER, bg:"rgba(140,107,48,0.05)",  border:"rgba(140,107,48,0.25)", filled:true,  jobs:atRiskJobs,     headline: j => `${j.length} active job${j.length!==1?"s":""} trending toward a loss`,    sub: () => "costs above 85% of revenue so far",                          names: j => j.slice(0,4).map(x=>`${x.name} (${x.marginPct}%)`).join(" · ") + (j.length>4?` +${j.length-4} more`:"") },
-          { key:"loss",       label:"LOSS",       color:RED,   bg:"rgba(140,64,64,0.04)",   border:"rgba(140,64,64,0.2)",   filled:false, jobs:lossJobs,       headline: j => `${j.length} completed job${j.length!==1?"s":""} closed at a loss`,        sub: j => `${$(Math.abs(j.reduce((s,x)=>s+x.profit,0)))} total lost`,   names: j => j.slice(0,4).map(x=>`${x.name} (${x.marginPct}%)`).join(" · ") + (j.length>4?` +${j.length-4} more`:"") },
-          { key:"lowmargin",  label:"LOW MARGIN", color:AMBER, bg:"rgba(140,107,48,0.03)",  border:"rgba(140,107,48,0.15)", filled:false, jobs:lowMarginJobs,  headline: j => `${j.length} job${j.length!==1?"s":""} finished under 10% margin`,       sub: () => null,                                                         names: j => j.slice(0,4).map(x=>`${x.name} (${x.marginPct}%)`).join(" · ") + (j.length>4?` +${j.length-4} more`:"") },
+          { key:"unbilled",   label:"UNBILLED",   color:BURNT_ORANGE, bg:"rgba(196,92,42,0.07)",   border:"rgba(196,92,42,0.30)",  filled:true,  jobs:unbilledJobs,   headline: j => `${j.length} job${j.length!==1?"s":""} have costs but no invoice sent`,   sub: j => `${$(j.reduce((s,x)=>s+x.costs,0))} potentially unbilled`,   names: j => j.slice(0,4).map(x=>x.name).join(" · ") + (j.length>4?` +${j.length-4} more`:"") },
+          { key:"atrisk",     label:"AT RISK",    color:AMBER,        bg:"rgba(196,144,32,0.07)",  border:"rgba(196,144,32,0.28)", filled:true,  jobs:atRiskJobs,     headline: j => `${j.length} active job${j.length!==1?"s":""} trending toward a loss`,    sub: () => "costs above 85% of revenue so far",                          names: j => j.slice(0,4).map(x=>`${x.name} (${x.marginPct}%)`).join(" · ") + (j.length>4?` +${j.length-4} more`:"") },
+          { key:"loss",       label:"LOSS",       color:RED,          bg:"rgba(156,53,53,0.06)",   border:"rgba(156,53,53,0.25)",  filled:false, jobs:lossJobs,       headline: j => `${j.length} completed job${j.length!==1?"s":""} closed at a loss`,        sub: j => `${$(Math.abs(j.reduce((s,x)=>s+x.profit,0)))} total lost`,   names: j => j.slice(0,4).map(x=>`${x.name} (${x.marginPct}%)`).join(" · ") + (j.length>4?` +${j.length-4} more`:"") },
+          { key:"lowmargin",  label:"LOW MARGIN", color:AMBER,        bg:"rgba(196,144,32,0.04)",  border:"rgba(196,144,32,0.18)", filled:false, jobs:lowMarginJobs,  headline: j => `${j.length} job${j.length!==1?"s":""} finished under 10% margin`,       sub: () => null,                                                         names: j => j.slice(0,4).map(x=>`${x.name} (${x.marginPct}%)`).join(" · ") + (j.length>4?` +${j.length-4} more`:"") },
         ].filter(g => g.jobs.length > 0);
 
         return (
@@ -1163,9 +1163,9 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, jobSummaries, untagg
 
         {/* PROFIT */}
         <div className="pls card" onClick={()=>setActiveKpi('profit')}
-          style={{ padding:"22px 28px", cursor:"pointer", borderTop:`3px solid ${heroColor}`, display:"flex", flexDirection:"column", justifyContent:"space-between", minHeight:120 }}>
+          style={{ padding:"22px 28px", cursor:"pointer", borderTop:`4px solid ${heroColor}`, display:"flex", flexDirection:"column", justifyContent:"space-between", minHeight:130 }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase" }}>
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:700, letterSpacing:"0.12em", color:DIM, textTransform:"uppercase" }}>
               {heroIsNet ? "Net Profit" : "Gross Profit"}
             </div>
             <div style={{ display:"flex", border:`1px solid ${BORDER}`, borderRadius:3, overflow:"hidden" }} onClick={e=>e.stopPropagation()}>
@@ -1175,7 +1175,7 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, jobSummaries, untagg
               ))}
             </div>
           </div>
-          <div style={{ fontFamily:"'Lora',serif", fontSize:42, fontWeight:600, color:heroColor, letterSpacing:"-0.03em", lineHeight:1.05, margin:"8px 0 6px" }}>{$(heroProfit)}</div>
+          <div style={{ fontFamily:"'Lora',serif", fontSize:46, fontWeight:700, color:heroColor, letterSpacing:"-0.03em", lineHeight:1.05, margin:"8px 0 6px" }}>{$(heroProfit)}</div>
           {periodComparison?.profitPct != null ? (
             <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color: periodComparison.profitPct >= 0 ? ACCENT2 : RED, display:"flex", alignItems:"center", gap:5 }}>
               <span style={{ fontSize:13 }}>{periodComparison.profitPct >= 0 ? "↑" : "↓"}</span>
@@ -1199,13 +1199,13 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, jobSummaries, untagg
 
         {/* REVENUE */}
         <div className="pls card" onClick={()=>setActiveKpi('revenue')}
-          style={{ padding:"22px 24px", cursor:"pointer", borderTop:`3px solid ${ACCENT}`, display:"flex", flexDirection:"column", justifyContent:"space-between", minHeight:120 }}>
-          <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase" }}>Revenue</div>
+          style={{ padding:"22px 24px", cursor:"pointer", borderTop:`4px solid ${ACCENT}`, display:"flex", flexDirection:"column", justifyContent:"space-between", minHeight:130 }}>
+          <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:700, letterSpacing:"0.12em", color:DIM, textTransform:"uppercase" }}>Revenue</div>
           <div>
             <div style={{ display:"flex", alignItems:"baseline", gap:10, margin:"8px 0 4px" }}>
-              <span style={{ fontFamily:"'Lora',serif", fontSize:32, fontWeight:600, color:DARK }}>{$(totalRev)}</span>
+              <span style={{ fontFamily:"'Lora',serif", fontSize:38, fontWeight:700, color:DARK }}>{$(totalRev)}</span>
               {periodComparison?.revPct != null && (
-                <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color: periodComparison.revPct >= 0 ? ACCENT2 : RED }}>
+                <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:600, color: periodComparison.revPct >= 0 ? ACCENT2 : RED }}>
                   {periodComparison.revPct >= 0 ? "↑" : "↓"} {Math.abs(periodComparison.revPct)}%
                 </span>
               )}
@@ -1216,9 +1216,9 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, jobSummaries, untagg
 
         {/* EXPENSES */}
         <div className="pls card" onClick={()=>setActiveKpi('expenses')}
-          style={{ padding:"22px 24px", cursor:"pointer", borderTop:`3px solid ${AMBER}`, display:"flex", flexDirection:"column", justifyContent:"space-between", minHeight:120 }}>
+          style={{ padding:"22px 24px", cursor:"pointer", borderTop:`4px solid ${AMBER}`, display:"flex", flexDirection:"column", justifyContent:"space-between", minHeight:130 }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
-            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:700, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase" }}>
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:700, letterSpacing:"0.12em", color:DIM, textTransform:"uppercase" }}>
               {heroIsNet ? "Total Expenses" : "Job Expenses"}
             </div>
             {/* DQ badge with tooltip */}
@@ -1244,7 +1244,7 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, jobSummaries, untagg
             })()}
           </div>
           <div>
-            <div style={{ fontFamily:"'Lora',serif", fontSize:32, fontWeight:600, color:MID, margin:"8px 0 4px" }}>
+            <div style={{ fontFamily:"'Lora',serif", fontSize:38, fontWeight:700, color:MID, margin:"8px 0 4px" }}>
               {heroIsNet ? $(totalCost + totalOverhead) : $(totalCost)}
             </div>
             <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM }}>
@@ -1297,19 +1297,35 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, jobSummaries, untagg
                   </tr>
                 </thead>
                 <tbody>
-                  {sorted.slice(0, jobTableRows).map((j, i) => (
-                    <tr key={j.id || i}
-                      onClick={() => onJobClick && onJobClick(j)}
-                      style={{ borderBottom:`1px solid ${BORDER}`, cursor: onJobClick ? "pointer" : "default", transition:"background 0.1s" }}
-                      onMouseOver={e => e.currentTarget.style.background = BG2}
-                      onMouseOut={e => e.currentTarget.style.background = "transparent"}>
-                      <td style={{ padding:"9px 10px", color:DARK, fontWeight:500, maxWidth:160, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={j.name}>{j.name}</td>
-                      <td style={{ padding:"9px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, color:MID }}>{$(j.revenue)}</td>
-                      <td style={{ padding:"9px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, color:MID }}>{$(j.costs)}</td>
-                      <td style={{ padding:"9px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, fontWeight:600, color: j.profit >= 0 ? ACCENT2 : RED }}>{j.profit >= 0 ? "+" : ""}{$(j.profit)}</td>
-                      <td style={{ padding:"9px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, color: parseFloat(j.marginPct) >= 20 ? ACCENT2 : parseFloat(j.marginPct) >= 10 ? MID : RED }}>{j.marginPct}%</td>
-                    </tr>
-                  ))}
+                  {(() => {
+                    const maxM = Math.max(...sorted.map(j => Math.max(0, parseFloat(j.marginPct))), 1);
+                    return sorted.slice(0, jobTableRows).map((j, i) => {
+                      const m = parseFloat(j.marginPct);
+                      const profitColor = j.profit < 0 ? RED : m >= 20 ? ACCENT2 : m >= 10 ? AMBER : DIM;
+                      const barW = j.profit < 0 ? 0 : Math.min(100, (m / maxM) * 100);
+                      const barColor = m >= 20 ? ACCENT2 : m >= 10 ? AMBER : RED;
+                      return (
+                        <tr key={j.id || i}
+                          onClick={() => onJobClick && onJobClick(j)}
+                          style={{ borderBottom:`1px solid ${BORDER}`, cursor: onJobClick ? "pointer" : "default", transition:"background 0.1s" }}
+                          onMouseOver={e => e.currentTarget.style.background = BG2}
+                          onMouseOut={e => e.currentTarget.style.background = "transparent"}>
+                          <td style={{ padding:"9px 10px", color:DARK, fontWeight:500, maxWidth:160, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={j.name}>{j.name}</td>
+                          <td style={{ padding:"9px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, color:MID }}>{$(j.revenue)}</td>
+                          <td style={{ padding:"9px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, color:MID }}>{$(j.costs)}</td>
+                          <td style={{ padding:"9px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, fontWeight:700, color:profitColor }}>{j.profit >= 0 ? "+" : ""}{$(j.profit)}</td>
+                          <td style={{ padding:"9px 10px", textAlign:"right" }}>
+                            <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:3 }}>
+                              <span style={{ fontFamily:"'DM Mono',monospace", fontSize:11, fontWeight:600, color:barColor }}>{j.marginPct}%</span>
+                              <div style={{ width:52, height:3, background:BORDER, borderRadius:2, overflow:"hidden" }}>
+                                <div style={{ height:"100%", width:`${barW}%`, background:barColor, borderRadius:2, transition:"width 0.3s" }}/>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })()}
                 </tbody>
               </table>
               {/* Show more / show less */}
@@ -1348,24 +1364,24 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, jobSummaries, untagg
 
           {trendView === "monthly" ? (
             <>
-              <ResponsiveContainer width="100%" height={260}>
+              <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={filteredTrend} margin={{ top:4,right:16,left:12,bottom:20 }}>
-                  <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false}/>
+                  <CartesianGrid strokeDasharray="2 4" stroke={BG2} vertical={false}/>
                   <XAxis dataKey="month" tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} axisLine={false} tickLine={false} height={40}/>
                   <YAxis tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} tickFormatter={$k} axisLine={false} tickLine={false} width={52}/>
                   <Tooltip content={ChartTip}/>
-                  <ReferenceLine y={0} stroke={BORDER}/>
+                  <ReferenceLine y={0} stroke={BORDER} strokeWidth={1.5}/>
                   <Line type="monotone" dataKey="revenue" stroke={DIM} strokeWidth={1.5} dot={false} name="Revenue"/>
                   <Line type="monotone" dataKey="costs" stroke={RED} strokeWidth={1.5} dot={false} name="Costs" strokeDasharray="4 2"/>
-                  <Line type="monotone" dataKey="profit" stroke={ACCENT2} strokeWidth={2.5} dot={{ r:3,fill:ACCENT2 }} name="Profit"/>
+                  <Line type="monotone" dataKey="profit" stroke={ACCENT} strokeWidth={3} dot={{ r:3,fill:ACCENT }} name="Profit"/>
                   {/* Linear regression trend line on profit */}
                   {trendLineData.length > 1 && (
-                    <Line type="linear" data={trendLineData} dataKey="trend" stroke={ACCENT} strokeWidth={1} dot={false} strokeDasharray="6 3" name="Trend" legendType="none"/>
+                    <Line type="linear" data={trendLineData} dataKey="trend" stroke={ACCENT2} strokeWidth={1.5} dot={false} strokeDasharray="6 3" name="Trend" legendType="none"/>
                   )}
                 </LineChart>
               </ResponsiveContainer>
               <div style={{ display:"flex",gap:20,marginTop:12,justifyContent:"flex-end",flexWrap:"wrap" }}>
-                {[["Revenue",DIM,false],["Costs",RED,true],["Profit",ACCENT2,false],["Trend",ACCENT,true]].map(([l,c,d]) => (
+                {[["Revenue",DIM,false],["Costs",RED,true],["Profit",ACCENT,false],["Trend",ACCENT2,true]].map(([l,c,d]) => (
                   <div key={l} style={{ display:"flex",alignItems:"center",gap:6,fontSize:10,color:DIM,fontFamily:"'DM Sans',sans-serif" }}>
                     <div style={{ width:16,height:2,background:d?"transparent":c,borderRadius:2,borderBottom:d?`2px dashed ${c}`:"none" }}/>
                     {l}
@@ -1375,9 +1391,15 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, jobSummaries, untagg
             </>
           ) : (
             <>
-              <ResponsiveContainer width="100%" height={260}>
-                <LineChart data={cumulativeData} margin={{ top:4,right:16,left:12,bottom:20 }}>
-                  <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false}/>
+              <ResponsiveContainer width="100%" height={300}>
+                <AreaChart data={cumulativeData} margin={{ top:4,right:16,left:12,bottom:20 }}>
+                  <defs>
+                    <linearGradient id="profitGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={ACCENT} stopOpacity={0.18}/>
+                      <stop offset="95%" stopColor={ACCENT} stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="2 4" stroke={BG2} vertical={false}/>
                   <XAxis dataKey="month" tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} axisLine={false} tickLine={false} height={40}/>
                   <YAxis tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} tickFormatter={$k} axisLine={false} tickLine={false} width={52}/>
                   <Tooltip content={({ active, payload, label }) => {
@@ -1386,14 +1408,14 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, jobSummaries, untagg
                     return (
                       <div style={{ background:CARD,border:`1px solid ${BORDER}`,borderRadius:5,padding:"10px 14px",fontFamily:"'DM Mono',monospace",fontSize:11,boxShadow:"0 4px 12px rgba(44,36,22,0.12)" }}>
                         <div style={{ color:DIM,marginBottom:6,fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.06em",textTransform:"uppercase" }}>{label}</div>
-                        <div style={{ color:ACCENT2,marginBottom:3 }}>Cumulative profit: {$k(d?.cumulativeProfit||0)}</div>
+                        <div style={{ color:ACCENT,marginBottom:3 }}>Cumulative profit: {$k(d?.cumulativeProfit||0)}</div>
                         <div style={{ color:DIM,fontSize:10 }}>This month: {d?.profit>=0?"+":""}{$k(d?.profit||0)}</div>
                       </div>
                     );
                   }}/>
-                  <ReferenceLine y={0} stroke={BORDER}/>
-                  <Line type="monotone" dataKey="cumulativeProfit" stroke={ACCENT2} strokeWidth={2.5} dot={{ r:3, fill:ACCENT2 }} name="Cumulative Profit"/>
-                </LineChart>
+                  <ReferenceLine y={0} stroke={BORDER} strokeWidth={1.5}/>
+                  <Area type="monotone" dataKey="cumulativeProfit" stroke={ACCENT} strokeWidth={2.5} fill="url(#profitGradient)" dot={{ r:3,fill:ACCENT,strokeWidth:0 }} name="Cumulative Profit"/>
+                </AreaChart>
               </ResponsiveContainer>
               <div style={{ display:"flex",gap:20,marginTop:12,justifyContent:"space-between",alignItems:"center" }}>
                 <div style={{ fontSize:11,color:DIM,fontFamily:"'DM Sans',sans-serif",fontStyle:"italic" }}>
@@ -1405,7 +1427,7 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, jobSummaries, untagg
                   })()}
                 </div>
                 <div style={{ display:"flex",alignItems:"center",gap:6,fontSize:10,color:DIM,fontFamily:"'DM Sans',sans-serif" }}>
-                  <div style={{ width:16,height:2,background:ACCENT2,borderRadius:2 }}/>
+                  <div style={{ width:16,height:2,background:ACCENT,borderRadius:2 }}/>
                   Cumulative profit
                 </div>
               </div>
