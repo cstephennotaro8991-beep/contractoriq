@@ -99,6 +99,26 @@ const INITIAL_UNTAGGED = [
   { id: "UNT012", docNumber: "PO-312", vendor: "FastSpark Electric", date: "2024-04-16", amount: 1440, description: "Wire & conduit - bulk", paymentType: "Check", suggestedJob: null, suggestionReason: null },
 ];
 
+// ─── MOCK LABOR ENTRIES ──────────────────────────────────────────────────────
+// Manual labor cost entries per job — mirrors what contractors will enter.
+
+const MOCK_LABOR_ENTRIES = [
+  { id: "LAB001", jobId: "J001", description: "Demo & framing crew", workerName: "Marcus T.", hours: 40, hourlyRate: 55, amount: 2200, workDate: "2024-01-08", source: "manual" },
+  { id: "LAB002", jobId: "J001", description: "Finish carpentry", workerName: "Dave R.", hours: 24, hourlyRate: 65, amount: 1560, workDate: "2024-01-15", source: "manual" },
+  { id: "LAB003", jobId: "J002", description: "Bathroom framing & tile", workerName: "Marcus T.", hours: 32, hourlyRate: 55, amount: 1760, workDate: "2024-01-22", source: "manual" },
+  { id: "LAB004", jobId: "J003", description: "Deck build crew", workerName: "Chris W.", hours: 28, hourlyRate: 50, amount: 1400, workDate: "2024-02-04", source: "manual" },
+  { id: "LAB005", jobId: "J004", description: "Commercial demo crew", workerName: "Team Alpha", hours: 80, hourlyRate: 60, amount: 4800, workDate: "2024-02-05", source: "manual" },
+  { id: "LAB006", jobId: "J004", description: "Partition & paint crew", workerName: "Team Beta", hours: 60, hourlyRate: 55, amount: 3300, workDate: "2024-02-12", source: "manual" },
+  { id: "LAB007", jobId: "J005", description: "Roofing install crew", workerName: "Luis M.", hours: 20, hourlyRate: 60, amount: 1200, workDate: "2024-02-20", source: "manual" },
+  { id: "LAB008", jobId: "J006", description: "Full reno crew - phase 1", workerName: "Team Alpha", hours: 120, hourlyRate: 58, amount: 6960, workDate: "2024-03-10", source: "manual" },
+  { id: "LAB009", jobId: "J006", description: "Full reno crew - phase 2", workerName: "Team Alpha", hours: 100, hourlyRate: 58, amount: 5800, workDate: "2024-04-01", source: "manual" },
+  { id: "LAB010", jobId: "J007", description: "Foundation excavation", workerName: "Chris W.", hours: 16, hourlyRate: 55, amount: 880, workDate: "2024-03-06", source: "manual" },
+  { id: "LAB011", jobId: "J008", description: "Garage conversion crew", workerName: "Dave R.", hours: 36, hourlyRate: 60, amount: 2160, workDate: "2024-03-14", source: "manual" },
+  { id: "LAB012", jobId: "J009", description: "Addition framing crew", workerName: "Marcus T.", hours: 56, hourlyRate: 58, amount: 3248, workDate: "2024-04-05", source: "manual" },
+  { id: "LAB013", jobId: "J009", description: "Plumbing rough-in labor", workerName: "Sub: ProPlumb", hours: 24, hourlyRate: 75, amount: 1800, workDate: "2024-04-10", source: "manual" },
+  { id: "LAB014", jobId: "J010", description: "Condo flip crew", workerName: "Team Beta", hours: 48, hourlyRate: 55, amount: 2640, workDate: "2024-03-22", source: "manual" },
+];
+
 // ─── JOB META ─────────────────────────────────────────────────────────────────
 
 const JOB_META = {
@@ -145,7 +165,7 @@ const CONSENT_VERSION = "2026-03";
 
 // ─── BUILD JOB SUMMARIES (reactive — takes extraCosts from tagged inbox items) ─
 
-function buildJobSummaries(extraCostsByJob = {}) {
+function buildJobSummaries(extraCostsByJob = {}, laborEntries = []) {
   const jobs = QB_CUSTOMERS.filter(c => c.Job);
   return jobs.map(job => {
     const invoices = QB_INVOICES.filter(i => i.CustomerRef.value === job.Id);
@@ -153,11 +173,14 @@ function buildJobSummaries(extraCostsByJob = {}) {
       p.Line.some(l => l.AccountBasedExpenseLineDetail?.CustomerRef?.value === job.Id)
     );
     const revenue = invoices.reduce((s, i) => s + i.TotalAmt, 0);
-    const baseCosts = purchases.reduce((s, p) =>
+    const baseMaterialCosts = purchases.reduce((s, p) =>
       s + p.Line.filter(l => l.AccountBasedExpenseLineDetail?.CustomerRef?.value === job.Id)
                .reduce((ls, l) => ls + l.Amount, 0), 0);
     const inboxCosts = extraCostsByJob[job.Id] || 0;
-    const costs = baseCosts + inboxCosts;
+    const materialCost = baseMaterialCosts + inboxCosts;
+    const jobLabor = laborEntries.filter(l => l.jobId === job.Id);
+    const laborCost = jobLabor.reduce((s, l) => s + (l.amount || 0), 0);
+    const costs = materialCost + laborCost;
     const client = QB_CUSTOMERS.find(c => c.Id === job.ParentRef?.value);
     const allDates = invoices.map(i => i.TxnDate).sort();
     const costByVendor = {};
@@ -168,10 +191,10 @@ function buildJobSummaries(extraCostsByJob = {}) {
     });
     return {
       id: job.Id, name: job.DisplayName, clientName: client?.DisplayName || "",
-      ...JOB_META[job.Id], revenue, costs,
+      ...JOB_META[job.Id], revenue, costs, materialCost, laborCost,
       profit: revenue - costs,
       marginPct: revenue > 0 ? (((revenue - costs) / revenue) * 100).toFixed(1) : "0.0",
-      invoices, purchases, firstDate: allDates[0] || "",
+      invoices, purchases, laborEntries: jobLabor, firstDate: allDates[0] || "",
       lastDate: allDates[allDates.length - 1] || "",
       costByVendor, outstanding: invoices.reduce((s, i) => s + i.Balance, 0),
     };
@@ -846,19 +869,23 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, onClientClick, jobSu
 
   const sorted = [...typeFilteredJobs].sort((a,b) => {
     let diff = 0;
-    if (sort==="profit")       diff = b.profit - a.profit;
-    else if (sort==="margin")  diff = parseFloat(b.marginPct) - parseFloat(a.marginPct);
-    else if (sort==="revenue") diff = b.revenue - a.revenue;
-    else if (sort==="costs")   diff = b.costs - a.costs;
-    else if (sort==="name")    diff = a.name.localeCompare(b.name);
-    else if (sort==="client")  diff = a.clientName.localeCompare(b.clientName);
-    else if (sort==="status")  diff = a.status.localeCompare(b.status);
+    if (sort==="profit")        diff = b.profit - a.profit;
+    else if (sort==="margin")   diff = parseFloat(b.marginPct) - parseFloat(a.marginPct);
+    else if (sort==="revenue")  diff = b.revenue - a.revenue;
+    else if (sort==="costs")    diff = b.costs - a.costs;
+    else if (sort==="material") diff = (b.materialCost||0) - (a.materialCost||0);
+    else if (sort==="labor")    diff = (b.laborCost||0) - (a.laborCost||0);
+    else if (sort==="name")     diff = a.name.localeCompare(b.name);
+    else if (sort==="client")   diff = a.clientName.localeCompare(b.clientName);
+    else if (sort==="status")   diff = a.status.localeCompare(b.status);
     return sortDir === "asc" ? -diff : diff;
   });
 
-  const totalRev    = typeFilteredJobs.reduce((s,j) => s + j.revenue, 0);
-  const totalCost   = typeFilteredJobs.reduce((s,j) => s + j.costs, 0);
-  const totalProfit = totalRev - totalCost;
+  const totalRev      = typeFilteredJobs.reduce((s,j) => s + j.revenue, 0);
+  const totalCost     = typeFilteredJobs.reduce((s,j) => s + j.costs, 0);
+  const totalMaterial = typeFilteredJobs.reduce((s,j) => s + (j.materialCost || 0), 0);
+  const totalLabor    = typeFilteredJobs.reduce((s,j) => s + (j.laborCost || 0), 0);
+  const totalProfit   = totalRev - totalCost;
 
   // Data Quality Score — all four components filtered to the selected date range.
   // Dismissed items stay in the denominator so dismissing doesn't artificially inflate the score.
@@ -1252,7 +1279,9 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, onClientClick, jobSu
               </div>
             ) : null}
             <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM }}>
-              {heroIsNet ? `${$(totalCost)} job + ${$(totalOverhead)} fixed` : `${typeFilteredJobs.reduce((s,j)=>s+j.purchases.length,0)} job-tagged`}
+              {heroIsNet
+                ? `${$(totalCost)} job + ${$(totalOverhead)} fixed`
+                : `${$(totalMaterial)} material · ${$(totalLabor)} labor`}
             </div>
           </div>
         </div>
@@ -1278,12 +1307,14 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, onClientClick, jobSu
               <thead>
                 <tr style={{ borderBottom:`2px solid ${BORDER}` }}>
                   {[
-                    { col:"name",    label:"Job",      align:"left"  },
-                    { col:"client",  label:"Client",   align:"left"  },
-                    { col:"revenue", label:"Revenue",  align:"right" },
-                    { col:"costs",   label:"Costs",    align:"right" },
-                    { col:"profit",  label:"Profit",   align:"right" },
-                    { col:"margin",  label:"Margin",   align:"right", tip:"Gross margin = Profit ÷ Revenue. Shows what % of revenue becomes profit after job costs." },
+                    { col:"name",     label:"Job",       align:"left"  },
+                    { col:"client",   label:"Client",    align:"left"  },
+                    { col:"revenue",  label:"Revenue",   align:"right" },
+                    { col:"material", label:"Material",  align:"right" },
+                    { col:"labor",    label:"Labor",     align:"right" },
+                    { col:"costs",    label:"Total Cost", align:"right" },
+                    { col:"profit",   label:"Profit",    align:"right" },
+                    { col:"margin",   label:"Margin",    align:"right", tip:"Gross margin = Profit ÷ Revenue. Includes both material and labor costs." },
                   ].map(({ col, label, align, tip }) => (
                     <th key={col} onClick={() => handleColSort(col)}
                       style={{ padding:"7px 10px", textAlign:align, fontSize:9, letterSpacing:"0.08em", textTransform:"uppercase", color: sort===col ? DARK : DIM, fontWeight:600, cursor:"pointer", userSelect:"none", whiteSpace:"nowrap", position:"relative" }}>
@@ -1313,9 +1344,11 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, onClientClick, jobSu
                         style={{ borderBottom:`1px solid ${BORDER}`, cursor: onJobClick ? "pointer" : "default", transition:"background 0.1s" }}
                         onMouseOver={e => e.currentTarget.style.background = BG2}
                         onMouseOut={e => e.currentTarget.style.background = "transparent"}>
-                        <td style={{ padding:"9px 10px", color:DARK, fontWeight:500, maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={j.name}>{j.name}</td>
-                        <td style={{ padding:"9px 10px", color:MID, maxWidth:180, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={j.clientName}>{j.clientName || "—"}</td>
+                        <td style={{ padding:"9px 10px", color:DARK, fontWeight:500, maxWidth:180, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={j.name}>{j.name}</td>
+                        <td style={{ padding:"9px 10px", color:MID, maxWidth:140, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={j.clientName}>{j.clientName || "—"}</td>
                         <td style={{ padding:"9px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, color:MID }}>{$(j.revenue)}</td>
+                        <td style={{ padding:"9px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, color:DIM }}>{$(j.materialCost || 0)}</td>
+                        <td style={{ padding:"9px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, color:DIM }}>{$(j.laborCost || 0)}</td>
                         <td style={{ padding:"9px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, color:MID }}>{$(j.costs)}</td>
                         <td style={{ padding:"9px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, fontWeight:700, color:profitColor }}>{j.profit >= 0 ? "+" : ""}{$(j.profit)}</td>
                         <td style={{ padding:"9px 10px", textAlign:"right" }}>
@@ -2793,7 +2826,154 @@ function ExpenseInbox({ untagged, onTag, onDismiss, onMarkOverhead, onRestore, o
 
 // ─── TAB: JOB DETAIL ─────────────────────────────────────────────────────────
 
-function JobDetail({ job, onBack, untagged, onJumpToInbox }) {
+// ─── LABOR SECTION (inline in Job Detail) ────────────────────────────────────
+
+function LaborSection({ job, onAddLabor, onDeleteLabor }) {
+  const [open, setOpen] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [desc, setDesc]       = useState("");
+  const [worker, setWorker]   = useState("");
+  const [hours, setHours]     = useState("");
+  const [rate, setRate]       = useState("");
+  const [workDate, setWorkDate] = useState(() => {
+    const d = new Date(); return d.toISOString().split('T')[0];
+  });
+
+  const entries = job.laborEntries || [];
+  const totalLabor = entries.reduce((s, l) => s + (l.amount || 0), 0);
+  const computedAmount = hours && rate ? (parseFloat(hours) * parseFloat(rate)) : 0;
+
+  function handleAdd() {
+    if (!desc.trim()) return;
+    const amt = computedAmount || 0;
+    if (amt <= 0) return;
+    onAddLabor({
+      jobId: job.id,
+      description: desc.trim(),
+      workerName: worker.trim() || null,
+      hours: hours ? parseFloat(hours) : null,
+      hourlyRate: rate ? parseFloat(rate) : null,
+      amount: amt,
+      workDate: workDate || null,
+      source: "manual",
+    });
+    setDesc(""); setWorker(""); setHours(""); setRate("");
+    setAdding(false);
+  }
+
+  const inputStyle = { padding:"7px 10px", borderRadius:5, border:`1px solid ${BORDER}`, background:CARD, fontFamily:"'DM Sans',sans-serif", fontSize:12, color:DARK, outline:"none", boxSizing:"border-box" };
+
+  return (
+    <div className="card" style={{ padding:"22px 26px", marginBottom:24 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: open ? 16 : 0 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:12, cursor:"pointer" }} onClick={() => setOpen(o => !o)}>
+          <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", fontWeight:500 }}>Labor Costs</div>
+          <span style={{ fontFamily:"'DM Mono',monospace", fontSize:13, fontWeight:600, color: totalLabor > 0 ? MID : DIM }}>{$(totalLabor)}</span>
+          <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DIM }}>· {entries.length} entr{entries.length === 1 ? "y" : "ies"}</span>
+          <span style={{ fontSize:10, color:DIM }}>{open ? "▲" : "▼"}</span>
+        </div>
+        {open && !adding && (
+          <button className="btn act" onClick={() => setAdding(true)} style={{ fontSize:11, padding:"5px 14px" }}>
+            + Add Labor
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <>
+          {/* Inline add form */}
+          {adding && (
+            <div style={{ padding:"14px 16px", marginBottom:14, borderRadius:6, border:`1px solid ${BORDER}`, background:BG }}>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
+                <div>
+                  <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Description *</label>
+                  <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="e.g. Framing crew labor" style={{ ...inputStyle, width:"100%" }} />
+                </div>
+                <div>
+                  <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Worker / Crew</label>
+                  <input value={worker} onChange={e => setWorker(e.target.value)} placeholder="e.g. Marcus T." style={{ ...inputStyle, width:"100%" }} />
+                </div>
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:10, marginBottom:12 }}>
+                <div>
+                  <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Hours *</label>
+                  <input type="number" min="0" step="0.5" value={hours} onChange={e => setHours(e.target.value)} placeholder="40" style={{ ...inputStyle, width:"100%" }} />
+                </div>
+                <div>
+                  <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Hourly Rate *</label>
+                  <input type="number" min="0" step="0.01" value={rate} onChange={e => setRate(e.target.value)} placeholder="55.00" style={{ ...inputStyle, width:"100%" }} />
+                </div>
+                <div>
+                  <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Total</label>
+                  <div style={{ ...inputStyle, background:BG2, color:DARK, fontFamily:"'DM Mono',monospace", fontWeight:600, lineHeight:"1.4" }}>
+                    {computedAmount > 0 ? $(computedAmount) : "—"}
+                  </div>
+                </div>
+                <div>
+                  <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Date</label>
+                  <input type="date" value={workDate} onChange={e => setWorkDate(e.target.value)} style={{ ...inputStyle, width:"100%" }} />
+                </div>
+              </div>
+              <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
+                <button className="btn" onClick={() => { setAdding(false); setDesc(""); setWorker(""); setHours(""); setRate(""); }} style={{ fontSize:11 }}>Cancel</button>
+                <button className="btn act" onClick={handleAdd} disabled={!desc.trim() || computedAmount <= 0} style={{ fontSize:11, padding:"6px 16px", opacity: (!desc.trim() || computedAmount <= 0) ? 0.4 : 1 }}>Save Entry</button>
+              </div>
+            </div>
+          )}
+
+          {/* Entries table */}
+          {entries.length === 0 && !adding ? (
+            <div style={{ padding:"24px 0", textAlign:"center" }}>
+              <div style={{ fontFamily:"'Lora',serif", fontSize:14, color:MID, fontStyle:"italic", marginBottom:6 }}>No labor costs logged for this job</div>
+              <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:DIM, marginBottom:14, lineHeight:1.6 }}>
+                Add labor entries to see true gross margin — materials alone don't tell the full story.
+              </div>
+              <button className="btn act" onClick={() => setAdding(true)} style={{ fontSize:11, padding:"7px 18px" }}>
+                + Add First Labor Entry
+              </button>
+            </div>
+          ) : entries.length > 0 && (
+            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12, fontFamily:"'DM Sans',sans-serif" }}>
+              <thead>
+                <tr style={{ borderBottom:`2px solid ${BORDER}` }}>
+                  {["Date", "Description", "Worker", "Hours", "Rate", "Amount", ""].map(h => (
+                    <th key={h} style={{ padding:"6px 10px", textAlign: h === "Amount" || h === "Hours" || h === "Rate" ? "right" : "left", fontSize:9, letterSpacing:"0.08em", textTransform:"uppercase", color:DIM, fontWeight:600 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map((l, i) => (
+                  <tr key={l.id || i} style={{ borderBottom:`1px solid ${BORDER}` }}>
+                    <td style={{ padding:"8px 10px", fontFamily:"'DM Mono',monospace", fontSize:11, color:DIM }}>{l.workDate || "—"}</td>
+                    <td style={{ padding:"8px 10px", color:DARK, fontWeight:500, maxWidth:220, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={l.description}>{l.description}</td>
+                    <td style={{ padding:"8px 10px", color:MID }}>{l.workerName || "—"}</td>
+                    <td style={{ padding:"8px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, color:MID }}>{l.hours || "—"}</td>
+                    <td style={{ padding:"8px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, color:MID }}>{l.hourlyRate ? `$${l.hourlyRate}` : "—"}</td>
+                    <td style={{ padding:"8px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, fontWeight:600, color:DARK }}>{$(l.amount)}</td>
+                    <td style={{ padding:"8px 10px", textAlign:"right", width:30 }}>
+                      {onDeleteLabor && (
+                        <button onClick={() => onDeleteLabor(l.id)} style={{ background:"none", border:"none", cursor:"pointer", fontSize:13, color:DIM, padding:0, lineHeight:1 }} title="Remove entry"
+                          onMouseOver={e => e.currentTarget.style.color = RED}
+                          onMouseOut={e => e.currentTarget.style.color = DIM}>×</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                <tr style={{ background:BG }}>
+                  <td colSpan={5} style={{ padding:"8px 10px", fontSize:10, fontWeight:700, letterSpacing:"0.08em", textTransform:"uppercase", color:DIM }}>Total Labor</td>
+                  <td style={{ padding:"8px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:12, fontWeight:700, color:DARK }}>{$(totalLabor)}</td>
+                  <td />
+                </tr>
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function JobDetail({ job, onBack, untagged, onJumpToInbox, onAddLabor, onDeleteLabor }) {
   if (!job) return (
     <div style={{ padding:80,textAlign:"center",color:DIM,background:BG,minHeight:"100vh" }}>
       <div style={{ fontFamily:"'Lora',serif",fontSize:18,color:MID,fontStyle:"italic",marginBottom:8 }}>No job selected</div>
@@ -2839,17 +3019,19 @@ function JobDetail({ job, onBack, untagged, onJumpToInbox }) {
         </div>
       )}
 
-      <div style={{ display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:14,marginBottom:24 }}>
+      <div style={{ display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:14,marginBottom:24 }}>
         {[
-          { label:"Revenue",     val:$(job.revenue) },
-          { label:"Total Costs", val:$(job.costs) },
-          { label:"Gross Profit",val:(win?"+":" –")+$(job.profit) },
-          { label:"Margin",      val:job.marginPct+"%" },
-          { label:"Outstanding", val:$(job.outstanding) },
+          { label:"Revenue",       val:$(job.revenue),                                          color:DARK },
+          { label:"Material Cost", val:$(job.materialCost || 0),                                color:MID,   sub: job.costs > 0 ? `${Math.round(((job.materialCost||0)/job.costs)*100)}% of costs` : null },
+          { label:"Labor Cost",    val:$(job.laborCost || 0),                                   color:MID,   sub: job.costs > 0 ? `${Math.round(((job.laborCost||0)/job.costs)*100)}% of costs` : null },
+          { label:"Total Costs",   val:$(job.costs),                                            color:MID },
+          { label:"Gross Profit",  val:(win?"+":" –")+$(job.profit),                            color:win?ACCENT2:RED },
+          { label:"Margin",        val:job.marginPct+"%",                                       color:DARK,  sub: job.outstanding > 0 ? `${$(job.outstanding)} outstanding` : null, subColor: job.outstanding > 0 ? AMBER : null },
         ].map((k,i) => (
           <div key={i} className="kpi">
             <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>{k.label}</div>
-            <div style={{ fontFamily:"'Lora',serif",fontSize:28,fontWeight:600,color:i===2?(win?ACCENT2:RED):i===4&&job.outstanding>0?AMBER:DARK }}>{k.val}</div>
+            <div style={{ fontFamily:"'Lora',serif",fontSize:26,fontWeight:600,color:k.color }}>{k.val}</div>
+            {k.sub && <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,color:k.subColor||DIM,marginTop:4 }}>{k.sub}</div>}
           </div>
         ))}
       </div>
@@ -2884,21 +3066,25 @@ function JobDetail({ job, onBack, untagged, onJumpToInbox }) {
           )}
         </div>
         <div className="card" style={{ padding:"22px 26px" }}>
-          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:5,fontWeight:500 }}>Revenue vs Costs</div>
-          <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,marginBottom:18,fontStyle:"italic" }}>Side by side comparison</div>
+          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:5,fontWeight:500 }}>Revenue vs Cost Breakdown</div>
+          <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,marginBottom:18,fontStyle:"italic" }}>Material, labor & profit</div>
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={[{ name:"This Job",revenue:job.revenue,costs:job.costs,profit:job.profit }]} margin={{ top:4,right:4,left:0,bottom:0 }}>
+            <BarChart data={[{ name:"This Job",revenue:job.revenue,material:job.materialCost||0,labor:job.laborCost||0,profit:job.profit }]} margin={{ top:4,right:4,left:0,bottom:0 }}>
               <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false}/>
               <XAxis dataKey="name" tick={{ fontSize:11,fill:DIM,fontFamily:"DM Sans" }} axisLine={false} tickLine={false}/>
               <YAxis tick={{ fontSize:10,fill:DIM,fontFamily:"DM Mono" }} tickFormatter={$k} axisLine={false} tickLine={false}/>
               <Tooltip content={ChartTip}/>
-              <Bar dataKey="revenue" name="Revenue" fill={DIM} radius={[4,4,0,0]} opacity={0.6}/>
-              <Bar dataKey="costs"   name="Costs"   fill={RED} radius={[4,4,0,0]} opacity={0.7}/>
-              <Bar dataKey="profit"  name="Profit"  fill={win?ACCENT2:RED} radius={[4,4,0,0]}/>
+              <Bar dataKey="revenue"  name="Revenue"  fill={DIM}           radius={[4,4,0,0]} opacity={0.6}/>
+              <Bar dataKey="material" name="Material" fill={RED}           radius={[4,4,0,0]} opacity={0.7}/>
+              <Bar dataKey="labor"    name="Labor"    fill={AMBER}         radius={[4,4,0,0]} opacity={0.7}/>
+              <Bar dataKey="profit"   name="Profit"   fill={win?ACCENT2:RED} radius={[4,4,0,0]}/>
             </BarChart>
           </ResponsiveContainer>
         </div>
       </div>
+
+      {/* ── Labor Costs section ── */}
+      <LaborSection job={job} onAddLabor={onAddLabor} onDeleteLabor={onDeleteLabor} />
 
       <div className="card" style={{ overflow:"hidden" }}>
         <div style={{ padding:"16px 22px",borderBottom:`1px solid ${BORDER}`,background:BG }}>
@@ -5095,8 +5281,8 @@ function useContractorData(userId, mockJobSummaries, mockUntagged) {
         return {
           id: job.id, name: job.name, clientName: job.client_name || '',
           type: job.job_type || 'General Construction', status: job.status || 'Complete',
-          revenue, costs, profit, marginPct, outstanding: 0,
-          invoices: invoiceObjs, purchases: purchaseObjs, costByVendor,
+          revenue, costs, materialCost: costs, laborCost: 0, profit, marginPct, outstanding: 0,
+          invoices: invoiceObjs, purchases: purchaseObjs, laborEntries: [], costByVendor,
           firstDate: invoices[0]?.txn_date || '', lastDate: invoices[invoices.length-1]?.txn_date || '',
         };
       }).filter(j => j.revenue > 0 || j.costs > 0);
@@ -5157,6 +5343,7 @@ export default function App() {
   const [tab, setTab]                   = useState("dashboard");
   const [selectedJob, setSelectedJob]   = useState(null);
   const [tagged, setTagged]             = useState([]);
+  const [laborEntries, setLaborEntries] = useState(MOCK_LABOR_ENTRIES);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [showTutorial, setShowTutorial]     = useState(false);
   const [dateRange, setDateRange]       = useState("ytd");
@@ -5173,7 +5360,7 @@ export default function App() {
   const appToastTimer                    = useRef(null);
 
   // ── Live data hook — loads from Supabase, falls back to mock
-  const mockJobSummaries = buildJobSummaries({});
+  const mockJobSummaries = buildJobSummaries({}, laborEntries);
   const {
     jobSummaries,
     autoMatched,
@@ -5193,6 +5380,17 @@ export default function App() {
 
   // Combined tagged list: DB-persisted + session-tagged (for display in "All Tagged" tab)
   const allTagged = [...dbTagged, ...tagged.filter(t => !dbTagged.some(d => d.id === t.id))];
+
+  // Keep selectedJob in sync when job summaries update (e.g. after adding labor)
+  // Compare costs to avoid infinite loops from object identity changes.
+  useEffect(() => {
+    if (selectedJob) {
+      const fresh = jobSummaries.find(j => j.id === selectedJob.id);
+      if (fresh && (fresh.costs !== selectedJob.costs || fresh.revenue !== selectedJob.revenue || fresh.laborCost !== selectedJob.laborCost)) {
+        setSelectedJob(fresh);
+      }
+    }
+  }, [jobSummaries]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Trigger a QB sync after successful OAuth connect
   async function triggerSync(userId) {
@@ -5344,6 +5542,17 @@ export default function App() {
   function handleJobClick(job) {
     setSelectedJob(job);
     setTab("detail");
+  }
+
+  function handleAddLabor(entry) {
+    const newEntry = { ...entry, id: `LAB-${Date.now()}` };
+    setLaborEntries(prev => [...prev, newEntry]);
+    toast(`Labor entry added: ${$(entry.amount)}`, ACCENT2);
+  }
+
+  function handleDeleteLabor(entryId) {
+    setLaborEntries(prev => prev.filter(l => l.id !== entryId));
+    toast("Labor entry removed", DIM);
   }
 
   async function handleTag(item, jobId, jobName) {
@@ -5768,7 +5977,7 @@ export default function App() {
       <div style={{ flex:1 }}>
         {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} onEstimate={()=>setTab("estimator")} onJumpToInbox={()=>setTab("inbox")} onClientClick={()=>setTab("clients")} jobSummaries={jobSummaries} untagged={[...untagged, ...(suggested||[])]} overhead={overhead} dismissed={dismissed} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
         {tab==="inbox"     && <SyncReview autoMatched={autoMatched} suggested={suggested} untagged={untagged} allTagged={allTagged} overhead={overhead} dismissed={dismissed} jobSummaries={jobSummaries} vendorRules={vendorRules} onConfirmSuggestion={handleConfirmSuggestion} onTag={handleTag} onMarkOverhead={handleMarkOverhead} onDismiss={handleDismiss} onRestore={handleRestore} onRetag={handleRetag} onUndoAutoMatch={handleUndoAutoMatch} onSaveVendorRule={handleSaveVendorRule} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
-        {tab==="detail"    && <JobDetail job={selectedJob} onBack={()=>setTab("dashboard")} untagged={untagged} onJumpToInbox={clientType==="quickbooks"?()=>setTab("inbox"):null}/>}
+        {tab==="detail"    && <JobDetail job={selectedJob} onBack={()=>setTab("dashboard")} untagged={untagged} onJumpToInbox={clientType==="quickbooks"?()=>setTab("inbox"):null} onAddLabor={handleAddLabor} onDeleteLabor={handleDeleteLabor}/>}
         {tab==="clients"   && <ClientScorecard jobSummaries={jobSummaries}/>}
         {tab==="estimator" && <JobEstimator jobSummaries={jobSummaries} userId={session?.user?.id}/>}
         {tab==="reports"   && <Reports jobSummaries={jobSummaries}/>}
