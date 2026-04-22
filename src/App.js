@@ -5547,12 +5547,12 @@ export default function App() {
   function handleAddLabor(entry) {
     const newEntry = { ...entry, id: `LAB-${Date.now()}` };
     setLaborEntries(prev => [...prev, newEntry]);
-    toast(`Labor entry added: ${$(entry.amount)}`, ACCENT2);
+    showAppToast(`Labor entry added: ${$(entry.amount)}`, ACCENT2);
   }
 
   function handleDeleteLabor(entryId) {
     setLaborEntries(prev => prev.filter(l => l.id !== entryId));
-    toast("Labor entry removed", DIM);
+    showAppToast("Labor entry removed", DIM);
   }
 
   async function handleTag(item, jobId, jobName) {
