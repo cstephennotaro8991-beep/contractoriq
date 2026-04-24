@@ -145,7 +145,7 @@ const $k = n => {
 
 // Earth-tone palette — warm, professional, non-tech
 const ACCENT = "#B8622A";   // terracotta / burnt sienna (primary action, highlights)
-const ACCENT2 = "#3E6B40";  // deep forest green (profit / positive)
+const ACCENT2 = "#2D5E30";  // deep forest green (profit / positive) — darkened for readability
 const RED    = "#9C3535";   // red-clay (losses / at-risk)
 const AMBER  = "#C49020";   // rich mustard amber (warnings / secondary)
 const BG     = "#EEEAE0";   // warm linen (light, readable contrast with cards)
@@ -1120,22 +1120,20 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, onClientClick, jobSu
         ].filter(g => g.jobs.length > 0);
 
         return (
-          <div style={{ marginBottom:20, borderRadius:6, border:`1px solid ${totalAlerts>0 ? `${accentColor}40` : BORDER}`, background:CARD, overflow:"hidden", boxShadow:"0 1px 4px rgba(44,36,22,0.06)" }}>
+          <div style={{ marginBottom:20, borderRadius:6, border:`1px solid ${BORDER}`, borderLeft: totalAlerts > 0 ? `4px solid ${accentColor}` : `4px solid ${ACCENT2}`, background:CARD, overflow:"hidden", boxShadow:"0 1px 4px rgba(44,36,22,0.04)" }}>
             {/* Collapsed header — always visible */}
             <div onClick={() => setAlertsOpen(o => !o)}
               style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 18px", cursor:"pointer", userSelect:"none" }}>
-              {/* Severity dot */}
-              <div style={{ width:8, height:8, borderRadius:"50%", background: totalAlerts > 0 ? accentColor : ACCENT2, flexShrink:0 }}/>
               {/* Title */}
-              <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, fontWeight:700, letterSpacing:"0.08em", color: totalAlerts > 0 ? accentColor : ACCENT2, textTransform:"uppercase" }}>
-                {totalAlerts > 0 ? `${totalAlerts} Alert${totalAlerts!==1?"s":""}` : "No Alerts"}
+              <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, fontWeight:600, color: totalAlerts > 0 ? MID : ACCENT2 }}>
+                {totalAlerts > 0 ? `${totalAlerts} alert${totalAlerts!==1?"s":""}` : "No alerts"}
               </div>
               {/* Chips */}
               {totalAlerts > 0 && (
                 <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
                   {alertGroups.map(g => (
-                    <span key={g.key} style={{ fontSize:10, fontWeight:700, fontFamily:"'DM Sans',sans-serif", letterSpacing:"0.05em", padding:"1px 8px", borderRadius:3, color: g.filled ? CARD : g.color, background: g.filled ? g.color : "transparent", border:`1px solid ${g.color}` }}>
-                      {g.label} {g.jobs.length}
+                    <span key={g.key} style={{ fontSize:10, fontWeight:600, fontFamily:"'DM Sans',sans-serif", padding:"2px 8px", borderRadius:4, color: g.filled ? CARD : g.color, background: g.filled ? g.color : `${g.color}12`, border:`1px solid ${g.color}40` }}>
+                      {g.jobs.length} {g.label.toLowerCase()}
                     </span>
                   ))}
                 </div>
@@ -1190,7 +1188,7 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, onClientClick, jobSu
       )}
 
       {/* ── KPI Hero Cards ── */}
-      <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr 1fr", gap:18, marginBottom:28 }}>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:18, marginBottom:28 }}>
 
         {/* PROFIT */}
         <div className="pls card" onClick={()=>setActiveKpi('profit')}
@@ -1209,8 +1207,8 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, onClientClick, jobSu
           <div style={{ fontFamily:"'Lora',serif", fontSize:46, fontWeight:700, color:heroColor, letterSpacing:"-0.03em", lineHeight:1.05, margin:"8px 0 6px" }}>{$(heroProfit)}</div>
           <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
             {ppcProfitPct != null && (
-              <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, fontWeight:600, color: ppcProfitPct >= 0 ? ACCENT2 : RED, display:"flex", alignItems:"center", gap:3 }}>
-                {ppcProfitPct >= 0 ? "↑" : "↓"} {Math.abs(ppcProfitPct)}%
+              <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:500, color: ppcProfitPct >= 0 ? ACCENT2 : RED, display:"flex", alignItems:"center", gap:3 }}>
+                <span style={{ fontSize:9 }}>{ppcProfitPct >= 0 ? "▲" : "▼"}</span> {Math.abs(ppcProfitPct)}%
                 <span style={{ fontWeight:400, color:DIM, fontSize:10 }}>&nbsp;{ppcLbl}</span>
               </span>
             )}
@@ -1230,8 +1228,8 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, onClientClick, jobSu
           <div>
             <div style={{ fontFamily:"'Lora',serif", fontSize:38, fontWeight:700, color:DARK, margin:"8px 0 4px" }}>{$(totalRev)}</div>
             {ppcRevPct != null ? (
-              <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:600, color: ppcRevPct >= 0 ? ACCENT2 : RED, display:"flex", alignItems:"center", gap:3, marginBottom:2 }}>
-                {ppcRevPct >= 0 ? "↑" : "↓"} {Math.abs(ppcRevPct)}%
+              <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:500, color: ppcRevPct >= 0 ? ACCENT2 : RED, display:"flex", alignItems:"center", gap:3, marginBottom:2 }}>
+                <span style={{ fontSize:9 }}>{ppcRevPct >= 0 ? "▲" : "▼"}</span> {Math.abs(ppcRevPct)}%
                 <span style={{ fontWeight:400, color:DIM, fontSize:10 }}>&nbsp;{ppcLbl}</span>
               </div>
             ) : null}
@@ -1273,8 +1271,8 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, onClientClick, jobSu
               {heroIsNet ? $(totalCost + totalOverhead) : $(totalCost)}
             </div>
             {ppcCostPct != null ? (
-              <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:600, color: ppcCostPct <= 0 ? ACCENT2 : RED, display:"flex", alignItems:"center", gap:3, marginBottom:2 }}>
-                {ppcCostPct <= 0 ? "↓" : "↑"} {Math.abs(ppcCostPct)}%
+              <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:500, color: ppcCostPct <= 0 ? ACCENT2 : RED, display:"flex", alignItems:"center", gap:3, marginBottom:2 }}>
+                <span style={{ fontSize:9 }}>{ppcCostPct <= 0 ? "▼" : "▲"}</span> {Math.abs(ppcCostPct)}%
                 <span style={{ fontWeight:400, color:DIM, fontSize:10 }}>&nbsp;{ppcLbl}</span>
               </div>
             ) : null}
@@ -1293,7 +1291,7 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, onClientClick, jobSu
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16 }}>
           <div>
             <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:5,fontWeight:500 }}>Active Jobs</div>
-            <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>{sorted.length} job{sorted.length!==1?"s":""} · click headers to sort</div>
+            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM }}>{sorted.length} job{sorted.length!==1?"s":""} · click headers to sort</div>
           </div>
         </div>
         {sorted.length === 0 ? (
@@ -1310,9 +1308,9 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, onClientClick, jobSu
                     { col:"name",     label:"Job",       align:"left"  },
                     { col:"client",   label:"Client",    align:"left"  },
                     { col:"revenue",  label:"Revenue",   align:"right" },
-                    { col:"material", label:"Material",  align:"right" },
-                    { col:"labor",    label:"Labor",     align:"right" },
-                    { col:"costs",    label:"Total Cost", align:"right" },
+                    { col:"material", label:"Mat'l",     align:"right", tip:"Material & vendor costs from QB purchases" },
+                    { col:"labor",    label:"Labor",     align:"right", tip:"Manual labor entries logged in Job Detail" },
+                    { col:"costs",    label:"Total",     align:"right" },
                     { col:"profit",   label:"Profit",    align:"right" },
                     { col:"margin",   label:"Margin",    align:"right", tip:"Gross margin = Profit ÷ Revenue. Includes both material and labor costs." },
                   ].map(({ col, label, align, tip }) => (
@@ -2973,11 +2971,39 @@ function LaborSection({ job, onAddLabor, onDeleteLabor }) {
   );
 }
 
-function JobDetail({ job, onBack, untagged, onJumpToInbox, onAddLabor, onDeleteLabor }) {
+function JobDetail({ job, onBack, untagged, onJumpToInbox, onAddLabor, onDeleteLabor, jobSummaries, onJobClick }) {
   if (!job) return (
-    <div style={{ padding:80,textAlign:"center",color:DIM,background:BG,minHeight:"100vh" }}>
-      <div style={{ fontFamily:"'Lora',serif",fontSize:18,color:MID,fontStyle:"italic",marginBottom:8 }}>No job selected</div>
-      <div style={{ fontSize:13,fontFamily:"'DM Sans',sans-serif",color:DIM }}>Select a job from the Dashboard tab to see its full breakdown</div>
+    <div style={{ padding:"48px 36px",background:BG,minHeight:"100vh" }}>
+      <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em",marginBottom:4 }}>Job Detail</h1>
+      <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginBottom:28 }}>Select a job to see its full profitability breakdown.</p>
+      {jobSummaries && jobSummaries.length > 0 && (
+        <div className="card" style={{ padding:"18px 22px", maxWidth:520 }}>
+          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",fontWeight:500,marginBottom:12 }}>Your Jobs</div>
+          {jobSummaries.slice(0,8).map(j => {
+            const win = j.profit >= 0;
+            return (
+              <div key={j.id} onClick={() => onJobClick && onJobClick(j)}
+                style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 8px",borderBottom:`1px solid ${BORDER}`,cursor:"pointer",transition:"background 0.1s" }}
+                onMouseOver={e => e.currentTarget.style.background = BG2}
+                onMouseOut={e => e.currentTarget.style.background = "transparent"}>
+                <div>
+                  <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DARK,fontWeight:500 }}>{j.name}</div>
+                  <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:2 }}>{j.clientName || "—"} · {j.type}</div>
+                </div>
+                <div style={{ textAlign:"right" }}>
+                  <div style={{ fontFamily:"'DM Mono',monospace",fontSize:12,fontWeight:600,color:win?ACCENT2:RED }}>{win?"+":""}{$(j.profit)}</div>
+                  <div style={{ fontFamily:"'DM Mono',monospace",fontSize:10,color:DIM }}>{j.marginPct}%</div>
+                </div>
+              </div>
+            );
+          })}
+          {jobSummaries.length > 8 && (
+            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,padding:"10px 8px" }}>
+              + {jobSummaries.length - 8} more — search from the Dashboard
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
   const win = job.profit > 0;
@@ -3039,7 +3065,7 @@ function JobDetail({ job, onBack, untagged, onJumpToInbox, onAddLabor, onDeleteL
       <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:18,marginBottom:24 }}>
         <div className="card" style={{ padding:"22px 26px" }}>
           <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:5,fontWeight:500 }}>Cost Breakdown by Vendor</div>
-          <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,marginBottom:18,fontStyle:"italic" }}>Where did the money go?</div>
+          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM,marginBottom:18 }}>Where did the money go?</div>
           {vendorData.length === 0 ? (
             <div style={{ padding:"32px 0",textAlign:"center" }}>
               <div style={{ fontSize:26,marginBottom:12,opacity:0.25 }}>✉</div>
@@ -3067,7 +3093,7 @@ function JobDetail({ job, onBack, untagged, onJumpToInbox, onAddLabor, onDeleteL
         </div>
         <div className="card" style={{ padding:"22px 26px" }}>
           <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:5,fontWeight:500 }}>Revenue vs Cost Breakdown</div>
-          <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,marginBottom:18,fontStyle:"italic" }}>Material, labor & profit</div>
+          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM,marginBottom:18 }}>Material, labor & profit</div>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={[{ name:"This Job",revenue:job.revenue,material:job.materialCost||0,labor:job.laborCost||0,profit:job.profit }]} margin={{ top:4,right:4,left:0,bottom:0 }}>
               <CartesianGrid strokeDasharray="2 4" stroke={BORDER} vertical={false}/>
@@ -3088,7 +3114,7 @@ function JobDetail({ job, onBack, untagged, onJumpToInbox, onAddLabor, onDeleteL
 
       <div className="card" style={{ overflow:"hidden" }}>
         <div style={{ padding:"16px 22px",borderBottom:`1px solid ${BORDER}`,background:BG }}>
-          <div style={{ fontFamily:"'Lora',serif",fontSize:14,color:MID,fontStyle:"italic" }}>Transaction Log — all invoices & expenses for this job</div>
+          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM }}>All invoices & expenses for this job</div>
         </div>
         <div style={{ overflowX:"auto" }}>
           <table className="raw-table">
@@ -3980,31 +4006,33 @@ function Reports({ jobSummaries }) {
   // ── Report library view ──
   return (
     <div style={{ padding:"32px 36px", background:BG, minHeight:"100vh" }}>
-      <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:28 }}>
-        <div>
-          <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em" }}>Report Library</h1>
-          <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>Pre-built reports — open any report to view, export to PDF, or download as Excel.</p>
-        </div>
+      <div style={{ marginBottom:28 }}>
+        <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em" }}>Report Library</h1>
+        <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>Pre-built reports — open to view, export as PDF or Excel.</p>
       </div>
-      <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:16 }}>
+      <div style={{ display:"flex",flexDirection:"column",gap:12,maxWidth:720 }}>
         {REPORTS.map(r => {
           const data = r.compute();
+          const topItem = data[0];
           return (
-            <div key={r.id} className="card" style={{ padding:"24px 28px",transition:"all 0.15s" }}
+            <div key={r.id} className="card" style={{ padding:"18px 24px",transition:"border-color 0.15s",cursor:"pointer",display:"flex",alignItems:"center",gap:20 }}
+              onClick={()=>setActiveReport(r.id)}
               onMouseOver={e=>e.currentTarget.style.borderColor=ACCENT}
               onMouseOut={e=>e.currentTarget.style.borderColor=BORDER}
             >
-              <div style={{ display:"flex",alignItems:"flex-start",gap:14,marginBottom:16 }}>
-                <div style={{ fontSize:22,lineHeight:1 }}>{r.icon}</div>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontFamily:"'Lora',serif",fontSize:16,fontWeight:500,color:DARK,marginBottom:6 }}>{r.title}</div>
-                  <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:MID,lineHeight:1.6 }}>{r.description}</div>
-                </div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontFamily:"'Lora',serif",fontSize:15,fontWeight:500,color:DARK,marginBottom:4 }}>{r.title}</div>
+                <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,lineHeight:1.5 }}>{r.description}</div>
               </div>
-              {/* Action row — open + export buttons */}
-              <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",paddingTop:14,borderTop:`1px solid ${BORDER}` }}>
-                <button className="btn act" onClick={()=>setActiveReport(r.id)} style={{ fontSize:11 }}>Open report →</button>
-                {/* Compact export buttons on library card */}
+              {topItem && (
+                <div style={{ textAlign:"right",flexShrink:0 }}>
+                  <div style={{ fontFamily:"'DM Mono',monospace",fontSize:13,fontWeight:600,color:ACCENT2 }}>{topItem.name}</div>
+                  <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,color:DIM,marginTop:2 }}>
+                    {topItem.margin != null ? `${topItem.margin}% margin` : topItem.profit != null ? $(topItem.profit) : ""}
+                  </div>
+                </div>
+              )}
+              <div style={{ display:"flex",gap:6,flexShrink:0 }} onClick={e => e.stopPropagation()}>
                 <ExportButtons data={data} title={r.title} insight={r.insight(data)} report={r} compact={true} />
               </div>
             </div>
@@ -4067,7 +4095,103 @@ function getLineAmount(line) {
 
 const BLANK_LINE = { description: "", category: "Materials", amount: "", mode: "flat", unitCost: "", quantity: "" };
 
-function JobEstimator({ jobSummaries, userId }) {
+function exportQuotePDF({ name, jobType, expectedRevenue, costLines, notes, contractorName, totalCosts, grossProfit, grossMargin }) {
+  const rev = parseFloat(expectedRevenue) || 0;
+  const lineRows = costLines.filter(l => getLineAmount(l) > 0).map(l => {
+    const amt = getLineAmount(l);
+    return `<tr>
+      <td>${l.description || '—'}</td>
+      <td>${l.category || '—'}</td>
+      <td class="mono right">${l.hours || l.quantity || '—'}</td>
+      <td class="mono right">$${amt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+    </tr>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Quote — ${name || 'Untitled'}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Helvetica Neue', Arial, sans-serif; background: white; color: #2C2416; padding: 40px 48px; max-width: 800px; margin: 0 auto; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; padding-bottom: 20px; border-bottom: 2px solid #DDD5C4; }
+    .company { font-size: 20px; font-weight: 700; color: #1E1810; letter-spacing: -0.02em; }
+    .company-sub { font-size: 11px; color: #9C8A74; margin-top: 4px; }
+    .meta { text-align: right; font-size: 11px; color: #9C8A74; line-height: 1.8; }
+    .title { font-size: 22px; font-weight: 700; color: #2C2416; margin-bottom: 6px; }
+    .subtitle { font-size: 12px; color: #6B5E4E; margin-bottom: 28px; }
+    .section-label { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: #9C8A74; font-weight: 700; margin-bottom: 10px; margin-top: 24px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 0; }
+    th { background: #F5F0E8; padding: 8px 12px; text-align: left; font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: #9C8A74; border-bottom: 1px solid #DDD5C4; font-weight: 600; }
+    th.right { text-align: right; }
+    td { padding: 10px 12px; border-bottom: 1px solid #EDE8DC; color: #4A3F32; }
+    td.mono { font-family: 'Courier New', monospace; }
+    td.right, th.right { text-align: right; }
+    tr:last-child td { border-bottom: none; }
+    .totals { margin-top: 2px; border-top: 2px solid #DDD5C4; padding: 16px 0; }
+    .total-row { display: flex; justify-content: space-between; padding: 6px 12px; font-size: 13px; }
+    .total-row.highlight { font-weight: 700; font-size: 15px; color: #2C2416; margin-top: 8px; padding-top: 10px; border-top: 1px solid #DDD5C4; }
+    .total-row .label { color: #6B5E4E; }
+    .total-row .value { font-family: 'Courier New', monospace; color: #2C2416; }
+    .notes { margin-top: 28px; padding: 16px 18px; background: #FAF8F4; border: 1px solid #EDE8DC; border-radius: 4px; }
+    .notes-label { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: #9C8A74; font-weight: 700; margin-bottom: 8px; }
+    .notes-text { font-size: 12px; color: #6B5E4E; line-height: 1.7; white-space: pre-wrap; }
+    .footer { margin-top: 40px; padding-top: 12px; border-top: 1px solid #DDD5C4; font-size: 10px; color: #9C8A74; text-align: center; }
+    @media print { @page { margin: 1.5cm; size: A4 portrait; } body { padding: 0; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="company">${contractorName || 'Quote'}</div>
+      <div class="company-sub">Project Estimate</div>
+    </div>
+    <div class="meta">
+      ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}<br/>
+      ${jobType ? `Type: ${jobType}` : ''}
+    </div>
+  </div>
+
+  <div class="title">${name || 'Untitled Estimate'}</div>
+  <div class="subtitle">Detailed cost breakdown and projected pricing</div>
+
+  <div class="section-label">Line Items</div>
+  <table>
+    <thead><tr><th>Description</th><th>Category</th><th class="right">Qty / Hrs</th><th class="right">Amount</th></tr></thead>
+    <tbody>${lineRows || '<tr><td colspan="4" style="text-align:center;color:#9C8A74;padding:20px;">No line items</td></tr>'}</tbody>
+  </table>
+
+  <div class="totals">
+    <div class="total-row"><span class="label">Total Estimated Costs</span><span class="value">$${totalCosts.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+    ${rev > 0 ? `<div class="total-row"><span class="label">Quoted Price</span><span class="value">$${rev.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>` : ''}
+    ${rev > 0 ? `<div class="total-row highlight"><span class="label">Projected Gross Profit</span><span class="value">$${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${grossMargin}%)</span></div>` : ''}
+  </div>
+
+  ${notes ? `<div class="notes"><div class="notes-label">Notes</div><div class="notes-text">${notes.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div></div>` : ''}
+
+  <div class="footer">
+    Prepared by ${contractorName || '—'} · ${new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+  </div>
+
+  <script>
+    window.onload = function() {
+      setTimeout(function() { window.print(); }, 400);
+    };
+  </script>
+</body>
+</html>`;
+
+  const printWindow = window.open('', '_blank', 'width=800,height=900');
+  if (!printWindow) {
+    alert('Please allow popups for app.canopybi.com to use PDF export.');
+    return;
+  }
+  printWindow.document.write(html);
+  printWindow.document.close();
+}
+
+function JobEstimator({ jobSummaries, userId, contractorName }) {
   // ── Saved estimates state
   const [estimates, setEstimates]         = useState([]);
   const [templates, setTemplates]         = useState([]);
@@ -4710,6 +4834,10 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
               <button className="btn" onClick={saveAsTemplate} disabled={savingTemplate || !name.trim()}
                 style={{ padding: "10px 18px", fontSize: 12, opacity: (!name.trim()) ? 0.4 : 1 }}>
                 {savingTemplate ? "Saving..." : "Save as Template"}
+              </button>
+              <button className="btn" onClick={() => exportQuotePDF({ name, jobType, expectedRevenue, costLines, notes, contractorName, totalCosts, grossProfit, grossMargin })} disabled={!name.trim()}
+                style={{ padding: "10px 18px", fontSize: 12, opacity: (!name.trim()) ? 0.4 : 1, borderColor: ACCENT, color: ACCENT }}>
+                Export Quote PDF
               </button>
               {dirty && <span style={{ fontSize: 11, color: AMBER, fontFamily: "'DM Sans',sans-serif" }}>Unsaved changes</span>}
               {!dirty && activeEstimateId && <span style={{ fontSize: 11, color: ACCENT2, fontFamily: "'DM Sans',sans-serif" }}>Saved</span>}
@@ -5767,15 +5895,29 @@ export default function App() {
   const reviewCount = filterUntaggedByDate(suggested || [], dateRange, customStart, customEnd).length
                    + filterUntaggedByDate(untagged,        dateRange, customStart, customEnd).length;
 
+  // SVG icon paths — lightweight inline icons (Lucide-inspired, 18×18 viewBox)
+  const IC = (d, sz=18) => <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink:0, opacity:0.7 }}>{d}</svg>;
+  const ICONS = {
+    dashboard: IC(<><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></>),
+    clients:   IC(<><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></>),
+    inbox:     IC(<><path d="M22 12h-6l-2 3H10l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></>),
+    detail:    IC(<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></>),
+    estimator: IC(<><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></>),
+    reports:   IC(<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></>),
+    chat:      IC(<><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></>),
+    raw:       IC(<><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></>),
+    gear:      IC(<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68 1.65 1.65 0 0 0 10 3.17V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></>),
+  };
+
   const TABS = [
-    { key:"dashboard", label:"Dashboard",         icon:"⊡" },
-    { key:"clients",   label:"Clients",           icon:"◉" },
-    ...(clientType === "quickbooks" ? [{ key:"inbox", label:"Expense Management", icon:"✉" }] : []),
-    { key:"detail",    label:"Job Detail",        icon:"◈" },
-    { key:"estimator", label:"Quote Generator",   icon:"◇" },
-    { key:"reports",   label:"Reports",           icon:"≡" },
-    { key:"chat",      label:"AI Analyst",        icon:"◆" },
-    ...(clientType === "quickbooks" ? [{ key:"raw", label:"Raw Data",             icon:"⊞" }] : []),
+    { key:"dashboard", label:"Dashboard",         icon:ICONS.dashboard },
+    { key:"clients",   label:"Clients",           icon:ICONS.clients },
+    ...(clientType === "quickbooks" ? [{ key:"inbox", label:"Expense Management", icon:ICONS.inbox }] : []),
+    { key:"detail",    label:"Job Detail",        icon:ICONS.detail },
+    { key:"estimator", label:"Quote Generator",   icon:ICONS.estimator },
+    { key:"reports",   label:"Reports",           icon:ICONS.reports },
+    { key:"chat",      label:"AI Analyst",        icon:ICONS.chat },
+    ...(clientType === "quickbooks" ? [{ key:"raw", label:"Raw Data",             icon:ICONS.raw }] : []),
   ];
 
   return (
@@ -5832,7 +5974,7 @@ export default function App() {
           {TABS.map(t => (
             <div key={t.key} className={`si${tab===t.key?" active":""}`} onClick={()=>setTab(t.key)}
               style={{ color: tab===t.key ? "#F5EFE3" : SIDEBAR_TEXT }}>
-              <span style={{ fontSize:15, opacity:0.75, flexShrink:0 }}>{t.icon}</span>
+              {t.icon}
               <span style={{ flex:1 }}>{t.label}</span>
               {t.key==="inbox" && reviewCount > 0 && <span className="badge">{reviewCount}</span>}
               {t.key==="inbox" && reviewCount === 0 && allTagged.length > 0 && <span className="badge done">✓</span>}
@@ -5871,32 +6013,36 @@ export default function App() {
         {/* QB status */}
         {clientType === "quickbooks" && (
           <div style={{ padding:"14px 20px", borderTop:"1px solid rgba(255,255,255,0.07)" }}>
-            <div style={{ display:"flex", alignItems:"center", gap:7 }}>
-              {syncing
-                ? <span className="spinner" style={{ width:10, height:10, borderWidth:1.5 }}/>
-                : <div style={{ width:6, height:6, borderRadius:"50%", background: qbConnected ? ACCENT2 : AMBER, flexShrink:0 }}/>
-              }
-              <span style={{ fontSize:11, fontFamily:"'DM Sans',sans-serif", color: qbConnected ? ACCENT2 : AMBER }}>
-                {syncing ? "Syncing…" : qbConnected ? "QuickBooks" : "Not connected"}
-              </span>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+                {syncing
+                  ? <span className="spinner" style={{ width:10, height:10, borderWidth:1.5 }}/>
+                  : <div style={{ width:6, height:6, borderRadius:"50%", background: qbConnected ? ACCENT2 : AMBER, flexShrink:0 }}/>
+                }
+                <span style={{ fontSize:11, fontFamily:"'DM Sans',sans-serif", color: qbConnected ? ACCENT2 : AMBER }}>
+                  {syncing ? "Syncing…" : qbConnected ? "QuickBooks" : "Not connected"}
+                </span>
+              </div>
+              {qbConnected && !syncing && (
+                <span onClick={() => triggerSync(session?.user?.id)}
+                  style={{ fontSize:10, color:SIDEBAR_DIM, fontFamily:"'DM Sans',sans-serif", cursor:"pointer", textDecoration:"underline" }}>sync</span>
+              )}
             </div>
             {qbConnected && !syncing && (
-              <div style={{ fontSize:10, color:SIDEBAR_DIM, fontFamily:"'DM Sans',sans-serif", marginTop:4, paddingLeft:13 }}>
-                {dataSource === 'live' ? "Live data" : "Demo data"}
-                {" · "}
-                <span onClick={() => triggerSync(session?.user?.id)}
-                  style={{ color:SIDEBAR_DIM, textDecoration:"underline", cursor:"pointer" }}>sync</span>
-                {" · "}
-                <a href={`/api/qb-disconnect?userId=${session?.user?.id}&redirect=true`}
-                  style={{ color:SIDEBAR_DIM, textDecoration:"underline", cursor:"pointer" }}>disconnect</a>
+              <div style={{ fontSize:10, color:SIDEBAR_DIM, fontFamily:"'DM Sans',sans-serif", marginTop:5, paddingLeft:13, display:"flex", alignItems:"center", gap:8 }}>
+                <span style={{ opacity:0.7 }}>{dataSource === 'live' ? "Live data" : "Demo data"}</span>
+                <span style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:2, cursor:"pointer", opacity:0.6, transition:"opacity 0.15s" }}
+                  onClick={() => { setVendorSetupIsFirstRun(false); setShowVendorSetup(true); }}
+                  onMouseOver={e => e.currentTarget.style.opacity="1"}
+                  onMouseOut={e => e.currentTarget.style.opacity="0.6"}>
+                  {ICONS.gear}
+                </span>
               </div>
             )}
-            {qbConnected && (
-              <div style={{ fontSize:10, color:SIDEBAR_DIM, fontFamily:"'DM Sans',sans-serif", marginTop:3, paddingLeft:13 }}>
+            {qbConnected && !(vendorRules||[]).some(r=>r.rule_type==='tracked') && (
+              <div style={{ fontSize:10, color:AMBER, fontFamily:"'DM Sans',sans-serif", marginTop:4, paddingLeft:13 }}>
                 <span onClick={() => { setVendorSetupIsFirstRun(false); setShowVendorSetup(true); }}
-                  style={{ color:SIDEBAR_DIM, textDecoration:"underline", cursor:"pointer" }}>
-                  {(vendorRules||[]).some(r=>r.rule_type==='tracked') ? "manage vendors" : "⚠ set up vendors"}
-                </span>
+                  style={{ cursor:"pointer", textDecoration:"underline" }}>Set up vendor tracking</span>
               </div>
             )}
           </div>
@@ -5977,24 +6123,23 @@ export default function App() {
       <div style={{ flex:1 }}>
         {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} onEstimate={()=>setTab("estimator")} onJumpToInbox={()=>setTab("inbox")} onClientClick={()=>setTab("clients")} jobSummaries={jobSummaries} untagged={[...untagged, ...(suggested||[])]} overhead={overhead} dismissed={dismissed} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
         {tab==="inbox"     && <SyncReview autoMatched={autoMatched} suggested={suggested} untagged={untagged} allTagged={allTagged} overhead={overhead} dismissed={dismissed} jobSummaries={jobSummaries} vendorRules={vendorRules} onConfirmSuggestion={handleConfirmSuggestion} onTag={handleTag} onMarkOverhead={handleMarkOverhead} onDismiss={handleDismiss} onRestore={handleRestore} onRetag={handleRetag} onUndoAutoMatch={handleUndoAutoMatch} onSaveVendorRule={handleSaveVendorRule} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
-        {tab==="detail"    && <JobDetail job={selectedJob} onBack={()=>setTab("dashboard")} untagged={untagged} onJumpToInbox={clientType==="quickbooks"?()=>setTab("inbox"):null} onAddLabor={handleAddLabor} onDeleteLabor={handleDeleteLabor}/>}
+        {tab==="detail"    && <JobDetail job={selectedJob} onBack={()=>setTab("dashboard")} untagged={untagged} onJumpToInbox={clientType==="quickbooks"?()=>setTab("inbox"):null} onAddLabor={handleAddLabor} onDeleteLabor={handleDeleteLabor} jobSummaries={jobSummaries} onJobClick={handleJobClick}/>}
         {tab==="clients"   && <ClientScorecard jobSummaries={jobSummaries}/>}
-        {tab==="estimator" && <JobEstimator jobSummaries={jobSummaries} userId={session?.user?.id}/>}
+        {tab==="estimator" && <JobEstimator jobSummaries={jobSummaries} userId={session?.user?.id} contractorName={contractorName}/>}
         {tab==="reports"   && <Reports jobSummaries={jobSummaries}/>}
         {tab==="chat"      && <AIChat jobSummaries={jobSummaries}/>}
         {tab==="raw"       && <RawData jobSummaries={jobSummaries} dataSource={dataSource}/>}
       </div>
 
       {/* ── Persistent footer disclaimer ── */}
-      <div style={{ background:BG2, borderTop:`1px solid ${BORDER}`, padding:"10px 32px", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8 }}>
-        <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, lineHeight:1.6 }}>
-          <span style={{ fontWeight:500, color:MID }}>Data disclaimer: </span>
-          All figures are sourced directly from QuickBooks Online. Canopy does not verify or audit source data — accuracy depends on the completeness of your QuickBooks records.
+      <div style={{ borderTop:`1px solid ${BORDER}`, padding:"14px 36px", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8, background:CARD }}>
+        <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, lineHeight:1.6, display:"flex", alignItems:"center", gap:6 }}>
+          <span style={{ width:4, height:4, borderRadius:"50%", background:BORDER, flexShrink:0 }}/>
+          Figures sourced from QuickBooks Online. Not financial advice.
+          <span style={{ color:ACCENT, cursor:"pointer" }} onClick={() => setShowDisclaimer(true)}>Full notice</span>
         </div>
-        <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, whiteSpace:"nowrap" }}>
-          Not financial advice · <span style={{ color:ACCENT, cursor:"pointer", textDecoration:"underline" }} onClick={() => setShowDisclaimer(true)}>View full notice</span>
-          {" · "}Need help?{" "}
-          <a href="mailto:support@canopybi.com" style={{ color:ACCENT, textDecoration:"underline" }}>support@canopybi.com</a>
+        <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM }}>
+          <a href="mailto:support@canopybi.com" style={{ color:DIM, textDecoration:"none" }}>support@canopybi.com</a>
         </div>
       </div>
 
