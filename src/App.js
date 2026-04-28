@@ -119,6 +119,27 @@ const MOCK_LABOR_ENTRIES = [
   { id: "LAB014", jobId: "J010", description: "Condo flip crew", workerName: "Team Beta", hours: 48, hourlyRate: 55, amount: 2640, workDate: "2024-03-22", source: "manual" },
 ];
 
+// ─── MOCK MANUAL EXPENSES ────────────────────────────────────────────────────
+// Manual expense entries — cash purchases, petty cash, off-QB expenses.
+
+const MOCK_MANUAL_EXPENSES = [
+  { id: "EXP001", jobId: "J001", description: "Cash lumber pickup", vendor: "Home Depot", amount: 420, category: "materials", expenseDate: "2024-01-10", source: "manual" },
+  { id: "EXP002", jobId: "J002", description: "Tile adhesive & grout", vendor: "Tile & Stone Direct", amount: 185, category: "materials", expenseDate: "2024-01-24", source: "manual" },
+  { id: "EXP003", jobId: "J004", description: "Dumpster rental", vendor: "WastePro", amount: 650, category: "equipment", expenseDate: "2024-02-08", source: "manual" },
+  { id: "EXP004", jobId: "J006", description: "Plumbing fixtures cash buy", vendor: "Ferguson Supply", amount: 1120, category: "materials", expenseDate: "2024-03-12", source: "manual" },
+  { id: "EXP005", jobId: "J009", description: "Building permits", vendor: "City of Lakeville", amount: 780, category: "permits", expenseDate: "2024-04-02", source: "manual" },
+  { id: "EXP006", jobId: null, description: "Office supplies", vendor: "Staples", amount: 95, category: "other", expenseDate: "2024-03-18", source: "manual" },
+];
+
+// ─── MOCK MANUAL REVENUE ─────────────────────────────────────────────────────
+// Manual revenue entries — cash payments, Zelle, checks not recorded in QB.
+
+const MOCK_MANUAL_REVENUE = [
+  { id: "REV001", jobId: "J003", description: "Final payment - cash", amount: 4500, paymentMethod: "cash", revenueDate: "2024-02-28", source: "manual" },
+  { id: "REV002", jobId: "J007", description: "Deposit - Zelle", amount: 3000, paymentMethod: "zelle", revenueDate: "2024-03-08", source: "manual" },
+  { id: "REV003", jobId: "J010", description: "Progress payment - check", amount: 8500, paymentMethod: "check", revenueDate: "2024-03-25", source: "manual" },
+];
+
 // ─── JOB META ─────────────────────────────────────────────────────────────────
 
 const JOB_META = {
@@ -165,19 +186,24 @@ const CONSENT_VERSION = "2026-03";
 
 // ─── BUILD JOB SUMMARIES (reactive — takes extraCosts from tagged inbox items) ─
 
-function buildJobSummaries(extraCostsByJob = {}, laborEntries = []) {
+function buildJobSummaries(extraCostsByJob = {}, laborEntries = [], manualExpenses = [], manualRevenue = []) {
   const jobs = QB_CUSTOMERS.filter(c => c.Job);
   return jobs.map(job => {
     const invoices = QB_INVOICES.filter(i => i.CustomerRef.value === job.Id);
     const purchases = QB_PURCHASES.filter(p =>
       p.Line.some(l => l.AccountBasedExpenseLineDetail?.CustomerRef?.value === job.Id)
     );
-    const revenue = invoices.reduce((s, i) => s + i.TotalAmt, 0);
+    const qbRevenue = invoices.reduce((s, i) => s + i.TotalAmt, 0);
+    const jobManualRevenue = manualRevenue.filter(r => r.jobId === job.Id);
+    const manualRevTotal = jobManualRevenue.reduce((s, r) => s + (r.amount || 0), 0);
+    const revenue = qbRevenue + manualRevTotal;
     const baseMaterialCosts = purchases.reduce((s, p) =>
       s + p.Line.filter(l => l.AccountBasedExpenseLineDetail?.CustomerRef?.value === job.Id)
                .reduce((ls, l) => ls + l.Amount, 0), 0);
     const inboxCosts = extraCostsByJob[job.Id] || 0;
-    const materialCost = baseMaterialCosts + inboxCosts;
+    const jobManualExpenses = manualExpenses.filter(e => e.jobId === job.Id);
+    const manualExpTotal = jobManualExpenses.reduce((s, e) => s + (e.amount || 0), 0);
+    const materialCost = baseMaterialCosts + inboxCosts + manualExpTotal;
     const jobLabor = laborEntries.filter(l => l.jobId === job.Id);
     const laborCost = jobLabor.reduce((s, l) => s + (l.amount || 0), 0);
     const costs = materialCost + laborCost;
@@ -189,12 +215,18 @@ function buildJobSummaries(extraCostsByJob = {}, laborEntries = []) {
         costByVendor[p.EntityRef.name] = (costByVendor[p.EntityRef.name] || 0) + l.Amount;
       });
     });
+    // Add manual expense vendors to costByVendor
+    jobManualExpenses.forEach(e => {
+      if (e.vendor) costByVendor[e.vendor] = (costByVendor[e.vendor] || 0) + e.amount;
+    });
     return {
       id: job.Id, name: job.DisplayName, clientName: client?.DisplayName || "",
       ...JOB_META[job.Id], revenue, costs, materialCost, laborCost,
       profit: revenue - costs,
       marginPct: revenue > 0 ? (((revenue - costs) / revenue) * 100).toFixed(1) : "0.0",
-      invoices, purchases, laborEntries: jobLabor, firstDate: allDates[0] || "",
+      invoices, purchases, laborEntries: jobLabor,
+      manualExpenses: jobManualExpenses, manualRevenue: jobManualRevenue,
+      firstDate: allDates[0] || "",
       lastDate: allDates[allDates.length - 1] || "",
       costByVendor, outstanding: invoices.reduce((s, i) => s + i.Balance, 0),
     };
@@ -415,43 +447,51 @@ const ChartTip = ({ active, payload, label }) => {
 const TUTORIAL_SLIDES = [
   {
     icon: "🌿",
-    iconBg: "rgba(45,106,79,0.1)",
-    iconBorder: "rgba(45,106,79,0.2)",
+    iconBg: "rgba(45,94,48,0.1)",
+    iconBorder: "rgba(45,94,48,0.2)",
     title: "Welcome to Canopy",
-    body: "Canopy turns your QuickBooks data into a clear picture of job-level profitability. At a glance you'll know which jobs made money, which didn't, and where your expenses are going — without digging through spreadsheets or waiting on your accountant.",
-    sub: "Here's a quick walkthrough to get you oriented.",
+    body: "Canopy gives you a clear picture of job-level profitability — which jobs made money, which didn't, and why. It works with your QuickBooks data and lets you add anything QB doesn't capture: cash expenses, manual revenue, labor costs, and more.",
+    sub: "Here's a quick walkthrough of what you can do.",
   },
   {
     icon: "📊",
-    iconBg: "rgba(45,106,79,0.1)",
-    iconBorder: "rgba(45,106,79,0.2)",
+    iconBg: "rgba(45,94,48,0.1)",
+    iconBorder: "rgba(45,94,48,0.2)",
     title: "Your Dashboard",
-    body: "The Dashboard is your home base. Five KPI cards sit at the top: Revenue, Expenses, Profit, Jobs Profitable, and a Data Quality Score. Toggle the Expenses card between Job Costs and Fixed Costs — the Profit card updates automatically to show Gross or Net Profit.",
-    sub: "The trend chart below shows running cumulative profit over time. Switch to 'By Month' to see revenue, costs, and a trend line month by month.",
+    body: "Three KPI cards show Profit, Revenue, and Expenses at a glance — toggle between Gross and Net profit to include fixed costs. Set a revenue goal and track your progress with the visual pace bar. The Active Jobs table below lets you sort by margin, costs, or profit and drill into any job.",
+    sub: "Use the date range selector (MTD, QTD, YTD, or custom) to slice your data by any time period. Search jobs or clients instantly from the search bar.",
   },
   {
     icon: "📥",
     iconBg: "rgba(140,107,48,0.1)",
     iconBorder: "rgba(140,107,48,0.2)",
-    title: "The Expense Inbox",
-    body: "When QuickBooks expenses aren't linked to a specific job, they land in your Expense Inbox. From here you can assign them to a job (which updates your job costs immediately), mark them as Fixed Costs (overhead like rent, insurance, or subscriptions), or dismiss them.",
-    sub: "Your Data Quality Score rises as you clear the inbox — the higher the score, the more accurate your profitability numbers.",
+    title: "Expenses, Labor & Revenue",
+    body: "The Expense Management tab shows QB expenses sorted into Auto-Matched, Needs Review, Fixed Costs, and All Tagged — plus you can add manual expenses right from here for cash purchases or off-QB costs. Inside any Job Detail, add labor entries (crew hours and rates), manual expenses, and manual revenue (cash, Zelle, checks) to build a complete cost picture.",
+    sub: "Your Data Quality Score rises as you categorize expenses — the higher the score, the more accurate your numbers.",
   },
   {
     icon: "🔗",
     iconBg: "rgba(92,122,90,0.1)",
     iconBorder: "rgba(92,122,90,0.2)",
-    title: "Connecting QuickBooks",
-    body: "Canopy syncs directly from your QuickBooks Online account via a secure OAuth connection. Click 'Connect QuickBooks' on the Dashboard to authorize access. Once connected, Canopy pulls your customers, jobs, invoices, and expenses automatically.",
-    sub: "Your data is read-only — Canopy never writes to QuickBooks. You can revoke access at any time from your Intuit account settings.",
+    title: "QuickBooks Connection",
+    body: "Canopy syncs directly from your QuickBooks Online account via a secure OAuth connection. It pulls customers, jobs, invoices, sales receipts, purchases, and bills automatically. Click 'Connect QuickBooks' in the sidebar to get started.",
+    sub: "Your data is read-only — Canopy never writes to QuickBooks. You can disconnect at any time from the sidebar settings.",
+  },
+  {
+    icon: "📝",
+    iconBg: "rgba(184,98,42,0.1)",
+    iconBorder: "rgba(184,98,42,0.2)",
+    title: "Quote Generator",
+    body: "Build detailed job estimates with itemized cost lines, expected revenue, and margin projections. Save estimates as templates for recurring job types. When you're ready to share with a client, export a professional white-labeled PDF with your business name — not Canopy's.",
+    sub: "Link an estimate to a real job later to see how your projections compared to actual results.",
   },
   {
     icon: "✨",
     iconBg: "rgba(92,122,90,0.1)",
     iconBorder: "rgba(92,122,90,0.2)",
     title: "Reports & AI Analyst",
-    body: "The Reports tab has four pre-built reports: Most Profitable Job Type, Worst Performing Jobs, Monthly Profit Trend, and Client Profitability Ranking — each with a chart, a data table, and a plain-English Canopy Insight. Export any report to PDF or Excel in one click.",
-    sub: "The AI Analyst tab gives you a chat interface powered by Claude. Ask anything — 'which job type is most profitable?', 'why was March rough?', 'who are my best clients?' — and get a direct, data-driven answer.",
+    body: "The Reports tab has four pre-built reports — Most Profitable Job Type, Worst Performing Jobs, Monthly Profit Trend, and Client Profitability Ranking — each with a chart, data table, and a plain-English Canopy Insight. Export to PDF or Excel in one click.",
+    sub: "The AI Analyst tab lets you ask questions in plain English — 'which job type is most profitable?', 'why was March rough?', 'who are my best clients?' — and get a data-driven answer powered by Claude.",
   },
 ];
 
@@ -836,7 +876,50 @@ function KpiModal({ type, expenseView, jobSummaries, allJobSummaries, overhead, 
 
 // ─── TAB: DASHBOARD ───────────────────────────────────────────────────────────
 
-function Dashboard({ onJobClick, onEstimate, onJumpToInbox, onClientClick, jobSummaries, untagged, overhead, dismissed, qbConnected, userId, clientType, dateRange, setDateRange, customStart, setCustomStart, customEnd, setCustomEnd }) {
+// ─── REVENUE GOAL MODAL ──────────────────────────────────────────────────────
+
+function RevenueGoalModal({ currentGoal, onSave, onClose }) {
+  const [target, setTarget] = useState(currentGoal?.revenue_target || "");
+  const [period, setPeriod] = useState(currentGoal?.period || "annual");
+  const inputStyle = { padding:"10px 14px", borderRadius:5, border:`1px solid ${BORDER}`, background:CARD, fontFamily:"'DM Mono',monospace", fontSize:14, color:DARK, outline:"none", boxSizing:"border-box", width:"100%" };
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(44,36,22,0.45)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center" }} onClick={onClose}>
+      <div style={{ background:CARD, borderRadius:10, padding:"32px 36px", maxWidth:380, width:"100%", boxShadow:"0 12px 40px rgba(44,36,22,0.2)" }} onClick={e => e.stopPropagation()}>
+        <div style={{ fontFamily:"'Lora',serif", fontSize:20, fontWeight:600, color:DARK, marginBottom:4 }}>Revenue Goal</div>
+        <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:DIM, marginBottom:22 }}>Set a target and track your progress on the dashboard.</div>
+
+        <div style={{ marginBottom:16 }}>
+          <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:6, textTransform:"uppercase", letterSpacing:"0.06em" }}>Revenue Target ($)</label>
+          <input type="number" min="0" step="1000" value={target} onChange={e => setTarget(e.target.value)} placeholder="e.g. 500000" style={inputStyle} autoFocus />
+        </div>
+
+        <div style={{ marginBottom:24 }}>
+          <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:6, textTransform:"uppercase", letterSpacing:"0.06em" }}>Period</label>
+          <div style={{ display:"flex", gap:0, border:`1px solid ${BORDER}`, borderRadius:5, overflow:"hidden" }}>
+            {[["annual","Annual"],["quarterly","Quarterly"],["monthly","Monthly"]].map(([k,l],i) => (
+              <button key={k} onClick={() => setPeriod(k)} style={{ flex:1, cursor:"pointer", padding:"9px 0", fontSize:12, fontWeight:500, fontFamily:"'DM Sans',sans-serif", border:"none", borderRight:i<2?`1px solid ${BORDER}`:"none", background:period===k?ACCENT:CARD, color:period===k?CARD:MID, transition:"all 0.15s" }}>{l}</button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+          {currentGoal && (
+            <button className="btn" onClick={() => { onSave(null); onClose(); }} style={{ fontSize:11, color:RED, borderColor:RED }}>Remove Goal</button>
+          )}
+          <button className="btn" onClick={onClose} style={{ fontSize:11 }}>Cancel</button>
+          <button className="btn act" onClick={() => {
+            if (!target || parseFloat(target) <= 0) return;
+            onSave({ revenue_target: parseFloat(target), period, set_at: new Date().toISOString() });
+            onClose();
+          }} disabled={!target || parseFloat(target) <= 0} style={{ fontSize:11, padding:"8px 20px", opacity: (!target || parseFloat(target) <= 0) ? 0.4 : 1 }}>Save Goal</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Dashboard({ onJobClick, onEstimate, onJumpToInbox, onClientClick, jobSummaries, untagged, overhead, dismissed, qbConnected, userId, clientType, dateRange, setDateRange, customStart, setCustomStart, customEnd, setCustomEnd, revenueGoal, onSetRevenueGoal }) {
   const [sort, setSort]             = useState("profit");
   const [sortDir, setSortDir]       = useState("desc");
   const [expenseView, setExpenseView] = useState("job");
@@ -1286,6 +1369,65 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, onClientClick, jobSu
 
       </div>
 
+      {/* ── Revenue Goal Tracker ── */}
+      {(() => {
+        const goalAmt = revenueGoal?.revenue_target || 0;
+        const goalPeriod = revenueGoal?.period || "annual";
+        // For annual goal, use all jobs in current year; for monthly, use current month; for quarterly, use current quarter
+        const goalJobs = goalAmt > 0 ? jobSummaries.filter(j => {
+          if (!j.firstDate && !j.lastDate) return false;
+          const jd = new Date(j.lastDate || j.firstDate);
+          const y = MOCK_TODAY.getFullYear(); const m = MOCK_TODAY.getMonth();
+          if (goalPeriod === "annual") return jd.getFullYear() === y;
+          if (goalPeriod === "monthly") return jd.getFullYear() === y && jd.getMonth() === m;
+          if (goalPeriod === "quarterly") { const q = Math.floor(m/3); return jd.getFullYear() === y && Math.floor(jd.getMonth()/3) === q; }
+          return true;
+        }) : [];
+        const goalRevenue = goalJobs.reduce((s,j) => s + j.revenue, 0);
+        const pct = goalAmt > 0 ? Math.min((goalRevenue / goalAmt) * 100, 100) : 0;
+        // Pace: how far through the period are we?
+        const now = MOCK_TODAY; const y = now.getFullYear(); const m = now.getMonth();
+        let elapsed = 0;
+        if (goalPeriod === "annual") elapsed = ((now - new Date(y,0,1)) / (new Date(y+1,0,1) - new Date(y,0,1))) * 100;
+        else if (goalPeriod === "monthly") elapsed = (now.getDate() / new Date(y,m+1,0).getDate()) * 100;
+        else if (goalPeriod === "quarterly") { const qs = new Date(y,Math.floor(m/3)*3,1); const qe = new Date(y,Math.floor(m/3)*3+3,1); elapsed = ((now - qs) / (qe - qs)) * 100; }
+        const pace = elapsed > 0 ? pct >= elapsed ? "on-track" : pct >= elapsed * 0.7 ? "behind" : "off-track" : "on-track";
+        const barColor = pace === "on-track" ? ACCENT2 : pace === "behind" ? AMBER : RED;
+        const paceLabel = pace === "on-track" ? "On track" : pace === "behind" ? "Slightly behind" : "Behind pace";
+
+        return goalAmt > 0 ? (
+          <div className="card" style={{ padding:"16px 22px", marginBottom:20, display:"flex", alignItems:"center", gap:18 }}>
+            <div style={{ flex:1 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+                <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:600, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase" }}>
+                  Revenue Goal · {goalPeriod}
+                </div>
+                <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                  <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:500, color:barColor }}>{paceLabel}</span>
+                  <button onClick={onSetRevenueGoal} style={{ background:"none", border:"none", cursor:"pointer", fontSize:11, color:ACCENT, fontFamily:"'DM Sans',sans-serif", fontWeight:500, padding:0, textDecoration:"underline" }}>Edit</button>
+                </div>
+              </div>
+              <div style={{ position:"relative", height:10, borderRadius:5, background:BG2, overflow:"hidden" }}>
+                <div style={{ position:"absolute", left:0, top:0, bottom:0, width:`${pct}%`, borderRadius:5, background:barColor, transition:"width 0.4s ease" }} />
+                {/* Pace marker */}
+                <div style={{ position:"absolute", left:`${Math.min(elapsed,100)}%`, top:-2, bottom:-2, width:2, background:DARK, opacity:0.25, borderRadius:1 }} />
+              </div>
+              <div style={{ display:"flex", justifyContent:"space-between", marginTop:6 }}>
+                <span style={{ fontFamily:"'DM Mono',monospace", fontSize:12, fontWeight:600, color:DARK }}>{$(goalRevenue)}</span>
+                <span style={{ fontFamily:"'DM Mono',monospace", fontSize:12, color:DIM }}>{$(goalAmt)} target</span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ marginBottom:20, display:"flex", alignItems:"center", gap:10 }}>
+            <button onClick={onSetRevenueGoal} className="btn" style={{ fontSize:11, padding:"6px 14px", borderColor:ACCENT, color:ACCENT }}>
+              Set Revenue Goal
+            </button>
+            <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DIM }}>Track your progress toward a revenue target</span>
+          </div>
+        );
+      })()}
+
       {/* ── Active Jobs table — full width ── */}
       <div className="card" style={{ padding:"22px 26px", marginBottom:28 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16 }}>
@@ -1569,7 +1711,85 @@ function VendorSetup({ userId, vendorRules, onSave, onClose, isFirstRun }) {
 
 // ─── TAB: SYNC REVIEW ─────────────────────────────────────────────────────────
 
-function SyncReview({ autoMatched, suggested, untagged, allTagged, overhead, dismissed, jobSummaries, vendorRules, onConfirmSuggestion, onTag, onMarkOverhead, onDismiss, onRestore, onRetag, onUndoAutoMatch, onSaveVendorRule, dateRange, setDateRange, customStart, setCustomStart, customEnd, setCustomEnd }) {
+// Expense categories — shared between InboxAddExpenseForm and ManualExpenseSection
+const EXPENSE_CATEGORIES = [
+  { value: "materials", label: "Materials" },
+  { value: "subcontractor", label: "Subcontractor" },
+  { value: "equipment", label: "Equipment" },
+  { value: "permits", label: "Permits" },
+  { value: "other", label: "Other" },
+];
+
+// ─── INBOX ADD EXPENSE FORM (inline in Expense Management) ──────────────────
+
+function InboxAddExpenseForm({ jobOptions, onSubmit, onCancel }) {
+  const [desc, setDesc]         = useState("");
+  const [vendor, setVendor]     = useState("");
+  const [amount, setAmount]     = useState("");
+  const [category, setCategory] = useState("materials");
+  const [expDate, setExpDate]   = useState(() => new Date().toISOString().split('T')[0]);
+  const [jobId, setJobId]       = useState("");
+
+  const inputStyle = { padding:"7px 10px", borderRadius:5, border:`1px solid ${BORDER}`, background:CARD, fontFamily:"'DM Sans',sans-serif", fontSize:12, color:DARK, outline:"none", boxSizing:"border-box" };
+
+  function handleSubmit() {
+    if (!desc.trim() || !amount || parseFloat(amount) <= 0) return;
+    onSubmit({
+      jobId: jobId || null,
+      description: desc.trim(),
+      vendor: vendor.trim() || null,
+      amount: parseFloat(amount),
+      category,
+      expenseDate: expDate || null,
+      source: "manual",
+    });
+  }
+
+  return (
+    <div style={{ padding:"16px 18px", borderRadius:6, border:`1px solid ${BORDER}`, background:CARD }}>
+      <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:600, color:MID, marginBottom:12, textTransform:"uppercase", letterSpacing:"0.06em" }}>Add manual expense</div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:10 }}>
+        <div>
+          <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Description *</label>
+          <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="e.g. Cash lumber pickup" style={{ ...inputStyle, width:"100%" }} />
+        </div>
+        <div>
+          <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Vendor / Payee</label>
+          <input value={vendor} onChange={e => setVendor(e.target.value)} placeholder="e.g. Home Depot" style={{ ...inputStyle, width:"100%" }} />
+        </div>
+        <div>
+          <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Amount *</label>
+          <input type="number" min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="420.00" style={{ ...inputStyle, width:"100%" }} />
+        </div>
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:12 }}>
+        <div>
+          <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Category</label>
+          <select value={category} onChange={e => setCategory(e.target.value)} style={{ ...inputStyle, width:"100%" }}>
+            {EXPENSE_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Date</label>
+          <input type="date" value={expDate} onChange={e => setExpDate(e.target.value)} style={{ ...inputStyle, width:"100%" }} />
+        </div>
+        <div>
+          <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Assign to Job (optional)</label>
+          <select value={jobId} onChange={e => setJobId(e.target.value)} style={{ ...inputStyle, width:"100%" }}>
+            <option value="">— Leave untagged —</option>
+            {jobOptions.map(j => <option key={j.value} value={j.value}>{j.label}</option>)}
+          </select>
+        </div>
+      </div>
+      <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
+        <button className="btn" onClick={onCancel} style={{ fontSize:11 }}>Cancel</button>
+        <button className="btn act" onClick={handleSubmit} disabled={!desc.trim() || !amount || parseFloat(amount) <= 0} style={{ fontSize:11, padding:"6px 16px", opacity: (!desc.trim() || !amount || parseFloat(amount) <= 0) ? 0.4 : 1 }}>Save Expense</button>
+      </div>
+    </div>
+  );
+}
+
+function SyncReview({ autoMatched, suggested, untagged, allTagged, overhead, dismissed, jobSummaries, vendorRules, onConfirmSuggestion, onTag, onMarkOverhead, onDismiss, onRestore, onRetag, onUndoAutoMatch, onSaveVendorRule, onAddExpense, dateRange, setDateRange, customStart, setCustomStart, customEnd, setCustomEnd }) {
   const [section, setSection]             = useState("review");
   const [selections, setSelections]       = useState({});    // itemId -> jobId
   const [expandAuto, setExpandAuto]       = useState(false);
@@ -1581,6 +1801,7 @@ function SyncReview({ autoMatched, suggested, untagged, allTagged, overhead, dis
   const [toast, setToast]                 = useState(null);   // { message, color }
   const [confirmUndo, setConfirmUndo]     = useState(null);   // item awaiting undo confirmation
   const [bulkJobId, setBulkJobId]         = useState("");     // vendor-level bulk assign job
+  const [showAddExpense, setShowAddExpense] = useState(false); // inline add-expense form
   const toastTimer = useRef(null);
 
   function showToast(message, color) {
@@ -1811,9 +2032,11 @@ function SyncReview({ autoMatched, suggested, untagged, allTagged, overhead, dis
 
       {/* Header */}
       <div style={{ marginBottom:20, display:"flex", alignItems:"flex-start", justifyContent:"space-between", flexWrap:"wrap", gap:12 }}>
-        <div>
-          <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em" }}>Expense Management</h1>
-          <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>Review how Canopy matched your expenses to jobs. Confirm, correct, or assign what needs attention.</p>
+        <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+          <div>
+            <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em" }}>Expense Management</h1>
+            <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginTop:4 }}>Review how Canopy matched your expenses to jobs. Confirm, correct, or assign what needs attention.</p>
+          </div>
         </div>
         {/* Date range toggle */}
         <div style={{ display:"flex",alignItems:"center",gap:6,flexWrap:"wrap" }}>
@@ -1847,6 +2070,23 @@ function SyncReview({ autoMatched, suggested, untagged, allTagged, overhead, dis
             <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:6 }}>{k.sub}</div>
           </div>
         ))}
+      </div>
+
+      {/* Add Expense button + inline form */}
+      <div style={{ marginBottom:20 }}>
+        {!showAddExpense ? (
+          <button className="btn act" onClick={() => setShowAddExpense(true)} style={{ fontSize:11, padding:"7px 16px" }}>+ Add Manual Expense</button>
+        ) : (
+          <InboxAddExpenseForm
+            jobOptions={jobOptions}
+            onSubmit={(entry) => {
+              if (onAddExpense) onAddExpense(entry);
+              setShowAddExpense(false);
+              showToast(`Expense added: ${$(entry.amount)}`, ACCENT2);
+            }}
+            onCancel={() => setShowAddExpense(false)}
+          />
+        )}
       </div>
 
       {/* Section tabs */}
@@ -2971,7 +3211,280 @@ function LaborSection({ job, onAddLabor, onDeleteLabor }) {
   );
 }
 
-function JobDetail({ job, onBack, untagged, onJumpToInbox, onAddLabor, onDeleteLabor, jobSummaries, onJobClick }) {
+// ─── MANUAL EXPENSE SECTION (inline in Job Detail) ──────────────────────────
+
+function ManualExpenseSection({ job, onAddExpense, onDeleteExpense }) {
+  const [open, setOpen] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [desc, setDesc]         = useState("");
+  const [vendor, setVendor]     = useState("");
+  const [amount, setAmount]     = useState("");
+  const [category, setCategory] = useState("materials");
+  const [expDate, setExpDate]   = useState(() => {
+    const d = new Date(); return d.toISOString().split('T')[0];
+  });
+
+  const entries = job.manualExpenses || [];
+  const totalExp = entries.reduce((s, e) => s + (e.amount || 0), 0);
+
+  function handleAdd() {
+    if (!desc.trim() || !amount || parseFloat(amount) <= 0) return;
+    onAddExpense({
+      jobId: job.id,
+      description: desc.trim(),
+      vendor: vendor.trim() || null,
+      amount: parseFloat(amount),
+      category,
+      expenseDate: expDate || null,
+      source: "manual",
+    });
+    setDesc(""); setVendor(""); setAmount(""); setCategory("materials");
+    setAdding(false);
+  }
+
+  const inputStyle = { padding:"7px 10px", borderRadius:5, border:`1px solid ${BORDER}`, background:CARD, fontFamily:"'DM Sans',sans-serif", fontSize:12, color:DARK, outline:"none", boxSizing:"border-box" };
+
+  return (
+    <div className="card" style={{ padding:"22px 26px", marginBottom:24 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: open ? 16 : 0 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:12, cursor:"pointer" }} onClick={() => setOpen(o => !o)}>
+          <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", fontWeight:500 }}>Manual Expenses</div>
+          <span style={{ fontFamily:"'DM Mono',monospace", fontSize:13, fontWeight:600, color: totalExp > 0 ? MID : DIM }}>{$(totalExp)}</span>
+          <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DIM }}>· {entries.length} entr{entries.length === 1 ? "y" : "ies"}</span>
+          <span style={{ fontSize:10, color:DIM }}>{open ? "▲" : "▼"}</span>
+        </div>
+        {open && !adding && (
+          <button className="btn act" onClick={() => setAdding(true)} style={{ fontSize:11, padding:"5px 14px" }}>
+            + Add Expense
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <>
+          {adding && (
+            <div style={{ padding:"14px 16px", marginBottom:14, borderRadius:6, border:`1px solid ${BORDER}`, background:BG }}>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
+                <div>
+                  <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Description *</label>
+                  <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="e.g. Cash lumber pickup" style={{ ...inputStyle, width:"100%" }} />
+                </div>
+                <div>
+                  <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Vendor / Payee</label>
+                  <input value={vendor} onChange={e => setVendor(e.target.value)} placeholder="e.g. Home Depot" style={{ ...inputStyle, width:"100%" }} />
+                </div>
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:12 }}>
+                <div>
+                  <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Amount *</label>
+                  <input type="number" min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="420.00" style={{ ...inputStyle, width:"100%" }} />
+                </div>
+                <div>
+                  <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Category</label>
+                  <select value={category} onChange={e => setCategory(e.target.value)} style={{ ...inputStyle, width:"100%" }}>
+                    {EXPENSE_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Date</label>
+                  <input type="date" value={expDate} onChange={e => setExpDate(e.target.value)} style={{ ...inputStyle, width:"100%" }} />
+                </div>
+              </div>
+              <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
+                <button className="btn" onClick={() => { setAdding(false); setDesc(""); setVendor(""); setAmount(""); }} style={{ fontSize:11 }}>Cancel</button>
+                <button className="btn act" onClick={handleAdd} disabled={!desc.trim() || !amount || parseFloat(amount) <= 0} style={{ fontSize:11, padding:"6px 16px", opacity: (!desc.trim() || !amount || parseFloat(amount) <= 0) ? 0.4 : 1 }}>Save Expense</button>
+              </div>
+            </div>
+          )}
+
+          {entries.length === 0 && !adding ? (
+            <div style={{ padding:"24px 0", textAlign:"center" }}>
+              <div style={{ fontFamily:"'Lora',serif", fontSize:14, color:MID, fontStyle:"italic", marginBottom:6 }}>No manual expenses logged for this job</div>
+              <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:DIM, marginBottom:14, lineHeight:1.6 }}>
+                Log cash purchases, sub payments, or off-QB expenses here to capture the full cost picture.
+              </div>
+              <button className="btn act" onClick={() => setAdding(true)} style={{ fontSize:11, padding:"7px 18px" }}>
+                + Add First Expense
+              </button>
+            </div>
+          ) : entries.length > 0 && (
+            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12, fontFamily:"'DM Sans',sans-serif" }}>
+              <thead>
+                <tr style={{ borderBottom:`2px solid ${BORDER}` }}>
+                  {["Date", "Description", "Vendor", "Category", "Amount", ""].map(h => (
+                    <th key={h} style={{ padding:"6px 10px", textAlign: h === "Amount" ? "right" : "left", fontSize:9, letterSpacing:"0.08em", textTransform:"uppercase", color:DIM, fontWeight:600 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map((e, i) => (
+                  <tr key={e.id || i} style={{ borderBottom:`1px solid ${BORDER}` }}>
+                    <td style={{ padding:"8px 10px", fontFamily:"'DM Mono',monospace", fontSize:11, color:DIM }}>{e.expenseDate || "—"}</td>
+                    <td style={{ padding:"8px 10px", color:DARK, fontWeight:500, maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={e.description}>{e.description}</td>
+                    <td style={{ padding:"8px 10px", color:MID }}>{e.vendor || "—"}</td>
+                    <td style={{ padding:"8px 10px", color:MID, textTransform:"capitalize" }}>{e.category || "—"}</td>
+                    <td style={{ padding:"8px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, fontWeight:600, color:DARK }}>{$(e.amount)}</td>
+                    <td style={{ padding:"8px 10px", textAlign:"right", width:30 }}>
+                      {onDeleteExpense && (
+                        <button onClick={() => onDeleteExpense(e.id)} style={{ background:"none", border:"none", cursor:"pointer", fontSize:13, color:DIM, padding:0, lineHeight:1 }} title="Remove expense"
+                          onMouseOver={ev => ev.currentTarget.style.color = RED}
+                          onMouseOut={ev => ev.currentTarget.style.color = DIM}>×</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                <tr style={{ background:BG }}>
+                  <td colSpan={4} style={{ padding:"8px 10px", fontSize:10, fontWeight:700, letterSpacing:"0.08em", textTransform:"uppercase", color:DIM }}>Total Manual Expenses</td>
+                  <td style={{ padding:"8px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:12, fontWeight:700, color:DARK }}>{$(totalExp)}</td>
+                  <td />
+                </tr>
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── MANUAL REVENUE SECTION (inline in Job Detail) ──────────────────────────
+
+const PAYMENT_METHODS = [
+  { value: "cash", label: "Cash" },
+  { value: "check", label: "Check" },
+  { value: "zelle", label: "Zelle / Venmo" },
+  { value: "credit_card", label: "Credit Card" },
+  { value: "other", label: "Other" },
+];
+
+function ManualRevenueSection({ job, onAddRevenue, onDeleteRevenue }) {
+  const [open, setOpen] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [desc, setDesc]             = useState("");
+  const [amount, setAmount]         = useState("");
+  const [method, setMethod]         = useState("check");
+  const [revDate, setRevDate]       = useState(() => {
+    const d = new Date(); return d.toISOString().split('T')[0];
+  });
+
+  const entries = job.manualRevenue || [];
+  const totalRev = entries.reduce((s, r) => s + (r.amount || 0), 0);
+
+  function handleAdd() {
+    if (!desc.trim() || !amount || parseFloat(amount) <= 0) return;
+    onAddRevenue({
+      jobId: job.id,
+      description: desc.trim(),
+      amount: parseFloat(amount),
+      paymentMethod: method,
+      revenueDate: revDate || null,
+      source: "manual",
+    });
+    setDesc(""); setAmount(""); setMethod("check");
+    setAdding(false);
+  }
+
+  const inputStyle = { padding:"7px 10px", borderRadius:5, border:`1px solid ${BORDER}`, background:CARD, fontFamily:"'DM Sans',sans-serif", fontSize:12, color:DARK, outline:"none", boxSizing:"border-box" };
+
+  return (
+    <div className="card" style={{ padding:"22px 26px", marginBottom:24 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: open ? 16 : 0 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:12, cursor:"pointer" }} onClick={() => setOpen(o => !o)}>
+          <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", fontWeight:500 }}>Manual Revenue</div>
+          <span style={{ fontFamily:"'DM Mono',monospace", fontSize:13, fontWeight:600, color: totalRev > 0 ? ACCENT2 : DIM }}>{$(totalRev)}</span>
+          <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DIM }}>· {entries.length} entr{entries.length === 1 ? "y" : "ies"}</span>
+          <span style={{ fontSize:10, color:DIM }}>{open ? "▲" : "▼"}</span>
+        </div>
+        {open && !adding && (
+          <button className="btn act" onClick={() => setAdding(true)} style={{ fontSize:11, padding:"5px 14px" }}>
+            + Add Revenue
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <>
+          {adding && (
+            <div style={{ padding:"14px 16px", marginBottom:14, borderRadius:6, border:`1px solid ${BORDER}`, background:BG }}>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:12 }}>
+                <div>
+                  <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Description *</label>
+                  <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="e.g. Final payment" style={{ ...inputStyle, width:"100%" }} />
+                </div>
+                <div>
+                  <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Amount *</label>
+                  <input type="number" min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="4500.00" style={{ ...inputStyle, width:"100%" }} />
+                </div>
+                <div>
+                  <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Payment Method</label>
+                  <select value={method} onChange={e => setMethod(e.target.value)} style={{ ...inputStyle, width:"100%" }}>
+                    {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 2fr", gap:10, marginBottom:12 }}>
+                <div>
+                  <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Date</label>
+                  <input type="date" value={revDate} onChange={e => setRevDate(e.target.value)} style={{ ...inputStyle, width:"100%" }} />
+                </div>
+              </div>
+              <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
+                <button className="btn" onClick={() => { setAdding(false); setDesc(""); setAmount(""); }} style={{ fontSize:11 }}>Cancel</button>
+                <button className="btn act" onClick={handleAdd} disabled={!desc.trim() || !amount || parseFloat(amount) <= 0} style={{ fontSize:11, padding:"6px 16px", opacity: (!desc.trim() || !amount || parseFloat(amount) <= 0) ? 0.4 : 1 }}>Save Revenue</button>
+              </div>
+            </div>
+          )}
+
+          {entries.length === 0 && !adding ? (
+            <div style={{ padding:"24px 0", textAlign:"center" }}>
+              <div style={{ fontFamily:"'Lora',serif", fontSize:14, color:MID, fontStyle:"italic", marginBottom:6 }}>No manual revenue logged for this job</div>
+              <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:DIM, marginBottom:14, lineHeight:1.6 }}>
+                Log cash payments, Zelle transfers, or checks received outside QuickBooks.
+              </div>
+              <button className="btn act" onClick={() => setAdding(true)} style={{ fontSize:11, padding:"7px 18px" }}>
+                + Add First Revenue Entry
+              </button>
+            </div>
+          ) : entries.length > 0 && (
+            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12, fontFamily:"'DM Sans',sans-serif" }}>
+              <thead>
+                <tr style={{ borderBottom:`2px solid ${BORDER}` }}>
+                  {["Date", "Description", "Method", "Amount", ""].map(h => (
+                    <th key={h} style={{ padding:"6px 10px", textAlign: h === "Amount" ? "right" : "left", fontSize:9, letterSpacing:"0.08em", textTransform:"uppercase", color:DIM, fontWeight:600 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map((r, i) => (
+                  <tr key={r.id || i} style={{ borderBottom:`1px solid ${BORDER}` }}>
+                    <td style={{ padding:"8px 10px", fontFamily:"'DM Mono',monospace", fontSize:11, color:DIM }}>{r.revenueDate || "—"}</td>
+                    <td style={{ padding:"8px 10px", color:DARK, fontWeight:500, maxWidth:220, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={r.description}>{r.description}</td>
+                    <td style={{ padding:"8px 10px", color:MID, textTransform:"capitalize" }}>{(r.paymentMethod || "—").replace("_", " ")}</td>
+                    <td style={{ padding:"8px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, fontWeight:600, color:ACCENT2 }}>{$(r.amount)}</td>
+                    <td style={{ padding:"8px 10px", textAlign:"right", width:30 }}>
+                      {onDeleteRevenue && (
+                        <button onClick={() => onDeleteRevenue(r.id)} style={{ background:"none", border:"none", cursor:"pointer", fontSize:13, color:DIM, padding:0, lineHeight:1 }} title="Remove entry"
+                          onMouseOver={ev => ev.currentTarget.style.color = RED}
+                          onMouseOut={ev => ev.currentTarget.style.color = DIM}>×</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                <tr style={{ background:BG }}>
+                  <td colSpan={3} style={{ padding:"8px 10px", fontSize:10, fontWeight:700, letterSpacing:"0.08em", textTransform:"uppercase", color:DIM }}>Total Manual Revenue</td>
+                  <td style={{ padding:"8px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:12, fontWeight:700, color:ACCENT2 }}>{$(totalRev)}</td>
+                  <td />
+                </tr>
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function JobDetail({ job, onBack, untagged, onJumpToInbox, onAddLabor, onDeleteLabor, onAddExpense, onDeleteExpense, onAddRevenue, onDeleteRevenue, jobSummaries, onJobClick }) {
   if (!job) return (
     <div style={{ padding:"48px 36px",background:BG,minHeight:"100vh" }}>
       <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em",marginBottom:4 }}>Job Detail</h1>
@@ -3109,8 +3622,14 @@ function JobDetail({ job, onBack, untagged, onJumpToInbox, onAddLabor, onDeleteL
         </div>
       </div>
 
+      {/* ── Manual Revenue section ── */}
+      <ManualRevenueSection job={job} onAddRevenue={onAddRevenue} onDeleteRevenue={onDeleteRevenue} />
+
       {/* ── Labor Costs section ── */}
       <LaborSection job={job} onAddLabor={onAddLabor} onDeleteLabor={onDeleteLabor} />
+
+      {/* ── Manual Expenses section ── */}
+      <ManualExpenseSection job={job} onAddExpense={onAddExpense} onDeleteExpense={onDeleteExpense} />
 
       <div className="card" style={{ overflow:"hidden" }}>
         <div style={{ padding:"16px 22px",borderBottom:`1px solid ${BORDER}`,background:BG }}>
@@ -5410,7 +5929,7 @@ function useContractorData(userId, mockJobSummaries, mockUntagged) {
           id: job.id, name: job.name, clientName: job.client_name || '',
           type: job.job_type || 'General Construction', status: job.status || 'Complete',
           revenue, costs, materialCost: costs, laborCost: 0, profit, marginPct, outstanding: 0,
-          invoices: invoiceObjs, purchases: purchaseObjs, laborEntries: [], costByVendor,
+          invoices: invoiceObjs, purchases: purchaseObjs, laborEntries: [], manualExpenses: [], manualRevenue: [], costByVendor,
           firstDate: invoices[0]?.txn_date || '', lastDate: invoices[invoices.length-1]?.txn_date || '',
         };
       }).filter(j => j.revenue > 0 || j.costs > 0);
@@ -5471,7 +5990,11 @@ export default function App() {
   const [tab, setTab]                   = useState("dashboard");
   const [selectedJob, setSelectedJob]   = useState(null);
   const [tagged, setTagged]             = useState([]);
-  const [laborEntries, setLaborEntries] = useState(MOCK_LABOR_ENTRIES);
+  const [laborEntries, setLaborEntries]       = useState(MOCK_LABOR_ENTRIES);
+  const [manualExpenses, setManualExpenses]   = useState(MOCK_MANUAL_EXPENSES);
+  const [manualRevenue, setManualRevenue]     = useState(MOCK_MANUAL_REVENUE);
+  const [revenueGoal, setRevenueGoal]         = useState(null); // { revenue_target, period, set_at }
+  const [showGoalModal, setShowGoalModal]     = useState(false);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [showTutorial, setShowTutorial]     = useState(false);
   const [dateRange, setDateRange]       = useState("ytd");
@@ -5488,7 +6011,7 @@ export default function App() {
   const appToastTimer                    = useRef(null);
 
   // ── Live data hook — loads from Supabase, falls back to mock
-  const mockJobSummaries = buildJobSummaries({}, laborEntries);
+  const mockJobSummaries = buildJobSummaries({}, laborEntries, manualExpenses, manualRevenue);
   const {
     jobSummaries,
     autoMatched,
@@ -5514,7 +6037,7 @@ export default function App() {
   useEffect(() => {
     if (selectedJob) {
       const fresh = jobSummaries.find(j => j.id === selectedJob.id);
-      if (fresh && (fresh.costs !== selectedJob.costs || fresh.revenue !== selectedJob.revenue || fresh.laborCost !== selectedJob.laborCost)) {
+      if (fresh && (fresh.costs !== selectedJob.costs || fresh.revenue !== selectedJob.revenue || fresh.laborCost !== selectedJob.laborCost || fresh.materialCost !== selectedJob.materialCost)) {
         setSelectedJob(fresh);
       }
     }
@@ -5681,6 +6204,28 @@ export default function App() {
   function handleDeleteLabor(entryId) {
     setLaborEntries(prev => prev.filter(l => l.id !== entryId));
     showAppToast("Labor entry removed", DIM);
+  }
+
+  function handleAddExpense(entry) {
+    const newEntry = { ...entry, id: `EXP-${Date.now()}` };
+    setManualExpenses(prev => [...prev, newEntry]);
+    showAppToast(`Expense added: ${$(entry.amount)}`, ACCENT2);
+  }
+
+  function handleDeleteExpense(entryId) {
+    setManualExpenses(prev => prev.filter(e => e.id !== entryId));
+    showAppToast("Expense removed", DIM);
+  }
+
+  function handleAddRevenue(entry) {
+    const newEntry = { ...entry, id: `REV-${Date.now()}` };
+    setManualRevenue(prev => [...prev, newEntry]);
+    showAppToast(`Revenue added: ${$(entry.amount)}`, ACCENT2);
+  }
+
+  function handleDeleteRevenue(entryId) {
+    setManualRevenue(prev => prev.filter(r => r.id !== entryId));
+    showAppToast("Revenue entry removed", DIM);
   }
 
   async function handleTag(item, jobId, jobName) {
@@ -6121,9 +6666,10 @@ export default function App() {
 
       {/* ── Content ── */}
       <div style={{ flex:1 }}>
-        {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} onEstimate={()=>setTab("estimator")} onJumpToInbox={()=>setTab("inbox")} onClientClick={()=>setTab("clients")} jobSummaries={jobSummaries} untagged={[...untagged, ...(suggested||[])]} overhead={overhead} dismissed={dismissed} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
-        {tab==="inbox"     && <SyncReview autoMatched={autoMatched} suggested={suggested} untagged={untagged} allTagged={allTagged} overhead={overhead} dismissed={dismissed} jobSummaries={jobSummaries} vendorRules={vendorRules} onConfirmSuggestion={handleConfirmSuggestion} onTag={handleTag} onMarkOverhead={handleMarkOverhead} onDismiss={handleDismiss} onRestore={handleRestore} onRetag={handleRetag} onUndoAutoMatch={handleUndoAutoMatch} onSaveVendorRule={handleSaveVendorRule} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
-        {tab==="detail"    && <JobDetail job={selectedJob} onBack={()=>setTab("dashboard")} untagged={untagged} onJumpToInbox={clientType==="quickbooks"?()=>setTab("inbox"):null} onAddLabor={handleAddLabor} onDeleteLabor={handleDeleteLabor} jobSummaries={jobSummaries} onJobClick={handleJobClick}/>}
+        {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} onEstimate={()=>setTab("estimator")} onJumpToInbox={()=>setTab("inbox")} onClientClick={()=>setTab("clients")} jobSummaries={jobSummaries} untagged={[...untagged, ...(suggested||[])]} overhead={overhead} dismissed={dismissed} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} revenueGoal={revenueGoal} onSetRevenueGoal={()=>setShowGoalModal(true)}/>}
+        {showGoalModal && <RevenueGoalModal currentGoal={revenueGoal} onSave={setRevenueGoal} onClose={()=>setShowGoalModal(false)}/>}
+        {tab==="inbox"     && <SyncReview autoMatched={autoMatched} suggested={suggested} untagged={untagged} allTagged={allTagged} overhead={overhead} dismissed={dismissed} jobSummaries={jobSummaries} vendorRules={vendorRules} onConfirmSuggestion={handleConfirmSuggestion} onTag={handleTag} onMarkOverhead={handleMarkOverhead} onDismiss={handleDismiss} onRestore={handleRestore} onRetag={handleRetag} onUndoAutoMatch={handleUndoAutoMatch} onSaveVendorRule={handleSaveVendorRule} onAddExpense={handleAddExpense} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
+        {tab==="detail"    && <JobDetail job={selectedJob} onBack={()=>setTab("dashboard")} untagged={untagged} onJumpToInbox={clientType==="quickbooks"?()=>setTab("inbox"):null} onAddLabor={handleAddLabor} onDeleteLabor={handleDeleteLabor} onAddExpense={handleAddExpense} onDeleteExpense={handleDeleteExpense} onAddRevenue={handleAddRevenue} onDeleteRevenue={handleDeleteRevenue} jobSummaries={jobSummaries} onJobClick={handleJobClick}/>}
         {tab==="clients"   && <ClientScorecard jobSummaries={jobSummaries}/>}
         {tab==="estimator" && <JobEstimator jobSummaries={jobSummaries} userId={session?.user?.id} contractorName={contractorName}/>}
         {tab==="reports"   && <Reports jobSummaries={jobSummaries}/>}
