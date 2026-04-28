@@ -395,17 +395,21 @@ export default async function handler(req, res) {
     console.log(`Syncing QB data for contractor — realm decrypted successfully`);
 
     // Fetch from QuickBooks
-    const [customerResponse, invoiceResponse, purchaseResponse, billResponse] = await Promise.all([
+    const [customerResponse, invoiceResponse, salesReceiptResponse, creditMemoResponse, purchaseResponse, billResponse] = await Promise.all([
       qbQuery(realmId, accessToken, 'Customer'),
       qbQuery(realmId, accessToken, 'Invoice'),
+      qbQuery(realmId, accessToken, 'SalesReceipt'),
+      qbQuery(realmId, accessToken, 'CreditMemo'),
       qbQuery(realmId, accessToken, 'Purchase'),
       qbQuery(realmId, accessToken, 'Bill'),
     ]);
 
-    const customers  = customerResponse?.Customer  || [];
-    const invoices   = invoiceResponse?.Invoice    || [];
-    const purchases  = purchaseResponse?.Purchase  || [];
-    const bills      = billResponse?.Bill          || [];
+    const customers     = customerResponse?.Customer        || [];
+    const invoices      = invoiceResponse?.Invoice          || [];
+    const salesReceipts = salesReceiptResponse?.SalesReceipt || [];
+    const creditMemos   = creditMemoResponse?.CreditMemo    || [];
+    const purchases     = purchaseResponse?.Purchase        || [];
+    const bills         = billResponse?.Bill                || [];
 
     // Fetch tracked vendor rules from Supabase.
     // If the user has set up tracked vendors, only expenses from those vendors are processed.
@@ -421,7 +425,7 @@ export default async function handler(req, res) {
       ? new Set(trackedRules.map(r => r.vendor_name))
       : null; // null = no filter active (first run)
 
-    console.log(`QB fetch complete: ${customers.length} customers, ${invoices.length} invoices, ${purchases.length} purchases, ${bills.length} bills${trackedVendors ? ` · vendor filter active (${trackedVendors.size} tracked)` : ' · no vendor filter (first sync)'}`);
+    console.log(`QB fetch complete: ${customers.length} customers, ${invoices.length} invoices, ${salesReceipts.length} sales receipts, ${creditMemos.length} credit memos, ${purchases.length} purchases, ${bills.length} bills${trackedVendors ? ` · vendor filter active (${trackedVendors.size} tracked)` : ' · no vendor filter (first sync)'}`);
 
     // Build client map and jobs
     const clientMap    = {};
@@ -475,6 +479,44 @@ export default async function handler(req, res) {
         txn_date:      inv.TxnDate,
         amount:        inv.TotalAmt || 0,
         description:   inv.Line?.[0]?.Description || 'Invoice',
+        vendor:        null,
+      });
+    });
+
+    // Build transactions from sales receipts (cash/card sales without a formal invoice)
+    salesReceipts.forEach(sr => {
+      const qbJobId = sr.CustomerRef?.value;
+      const job     = jobMap[qbJobId];
+      if (!job) return;
+
+      transactionsToUpsert.push({
+        id:            `${userId}_sr_${sr.Id}`,
+        contractor_id: userId,
+        job_id:        job.id,
+        type:          'revenue',
+        doc_number:    sr.DocNumber || sr.Id,
+        txn_date:      sr.TxnDate,
+        amount:        sr.TotalAmt || 0,
+        description:   sr.Line?.[0]?.Description || 'Sales Receipt',
+        vendor:        null,
+      });
+    });
+
+    // Build transactions from credit memos (refunds/credits that reduce revenue)
+    creditMemos.forEach(cm => {
+      const qbJobId = cm.CustomerRef?.value;
+      const job     = jobMap[qbJobId];
+      if (!job) return;
+
+      transactionsToUpsert.push({
+        id:            `${userId}_cm_${cm.Id}`,
+        contractor_id: userId,
+        job_id:        job.id,
+        type:          'revenue',
+        doc_number:    cm.DocNumber || cm.Id,
+        txn_date:      cm.TxnDate,
+        amount:        -(cm.TotalAmt || 0),  // Negative — reduces job revenue
+        description:   cm.Line?.[0]?.Description || 'Credit Memo',
         vendor:        null,
       });
     });
@@ -649,11 +691,14 @@ export default async function handler(req, res) {
       .eq('id', userId);
 
     const summary = {
-      jobs:         jobsToUpsert.length,
-      transactions: transactionsToUpsert.length,
-      inbox:        inboxToUpsert.length,
-      bills:        bills.length,
-      matching:     matchSummary,
+      jobs:           jobsToUpsert.length,
+      transactions:   transactionsToUpsert.length,
+      invoices:       invoices.length,
+      salesReceipts:  salesReceipts.length,
+      creditMemos:    creditMemos.length,
+      inbox:          inboxToUpsert.length,
+      bills:          bills.length,
+      matching:       matchSummary,
     };
 
     console.log('Sync complete:', JSON.stringify(summary));
