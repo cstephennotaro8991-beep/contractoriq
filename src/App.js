@@ -3484,6 +3484,227 @@ function ManualRevenueSection({ job, onAddRevenue, onDeleteRevenue }) {
   );
 }
 
+// ─── UNIFIED MANUAL ENTRIES SECTION (Job Detail) ────────────────────────────
+// Single component combining revenue, labor, and expense entries into one table
+// with a unified "+ Add Manual Entry" form.
+
+const ENTRY_TYPES = [
+  { value: "revenue", label: "Revenue" },
+  { value: "labor", label: "Labor" },
+  { value: "expense", label: "Job Expense" },
+];
+
+function ManualEntriesSection({ job, onAddLabor, onDeleteLabor, onAddExpense, onDeleteExpense, onAddRevenue, onDeleteRevenue }) {
+  const [adding, setAdding] = useState(false);
+  const [entryType, setEntryType] = useState("expense");
+  const [desc, setDesc]         = useState("");
+  const [vendor, setVendor]     = useState("");
+  const [amount, setAmount]     = useState("");
+  const [category, setCategory] = useState("materials");
+  const [method, setMethod]     = useState("check");
+  const [hours, setHours]       = useState("");
+  const [rate, setRate]         = useState("");
+  const [entryDate, setEntryDate] = useState(() => new Date().toISOString().split('T')[0]);
+
+  const laborEntries = job.laborEntries || [];
+  const manualExpenses = job.manualExpenses || [];
+  const manualRevenue = job.manualRevenue || [];
+
+  // Combined entries for the table
+  const allEntries = [
+    ...manualRevenue.map(r => ({ ...r, _type: "revenue", _date: r.revenueDate, _detail: (r.paymentMethod || "—").replace("_", " "), _color: ACCENT2 })),
+    ...laborEntries.map(l => ({ ...l, _type: "labor", _date: l.workDate, _detail: l.workerName || "—", _color: MID })),
+    ...manualExpenses.map(e => ({ ...e, _type: "expense", _date: e.expenseDate, _detail: e.vendor || "—", _color: DARK })),
+  ].sort((a, b) => (b._date || "").localeCompare(a._date || ""));
+
+  const totalRevenue  = manualRevenue.reduce((s, r) => s + (r.amount || 0), 0);
+  const totalLabor    = laborEntries.reduce((s, l) => s + (l.amount || 0), 0);
+  const totalExpenses = manualExpenses.reduce((s, e) => s + (e.amount || 0), 0);
+
+  const computedAmount = entryType === "labor" && hours && rate ? (parseFloat(hours) * parseFloat(rate)) : null;
+
+  function resetForm() {
+    setDesc(""); setVendor(""); setAmount(""); setCategory("materials"); setMethod("check"); setHours(""); setRate("");
+  }
+
+  function handleAdd() {
+    if (!desc.trim()) return;
+    const amt = entryType === "labor" ? (computedAmount || 0) : parseFloat(amount);
+    if (!amt || amt <= 0) return;
+
+    if (entryType === "revenue") {
+      onAddRevenue({ jobId: job.id, description: desc.trim(), amount: amt, paymentMethod: method, revenueDate: entryDate || null, source: "manual" });
+    } else if (entryType === "labor") {
+      onAddLabor({ jobId: job.id, description: desc.trim(), workerName: vendor.trim() || null, hours: hours ? parseFloat(hours) : null, hourlyRate: rate ? parseFloat(rate) : null, amount: amt, workDate: entryDate || null, source: "manual" });
+    } else {
+      onAddExpense({ jobId: job.id, description: desc.trim(), vendor: vendor.trim() || null, amount: amt, category, expenseDate: entryDate || null, source: "manual" });
+    }
+    resetForm();
+    setAdding(false);
+  }
+
+  function handleDelete(entry) {
+    if (entry._type === "revenue") onDeleteRevenue(entry.id);
+    else if (entry._type === "labor") onDeleteLabor(entry.id);
+    else onDeleteExpense(entry.id);
+  }
+
+  const inputStyle = { padding:"7px 10px", borderRadius:5, border:`1px solid ${BORDER}`, background:CARD, fontFamily:"'DM Sans',sans-serif", fontSize:12, color:DARK, outline:"none", boxSizing:"border-box" };
+
+  const typeBadge = (type) => {
+    const colors = { revenue: { bg: `${ACCENT2}14`, color: ACCENT2 }, labor: { bg: `${AMBER}14`, color: AMBER }, expense: { bg: `${RED}14`, color: RED } };
+    const labels = { revenue: "Revenue", labor: "Labor", expense: "Expense" };
+    const c = colors[type] || colors.expense;
+    return <span style={{ fontSize:9, fontWeight:600, fontFamily:"'DM Sans',sans-serif", padding:"2px 7px", borderRadius:3, background:c.bg, color:c.color, textTransform:"uppercase", letterSpacing:"0.04em" }}>{labels[type]}</span>;
+  };
+
+  return (
+    <div className="card" style={{ padding:"22px 26px", marginBottom:24 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+        <div>
+          <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase", fontWeight:500, marginBottom:6 }}>Manual Entries</div>
+          <div style={{ display:"flex", gap:14, fontFamily:"'DM Mono',monospace", fontSize:11 }}>
+            {totalRevenue > 0 && <span style={{ color:ACCENT2 }}>+{$(totalRevenue)} revenue</span>}
+            {totalLabor > 0 && <span style={{ color:AMBER }}>{$(totalLabor)} labor</span>}
+            {totalExpenses > 0 && <span style={{ color:MID }}>{$(totalExpenses)} expenses</span>}
+            {totalRevenue === 0 && totalLabor === 0 && totalExpenses === 0 && <span style={{ color:DIM }}>No entries yet</span>}
+          </div>
+        </div>
+        {!adding && (
+          <button className="btn act" onClick={() => setAdding(true)} style={{ fontSize:11, padding:"6px 14px" }}>
+            + Add Manual Entry
+          </button>
+        )}
+      </div>
+
+      {/* ── Inline add form ── */}
+      {adding && (
+        <div style={{ padding:"14px 16px", marginBottom:14, borderRadius:6, border:`1px solid ${BORDER}`, background:BG }}>
+          {/* Type selector */}
+          <div style={{ display:"flex", gap:0, border:`1px solid ${BORDER}`, borderRadius:5, overflow:"hidden", marginBottom:12 }}>
+            {ENTRY_TYPES.map((t, i) => (
+              <button key={t.value} onClick={() => { setEntryType(t.value); resetForm(); }}
+                style={{ flex:1, cursor:"pointer", padding:"8px 0", fontSize:11, fontWeight:600, fontFamily:"'DM Sans',sans-serif", border:"none", borderRight:i<2?`1px solid ${BORDER}`:"none", background:entryType===t.value?ACCENT:CARD, color:entryType===t.value?CARD:MID, transition:"all 0.15s" }}>{t.label}</button>
+            ))}
+          </div>
+
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
+            <div>
+              <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Description *</label>
+              <input value={desc} onChange={e => setDesc(e.target.value)} placeholder={entryType === "revenue" ? "e.g. Final payment" : entryType === "labor" ? "e.g. Framing crew" : "e.g. Cash lumber pickup"} style={{ ...inputStyle, width:"100%" }} />
+            </div>
+            <div>
+              <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>
+                {entryType === "labor" ? "Worker / Crew" : "Vendor / Payee"}
+              </label>
+              <input value={vendor} onChange={e => setVendor(e.target.value)} placeholder={entryType === "labor" ? "e.g. Marcus T." : "e.g. Home Depot"} style={{ ...inputStyle, width:"100%" }} />
+            </div>
+          </div>
+
+          <div style={{ display:"grid", gridTemplateColumns: entryType === "labor" ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr", gap:10, marginBottom:12 }}>
+            {entryType === "labor" ? (
+              <>
+                <div>
+                  <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Hours *</label>
+                  <input type="number" min="0" step="0.5" value={hours} onChange={e => setHours(e.target.value)} placeholder="40" style={{ ...inputStyle, width:"100%" }} />
+                </div>
+                <div>
+                  <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Hourly Rate *</label>
+                  <input type="number" min="0" step="0.01" value={rate} onChange={e => setRate(e.target.value)} placeholder="55.00" style={{ ...inputStyle, width:"100%" }} />
+                </div>
+                <div>
+                  <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Total</label>
+                  <div style={{ ...inputStyle, background:BG2, color:DARK, fontFamily:"'DM Mono',monospace", fontWeight:600, lineHeight:"1.4" }}>
+                    {computedAmount > 0 ? $(computedAmount) : "—"}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div>
+                <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Amount *</label>
+                <input type="number" min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="420.00" style={{ ...inputStyle, width:"100%" }} />
+              </div>
+            )}
+
+            {entryType === "expense" && (
+              <div>
+                <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Category</label>
+                <select value={category} onChange={e => setCategory(e.target.value)} style={{ ...inputStyle, width:"100%" }}>
+                  {EXPENSE_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                </select>
+              </div>
+            )}
+
+            {entryType === "revenue" && (
+              <div>
+                <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Payment Method</label>
+                <select value={method} onChange={e => setMethod(e.target.value)} style={{ ...inputStyle, width:"100%" }}>
+                  {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+              </div>
+            )}
+
+            <div>
+              <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4 }}>Date</label>
+              <input type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)} style={{ ...inputStyle, width:"100%" }} />
+            </div>
+          </div>
+
+          <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
+            <button className="btn" onClick={() => { setAdding(false); resetForm(); }} style={{ fontSize:11 }}>Cancel</button>
+            <button className="btn act" onClick={handleAdd}
+              disabled={!desc.trim() || (entryType === "labor" ? (!computedAmount || computedAmount <= 0) : (!amount || parseFloat(amount) <= 0))}
+              style={{ fontSize:11, padding:"6px 16px", opacity: (!desc.trim() || (entryType === "labor" ? (!computedAmount || computedAmount <= 0) : (!amount || parseFloat(amount) <= 0))) ? 0.4 : 1 }}>
+              Save Entry
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Combined entries table ── */}
+      {allEntries.length === 0 && !adding ? (
+        <div style={{ padding:"20px 0", textAlign:"center" }}>
+          <div style={{ fontFamily:"'Lora',serif", fontSize:14, color:MID, fontStyle:"italic", marginBottom:6 }}>No manual entries for this job</div>
+          <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:DIM, marginBottom:14, lineHeight:1.6 }}>
+            Add revenue, labor costs, or expenses that aren't captured in QuickBooks.
+          </div>
+          <button className="btn act" onClick={() => setAdding(true)} style={{ fontSize:11, padding:"7px 18px" }}>
+            + Add First Entry
+          </button>
+        </div>
+      ) : allEntries.length > 0 && (
+        <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12, fontFamily:"'DM Sans',sans-serif" }}>
+          <thead>
+            <tr style={{ borderBottom:`2px solid ${BORDER}` }}>
+              {["Type", "Date", "Description", "Detail", "Amount", ""].map(h => (
+                <th key={h} style={{ padding:"6px 10px", textAlign: h === "Amount" ? "right" : "left", fontSize:9, letterSpacing:"0.08em", textTransform:"uppercase", color:DIM, fontWeight:600 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {allEntries.map((e, i) => (
+              <tr key={e.id || i} style={{ borderBottom:`1px solid ${BORDER}` }}>
+                <td style={{ padding:"8px 10px" }}>{typeBadge(e._type)}</td>
+                <td style={{ padding:"8px 10px", fontFamily:"'DM Mono',monospace", fontSize:11, color:DIM }}>{e._date || "—"}</td>
+                <td style={{ padding:"8px 10px", color:DARK, fontWeight:500, maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={e.description}>{e.description}</td>
+                <td style={{ padding:"8px 10px", color:MID, fontSize:11 }}>{e._detail}</td>
+                <td style={{ padding:"8px 10px", textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:11, fontWeight:600, color:e._color }}>
+                  {e._type === "revenue" ? "+" : ""}{$(e.amount)}
+                </td>
+                <td style={{ padding:"8px 10px", textAlign:"right", width:30 }}>
+                  <button onClick={() => handleDelete(e)} style={{ background:"none", border:"none", cursor:"pointer", fontSize:13, color:DIM, padding:0, lineHeight:1 }} title="Remove entry"
+                    onMouseOver={ev => ev.currentTarget.style.color = RED}
+                    onMouseOut={ev => ev.currentTarget.style.color = DIM}>×</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 function JobDetail({ job, onBack, untagged, onJumpToInbox, onAddLabor, onDeleteLabor, onAddExpense, onDeleteExpense, onAddRevenue, onDeleteRevenue, jobSummaries, onJobClick }) {
   if (!job) return (
     <div style={{ padding:"48px 36px",background:BG,minHeight:"100vh" }}>
@@ -3622,14 +3843,8 @@ function JobDetail({ job, onBack, untagged, onJumpToInbox, onAddLabor, onDeleteL
         </div>
       </div>
 
-      {/* ── Manual Revenue section ── */}
-      <ManualRevenueSection job={job} onAddRevenue={onAddRevenue} onDeleteRevenue={onDeleteRevenue} />
-
-      {/* ── Labor Costs section ── */}
-      <LaborSection job={job} onAddLabor={onAddLabor} onDeleteLabor={onDeleteLabor} />
-
-      {/* ── Manual Expenses section ── */}
-      <ManualExpenseSection job={job} onAddExpense={onAddExpense} onDeleteExpense={onDeleteExpense} />
+      {/* ── Unified Manual Entries (Revenue / Labor / Expense) ── */}
+      <ManualEntriesSection job={job} onAddLabor={onAddLabor} onDeleteLabor={onDeleteLabor} onAddExpense={onAddExpense} onDeleteExpense={onDeleteExpense} onAddRevenue={onAddRevenue} onDeleteRevenue={onDeleteRevenue} />
 
       <div className="card" style={{ overflow:"hidden" }}>
         <div style={{ padding:"16px 22px",borderBottom:`1px solid ${BORDER}`,background:BG }}>
