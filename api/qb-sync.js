@@ -428,17 +428,28 @@ export default async function handler(req, res) {
     console.log(`QB fetch complete: ${customers.length} customers, ${invoices.length} invoices, ${salesReceipts.length} sales receipts, ${creditMemos.length} credit memos, ${purchases.length} purchases, ${bills.length} bills${trackedVendors ? ` · vendor filter active (${trackedVendors.size} tracked)` : ' · no vendor filter (first sync)'}`);
 
     // Build client map and jobs
+    // Supports two QB patterns:
+    //   1. Parent/child: parent = client, sub-customers = jobs (contractors)
+    //   2. Flat: each top-level customer IS the job (service businesses)
     const clientMap    = {};
     const jobMap       = {};
     const jobsToUpsert = [];
 
+    // First pass: identify which customers are parents (have children)
+    const parentIds = new Set();
     customers.forEach(c => {
-      if (!c.Job) clientMap[c.Id] = c.DisplayName || c.FullyQualifiedName;
+      if (c.ParentRef) parentIds.add(c.ParentRef.value);
     });
 
+    // Second pass: build client map
     customers.forEach(c => {
-      // Include any sub-customer, whether or not QB marks it as a "Job"
+      if (!c.ParentRef) clientMap[c.Id] = c.DisplayName || c.FullyQualifiedName;
+    });
+
+    // Third pass: build jobs
+    customers.forEach(c => {
       if (c.ParentRef) {
+        // Sub-customer → job under a parent client (contractor pattern)
         const clientName = clientMap[c.ParentRef.value] || '';
         const jobRecord  = {
           id:            `${userId}_${c.Id}`,
@@ -451,7 +462,22 @@ export default async function handler(req, res) {
         };
         jobsToUpsert.push(jobRecord);
         jobMap[c.Id] = jobRecord;
+      } else if (!parentIds.has(c.Id)) {
+        // Top-level customer with no children → customer IS the job (service biz pattern)
+        const displayName = c.DisplayName || c.FullyQualifiedName;
+        const jobRecord  = {
+          id:            `${userId}_${c.Id}`,
+          contractor_id: userId,
+          qb_job_id:     c.Id,
+          name:          displayName,
+          client_name:   displayName,
+          job_type:      guessJobType(displayName || ''),
+          status:        c.Active ? 'In Progress' : 'Complete',
+        };
+        jobsToUpsert.push(jobRecord);
+        jobMap[c.Id] = jobRecord;
       }
+      // else: parent with children — stays in clientMap only, children are the jobs
     });
 
     if (jobsToUpsert.length > 0) {
