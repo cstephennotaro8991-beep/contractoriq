@@ -446,18 +446,28 @@ export default async function handler(req, res) {
       if (!c.ParentRef) clientMap[c.Id] = c.DisplayName || c.FullyQualifiedName;
     });
 
+    // Fetch existing jobs so we don't overwrite user-set job types on re-sync
+    const { data: existingJobs } = await supabase
+      .from('jobs')
+      .select('id, job_type')
+      .eq('contractor_id', userId);
+
+    const existingJobTypes = {};
+    (existingJobs || []).forEach(j => { existingJobTypes[j.id] = j.job_type; });
+
     // Third pass: build jobs
     customers.forEach(c => {
       if (c.ParentRef) {
         // Sub-customer → job under a parent client (contractor pattern)
         const clientName = clientMap[c.ParentRef.value] || '';
+        const jobId      = `${userId}_${c.Id}`;
         const jobRecord  = {
-          id:            `${userId}_${c.Id}`,
+          id:            jobId,
           contractor_id: userId,
           qb_job_id:     c.Id,
           name:          c.DisplayName || c.FullyQualifiedName,
           client_name:   clientName,
-          job_type:      guessJobType(c.DisplayName || ''),
+          job_type:      existingJobTypes[jobId] || guessJobType(c.DisplayName || ''),
           status:        c.Active ? 'In Progress' : 'Complete',
         };
         jobsToUpsert.push(jobRecord);
@@ -465,13 +475,14 @@ export default async function handler(req, res) {
       } else if (!parentIds.has(c.Id)) {
         // Top-level customer with no children → customer IS the job (service biz pattern)
         const displayName = c.DisplayName || c.FullyQualifiedName;
+        const jobId       = `${userId}_${c.Id}`;
         const jobRecord  = {
-          id:            `${userId}_${c.Id}`,
+          id:            jobId,
           contractor_id: userId,
           qb_job_id:     c.Id,
           name:          displayName,
           client_name:   displayName,
-          job_type:      guessJobType(displayName || ''),
+          job_type:      existingJobTypes[jobId] || guessJobType(displayName || ''),
           status:        c.Active ? 'In Progress' : 'Complete',
         };
         jobsToUpsert.push(jobRecord);
