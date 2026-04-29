@@ -1711,6 +1711,16 @@ function VendorSetup({ userId, vendorRules, onSave, onClose, isFirstRun }) {
 
 // ─── TAB: SYNC REVIEW ─────────────────────────────────────────────────────────
 
+// Job types — broad list covering contractors, service businesses, and creative fields
+const JOB_TYPES = [
+  "General", "Remodel", "New Build", "Addition", "Roofing", "Flooring",
+  "Exterior", "Structural", "Commercial", "Painting", "HVAC", "Electrical",
+  "Plumbing", "Landscaping", "Cleaning", "IT Services", "Consulting",
+  "Photography", "Videography", "Media Production", "Design", "Marketing",
+  "Event Production", "Audio / Podcast", "Web Development", "Branding",
+  "Other",
+];
+
 // Expense categories — shared between InboxAddExpenseForm and ManualExpenseSection
 const EXPENSE_CATEGORIES = [
   { value: "materials", label: "Materials" },
@@ -3296,7 +3306,7 @@ function ManualEntriesSection({ job, onAddLabor, onDeleteLabor, onAddExpense, on
   );
 }
 
-function JobDetail({ job, onBack, untagged, onJumpToInbox, onAddLabor, onDeleteLabor, onAddExpense, onDeleteExpense, onAddRevenue, onDeleteRevenue, jobSummaries, onJobClick }) {
+function JobDetail({ job, onBack, untagged, onJumpToInbox, onAddLabor, onDeleteLabor, onAddExpense, onDeleteExpense, onAddRevenue, onDeleteRevenue, onUpdateJobType, jobSummaries, onJobClick }) {
   if (!job) return (
     <div style={{ padding:"48px 36px",background:BG,minHeight:"100vh" }}>
       <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em",marginBottom:4 }}>Job Detail</h1>
@@ -3349,7 +3359,18 @@ function JobDetail({ job, onBack, untagged, onJumpToInbox, onAddLabor, onDeleteL
         <button className="btn" onClick={onBack}>← All Jobs</button>
         <div style={{ flex:1 }}>
           <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em" }}>{job.name}</h1>
-          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM,marginTop:3 }}>{job.clientName} · {job.type} · {job.status}</div>
+          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM,marginTop:3,display:"flex",alignItems:"center",gap:4 }}>
+            {job.clientName} ·{" "}
+            <select
+              value={JOB_TYPES.includes(job.type) ? job.type : "Other"}
+              onChange={e => onUpdateJobType && onUpdateJobType(job.id, e.target.value)}
+              style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM,background:"transparent",border:"none",borderBottom:`1px dashed ${BORDER}`,cursor:"pointer",padding:"1px 2px",outline:"none" }}
+              title="Change job type"
+            >
+              {JOB_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            {" "}· {job.status}
+          </div>
         </div>
         <span className={`chip ${win?"g":"r"}`} style={{ fontSize:13,padding:"7px 18px" }}>
           {win?"+":"–"}{$(job.profit)} &nbsp; {job.marginPct}% margin
@@ -6034,6 +6055,28 @@ export default function App() {
     showAppToast("Revenue entry removed", DIM);
   }
 
+  async function handleUpdateJobType(jobId, newType) {
+    // Update selectedJob immediately for responsive UI
+    if (selectedJob && selectedJob.id === jobId) {
+      setSelectedJob(prev => ({ ...prev, type: newType }));
+    }
+    // Persist to Supabase jobs table
+    try {
+      const { error } = await supabase
+        .from('jobs')
+        .update({ job_type: newType })
+        .eq('id', jobId);
+      if (error) {
+        console.error('Job type update error:', error.message);
+        showAppToast("Failed to save job type", RED);
+      } else {
+        showAppToast(`Job type → ${newType}`, ACCENT2);
+      }
+    } catch (e) {
+      console.error('Job type update error:', e.message);
+    }
+  }
+
   async function handleTag(item, jobId, jobName) {
     // Optimistically update local state immediately so UI feels instant
     setTagged(prev => [...prev, { ...item, taggedJobId: jobId, taggedJobName: jobName }]);
@@ -6475,7 +6518,7 @@ export default function App() {
         {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} onEstimate={()=>setTab("estimator")} onJumpToInbox={()=>setTab("inbox")} onClientClick={()=>setTab("clients")} jobSummaries={jobSummaries} untagged={[...untagged, ...(suggested||[])]} overhead={overhead} dismissed={dismissed} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} revenueGoal={revenueGoal} onSetRevenueGoal={()=>setShowGoalModal(true)}/>}
         {showGoalModal && <RevenueGoalModal currentGoal={revenueGoal} onSave={setRevenueGoal} onClose={()=>setShowGoalModal(false)}/>}
         {tab==="inbox"     && <SyncReview autoMatched={autoMatched} suggested={suggested} untagged={untagged} allTagged={allTagged} overhead={overhead} dismissed={dismissed} jobSummaries={jobSummaries} vendorRules={vendorRules} onConfirmSuggestion={handleConfirmSuggestion} onTag={handleTag} onMarkOverhead={handleMarkOverhead} onDismiss={handleDismiss} onRestore={handleRestore} onRetag={handleRetag} onUndoAutoMatch={handleUndoAutoMatch} onSaveVendorRule={handleSaveVendorRule} onAddExpense={handleAddExpense} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
-        {tab==="detail"    && <JobDetail job={selectedJob} onBack={()=>setTab("dashboard")} untagged={untagged} onJumpToInbox={clientType==="quickbooks"?()=>setTab("inbox"):null} onAddLabor={handleAddLabor} onDeleteLabor={handleDeleteLabor} onAddExpense={handleAddExpense} onDeleteExpense={handleDeleteExpense} onAddRevenue={handleAddRevenue} onDeleteRevenue={handleDeleteRevenue} jobSummaries={jobSummaries} onJobClick={handleJobClick}/>}
+        {tab==="detail"    && <JobDetail job={selectedJob} onBack={()=>setTab("dashboard")} untagged={untagged} onJumpToInbox={clientType==="quickbooks"?()=>setTab("inbox"):null} onAddLabor={handleAddLabor} onDeleteLabor={handleDeleteLabor} onAddExpense={handleAddExpense} onDeleteExpense={handleDeleteExpense} onAddRevenue={handleAddRevenue} onDeleteRevenue={handleDeleteRevenue} onUpdateJobType={handleUpdateJobType} jobSummaries={jobSummaries} onJobClick={handleJobClick}/>}
         {tab==="clients"   && <ClientScorecard jobSummaries={jobSummaries}/>}
         {tab==="estimator" && <JobEstimator jobSummaries={jobSummaries} userId={session?.user?.id} contractorName={contractorName}/>}
         {tab==="reports"   && <Reports jobSummaries={jobSummaries}/>}
