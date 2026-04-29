@@ -919,7 +919,7 @@ function RevenueGoalModal({ currentGoal, onSave, onClose }) {
   );
 }
 
-function Dashboard({ onJobClick, onEstimate, onJumpToInbox, onClientClick, jobSummaries, untagged, overhead, dismissed, qbConnected, userId, clientType, dateRange, setDateRange, customStart, setCustomStart, customEnd, setCustomEnd, revenueGoal, onSetRevenueGoal }) {
+function Dashboard({ onJobClick, onEstimate, onJumpToInbox, onClientClick, onCompare, jobSummaries, untagged, overhead, dismissed, qbConnected, userId, clientType, dateRange, setDateRange, customStart, setCustomStart, customEnd, setCustomEnd, revenueGoal, onSetRevenueGoal }) {
   const [sort, setSort]             = useState("profit");
   const [sortDir, setSortDir]       = useState("desc");
   const [expenseView, setExpenseView] = useState("job");
@@ -1435,6 +1435,9 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, onClientClick, jobSu
             <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:5,fontWeight:500 }}>Active Jobs</div>
             <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM }}>{sorted.length} job{sorted.length!==1?"s":""} · click headers to sort</div>
           </div>
+          {sorted.length >= 2 && onCompare && (
+            <button className="btn" onClick={onCompare} style={{ fontSize:11, padding:"6px 14px" }}>Compare Jobs</button>
+          )}
         </div>
         {sorted.length === 0 ? (
           <div style={{ padding:"36px 0",textAlign:"center" }}>
@@ -3302,6 +3305,219 @@ function ManualEntriesSection({ job, onAddLabor, onDeleteLabor, onAddExpense, on
           </tbody>
         </table>
       )}
+    </div>
+  );
+}
+
+// ─── JOB COMPARISON MODAL ────────────────────────────────────────────────────
+
+function JobComparisonModal({ jobSummaries, onClose, initialJobA, initialJobB }) {
+  const [jobAId, setJobAId] = useState(initialJobA || "");
+  const [jobBId, setJobBId] = useState(initialJobB || "");
+
+  const jobA = jobSummaries.find(j => j.id === jobAId) || null;
+  const jobB = jobSummaries.find(j => j.id === jobBId) || null;
+
+  const inputStyle = { padding:"9px 14px", borderRadius:5, border:`1px solid ${BORDER}`, background:BG, fontFamily:"'DM Sans',sans-serif", fontSize:12, color:DARK, outline:"none", boxSizing:"border-box", width:"100%" };
+
+  // Build comparison data when both jobs selected
+  const comparison = (jobA && jobB) ? (() => {
+    const metrics = [
+      { label: "Revenue",       a: jobA.revenue,       b: jobB.revenue },
+      { label: "Material Cost", a: jobA.materialCost||0, b: jobB.materialCost||0 },
+      { label: "Labor Cost",    a: jobA.laborCost||0,  b: jobB.laborCost||0 },
+      { label: "Total Costs",   a: jobA.costs,         b: jobB.costs },
+      { label: "Gross Profit",  a: jobA.profit,        b: jobB.profit },
+    ];
+    const marginA = jobA.revenue > 0 ? parseFloat(((jobA.profit / jobA.revenue) * 100).toFixed(1)) : 0;
+    const marginB = jobB.revenue > 0 ? parseFloat(((jobB.profit / jobB.revenue) * 100).toFixed(1)) : 0;
+
+    // Vendor overlap
+    const vendorsA = new Set(Object.keys(jobA.costByVendor || {}));
+    const vendorsB = new Set(Object.keys(jobB.costByVendor || {}));
+    const sharedVendors = [...vendorsA].filter(v => vendorsB.has(v));
+
+    // Chart data for side-by-side bar chart
+    const chartData = metrics.map(m => ({
+      name: m.label,
+      [jobA.name]: m.a,
+      [jobB.name]: m.b,
+    }));
+
+    return { metrics, marginA, marginB, sharedVendors, chartData };
+  })() : null;
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(44,36,22,0.5)", zIndex:600, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}
+         onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background:CARD, border:`1px solid ${BORDER}`, borderRadius:10, width:"100%", maxWidth:900, maxHeight:"90vh", overflow:"auto", padding:"32px 36px", boxShadow:"0 24px 80px rgba(44,36,22,0.25)" }}>
+
+        {/* Header */}
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:24 }}>
+          <h2 style={{ fontFamily:"'Lora',serif", fontSize:20, fontWeight:600, color:DARK, letterSpacing:"-0.02em" }}>Compare Jobs</h2>
+          <button className="btn" onClick={onClose} style={{ fontSize:11 }}>Close</button>
+        </div>
+
+        {/* Job selectors */}
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 40px 1fr", gap:0, alignItems:"end", marginBottom:28 }}>
+          <div>
+            <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4, textTransform:"uppercase", letterSpacing:"0.08em" }}>Job A</label>
+            <select value={jobAId} onChange={e => setJobAId(e.target.value)} style={{ ...inputStyle, border:`1px solid ${jobA ? ACCENT : BORDER}` }}>
+              <option value="">Select a job…</option>
+              {jobSummaries.filter(j => j.id !== jobBId).map(j => (
+                <option key={j.id} value={j.id}>{j.name} ({$(j.revenue)})</option>
+              ))}
+            </select>
+          </div>
+          <div style={{ textAlign:"center", fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DIM, paddingBottom:10 }}>vs</div>
+          <div>
+            <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:4, textTransform:"uppercase", letterSpacing:"0.08em" }}>Job B</label>
+            <select value={jobBId} onChange={e => setJobBId(e.target.value)} style={{ ...inputStyle, border:`1px solid ${jobB ? ACCENT2 : BORDER}` }}>
+              <option value="">Select a job…</option>
+              {jobSummaries.filter(j => j.id !== jobAId).map(j => (
+                <option key={j.id} value={j.id}>{j.name} ({$(j.revenue)})</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Empty state */}
+        {(!jobA || !jobB) && (
+          <div style={{ textAlign:"center", padding:"48px 0" }}>
+            <div style={{ fontFamily:"'Lora',serif", fontSize:15, color:MID, fontStyle:"italic", marginBottom:6 }}>Select two jobs to compare</div>
+            <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:DIM }}>See how revenue, costs, profit, and margins stack up side by side.</div>
+          </div>
+        )}
+
+        {/* Comparison content */}
+        {comparison && (
+          <>
+            {/* Job info row */}
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:20 }}>
+              {[jobA, jobB].map((j, idx) => (
+                <div key={j.id} style={{ padding:"12px 16px", borderRadius:6, background:BG, borderLeft:`3px solid ${idx === 0 ? ACCENT : ACCENT2}` }}>
+                  <div style={{ fontFamily:"'Lora',serif", fontSize:15, fontWeight:600, color:DARK }}>{j.name}</div>
+                  <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DIM, marginTop:2 }}>{j.clientName} · {j.type} · {j.status}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* KPI comparison grid */}
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 80px 1fr", gap:0, marginBottom:24 }}>
+              {/* Headers */}
+              <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, textTransform:"uppercase", letterSpacing:"0.08em", color:ACCENT, fontWeight:600, textAlign:"center", paddingBottom:8 }}>{jobA.name}</div>
+              <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, textTransform:"uppercase", letterSpacing:"0.08em", color:DIM, fontWeight:600, textAlign:"center", paddingBottom:8 }}>Metric</div>
+              <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, textTransform:"uppercase", letterSpacing:"0.08em", color:ACCENT2, fontWeight:600, textAlign:"center", paddingBottom:8 }}>{jobB.name}</div>
+
+              {comparison.metrics.map(({ label, a, b }) => {
+                // For costs, lower is better; for revenue/profit, higher is better
+                const isCost = label.includes("Cost");
+                const aWins = isCost ? a < b : a > b;
+                const bWins = isCost ? b < a : b > a;
+                const tied = a === b;
+                return (
+                  <div key={label} style={{ display:"contents" }}>
+                    <div style={{ padding:"10px 12px", textAlign:"center", background: aWins && !tied ? `${ACCENT2}08` : "transparent", borderRadius:4 }}>
+                      <div style={{ fontFamily:"'DM Mono',monospace", fontSize:14, fontWeight:600, color: aWins && !tied ? ACCENT2 : DARK }}>{$(Math.round(a))}</div>
+                    </div>
+                    <div style={{ padding:"10px 0", textAlign:"center" }}>
+                      <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:MID, fontWeight:500 }}>{label}</div>
+                    </div>
+                    <div style={{ padding:"10px 12px", textAlign:"center", background: bWins && !tied ? `${ACCENT2}08` : "transparent", borderRadius:4 }}>
+                      <div style={{ fontFamily:"'DM Mono',monospace", fontSize:14, fontWeight:600, color: bWins && !tied ? ACCENT2 : DARK }}>{$(Math.round(b))}</div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Margin row */}
+              <div style={{ padding:"10px 12px", textAlign:"center", borderTop:`1px solid ${BORDER}`, background: comparison.marginA > comparison.marginB ? `${ACCENT2}08` : "transparent", borderRadius:4 }}>
+                <div style={{ fontFamily:"'DM Mono',monospace", fontSize:14, fontWeight:600, color: comparison.marginA >= 30 ? ACCENT2 : comparison.marginA >= 15 ? AMBER : RED }}>{comparison.marginA}%</div>
+              </div>
+              <div style={{ padding:"10px 0", textAlign:"center", borderTop:`1px solid ${BORDER}` }}>
+                <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:MID, fontWeight:500 }}>Margin</div>
+              </div>
+              <div style={{ padding:"10px 12px", textAlign:"center", borderTop:`1px solid ${BORDER}`, background: comparison.marginB > comparison.marginA ? `${ACCENT2}08` : "transparent", borderRadius:4 }}>
+                <div style={{ fontFamily:"'DM Mono',monospace", fontSize:14, fontWeight:600, color: comparison.marginB >= 30 ? ACCENT2 : comparison.marginB >= 15 ? AMBER : RED }}>{comparison.marginB}%</div>
+              </div>
+            </div>
+
+            {/* Side-by-side bar chart */}
+            <div className="card" style={{ padding:"18px 22px", marginBottom:20 }}>
+              <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:600, color:DIM, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:12 }}>Visual Comparison</div>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={comparison.chartData} barGap={2} barCategoryGap="20%">
+                  <CartesianGrid strokeDasharray="3 3" stroke={BORDER} />
+                  <XAxis dataKey="name" tick={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fill:DIM }} />
+                  <YAxis tick={{ fontFamily:"'DM Mono',monospace", fontSize:9, fill:DIM }} tickFormatter={v => $k(v)} />
+                  <Tooltip
+                    formatter={(v) => $(Math.round(v))}
+                    contentStyle={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, background:CARD, border:`1px solid ${BORDER}`, borderRadius:4 }}
+                  />
+                  <Bar dataKey={jobA.name} fill={ACCENT} radius={[3,3,0,0]} />
+                  <Bar dataKey={jobB.name} fill={ACCENT2} radius={[3,3,0,0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Vendor analysis */}
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:20 }}>
+              {[
+                { job: jobA, color: ACCENT, label: "Job A" },
+                { job: jobB, color: ACCENT2, label: "Job B" },
+              ].map(({ job: j, color }) => {
+                const vendors = Object.entries(j.costByVendor || {}).sort((a,b) => b[1] - a[1]);
+                return (
+                  <div key={j.id} className="card" style={{ padding:"16px 20px" }}>
+                    <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:600, color:DIM, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:10 }}>
+                      Top Vendors — {j.name}
+                    </div>
+                    {vendors.length === 0 ? (
+                      <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DIM, fontStyle:"italic" }}>No vendor data</div>
+                    ) : vendors.slice(0, 5).map(([name, amt]) => (
+                      <div key={name} style={{ display:"flex", justifyContent:"space-between", padding:"5px 0", borderBottom:`1px solid ${BORDER}` }}>
+                        <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DARK, maxWidth:160, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={name}>
+                          {comparison.sharedVendors.includes(name) && <span style={{ color, marginRight:4, fontSize:9 }}>●</span>}
+                          {name}
+                        </span>
+                        <span style={{ fontFamily:"'DM Mono',monospace", fontSize:11, color:MID, fontWeight:500 }}>{$(Math.round(amt))}</span>
+                      </div>
+                    ))}
+                    {comparison.sharedVendors.length > 0 && (
+                      <div style={{ marginTop:8, fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM }}>
+                        <span style={{ color, marginRight:4 }}>●</span> Shared vendor ({comparison.sharedVendors.length})
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Summary insight */}
+            <div style={{ padding:"14px 18px", borderRadius:6, background:BG, border:`1px solid ${BORDER}` }}>
+              <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:MID, lineHeight:1.6 }}>
+                {(() => {
+                  const winner = comparison.marginA >= comparison.marginB ? jobA : jobB;
+                  const loser  = comparison.marginA >= comparison.marginB ? jobB : jobA;
+                  const winMargin = Math.max(comparison.marginA, comparison.marginB);
+                  const loseMargin = Math.min(comparison.marginA, comparison.marginB);
+                  const diff = parseFloat((winMargin - loseMargin).toFixed(1));
+                  if (diff === 0) return `Both jobs achieved the same ${winMargin}% margin — consistent execution across both.`;
+                  const costDiffA = (jobA.materialCost||0) / Math.max(jobA.revenue, 1);
+                  const costDiffB = (jobB.materialCost||0) / Math.max(jobB.revenue, 1);
+                  const materialDriven = Math.abs(costDiffA - costDiffB) > 0.1;
+                  return (
+                    <>
+                      <span style={{ fontWeight:600, color:ACCENT2 }}>{winner.name}</span> outperformed by {diff} percentage points ({winMargin}% vs {loseMargin}% margin).
+                      {materialDriven ? ` The difference is largely driven by material costs as a % of revenue.` : ` Review cost structure on ${loser.name} for improvement opportunities.`}
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -5822,6 +6038,7 @@ export default function App() {
   const [manualRevenue, setManualRevenue]     = useState(MOCK_MANUAL_REVENUE);
   const [revenueGoal, setRevenueGoal]         = useState(null); // { revenue_target, period, set_at }
   const [showGoalModal, setShowGoalModal]     = useState(false);
+  const [showComparison, setShowComparison]   = useState(false);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [showTutorial, setShowTutorial]     = useState(false);
   const [dateRange, setDateRange]       = useState("ytd");
@@ -6515,8 +6732,9 @@ export default function App() {
 
       {/* ── Content ── */}
       <div style={{ flex:1 }}>
-        {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} onEstimate={()=>setTab("estimator")} onJumpToInbox={()=>setTab("inbox")} onClientClick={()=>setTab("clients")} jobSummaries={jobSummaries} untagged={[...untagged, ...(suggested||[])]} overhead={overhead} dismissed={dismissed} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} revenueGoal={revenueGoal} onSetRevenueGoal={()=>setShowGoalModal(true)}/>}
+        {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} onEstimate={()=>setTab("estimator")} onJumpToInbox={()=>setTab("inbox")} onClientClick={()=>setTab("clients")} onCompare={()=>setShowComparison(true)} jobSummaries={jobSummaries} untagged={[...untagged, ...(suggested||[])]} overhead={overhead} dismissed={dismissed} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} revenueGoal={revenueGoal} onSetRevenueGoal={()=>setShowGoalModal(true)}/>}
         {showGoalModal && <RevenueGoalModal currentGoal={revenueGoal} onSave={setRevenueGoal} onClose={()=>setShowGoalModal(false)}/>}
+        {showComparison && <JobComparisonModal jobSummaries={jobSummaries} onClose={()=>setShowComparison(false)}/>}
         {tab==="inbox"     && <SyncReview autoMatched={autoMatched} suggested={suggested} untagged={untagged} allTagged={allTagged} overhead={overhead} dismissed={dismissed} jobSummaries={jobSummaries} vendorRules={vendorRules} onConfirmSuggestion={handleConfirmSuggestion} onTag={handleTag} onMarkOverhead={handleMarkOverhead} onDismiss={handleDismiss} onRestore={handleRestore} onRetag={handleRetag} onUndoAutoMatch={handleUndoAutoMatch} onSaveVendorRule={handleSaveVendorRule} onAddExpense={handleAddExpense} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
         {tab==="detail"    && <JobDetail job={selectedJob} onBack={()=>setTab("dashboard")} untagged={untagged} onJumpToInbox={clientType==="quickbooks"?()=>setTab("inbox"):null} onAddLabor={handleAddLabor} onDeleteLabor={handleDeleteLabor} onAddExpense={handleAddExpense} onDeleteExpense={handleDeleteExpense} onAddRevenue={handleAddRevenue} onDeleteRevenue={handleDeleteRevenue} onUpdateJobType={handleUpdateJobType} jobSummaries={jobSummaries} onJobClick={handleJobClick}/>}
         {tab==="clients"   && <ClientScorecard jobSummaries={jobSummaries}/>}
