@@ -885,51 +885,56 @@ function RevenueGoalModal({ goal, onSave, onClose }) {
   const [target, setTarget] = useState(goal?.target_amount ? String(goal.target_amount) : "");
   const [startDate, setStartDate] = useState(goal?.start_date || "");
   const [endDate, setEndDate] = useState(goal?.end_date || "");
-  const PERIODS = [{ key:"mtd",label:"Month" },{ key:"qtd",label:"Quarter" },{ key:"ytd",label:"Year" },{ key:"custom",label:"Custom" }];
-  const inputStyle = { padding:"10px 14px",borderRadius:5,border:`1px solid ${BORDER}`,background:CARD,fontFamily:"'DM Mono',monospace",fontSize:14,color:DARK,outline:"none",boxSizing:"border-box",width:"100%" };
+  const PERIODS = [{ key:"mtd",label:"MTD" },{ key:"qtd",label:"QTD" },{ key:"ytd",label:"YTD" },{ key:"custom",label:"Custom" }];
+  const inputStyle = { padding:"10px 14px",borderRadius:5,border:`1px solid ${BORDER}`,background:BG,fontFamily:"'DM Mono',monospace",fontSize:14,color:DARK,outline:"none",boxSizing:"border-box",width:"100%" };
 
   return (
     <div style={{ position:"fixed",inset:0,background:"rgba(44,36,22,0.45)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center" }} onClick={onClose}>
-      <div style={{ background:CARD,borderRadius:10,padding:"32px 36px",maxWidth:420,width:"100%",boxShadow:"0 12px 40px rgba(44,36,22,0.2)" }} onClick={e=>e.stopPropagation()}>
-        <div style={{ fontFamily:"'Lora',serif",fontSize:20,fontWeight:600,color:DARK,marginBottom:4 }}>{isEdit?"Edit Goal":"Add Revenue Goal"}</div>
-        <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM,marginBottom:22 }}>Track your progress toward a revenue target.</div>
+      <div style={{ background:CARD,borderRadius:10,padding:"32px 36px",maxWidth:440,width:"100%",boxShadow:"0 12px 40px rgba(44,36,22,0.2)" }} onClick={e=>e.stopPropagation()}>
+        <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:22 }}>
+          <div style={{ fontFamily:"'Lora',serif",fontSize:20,fontWeight:600,color:DARK }}>{isEdit?"Edit revenue goal":"New revenue goal"}</div>
+          <button onClick={onClose} style={{ background:"none",border:"none",cursor:"pointer",fontSize:18,color:DIM,padding:"0 4px",lineHeight:1 }}>×</button>
+        </div>
 
         <div style={{ marginBottom:16 }}>
-          <label style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,color:DIM,fontWeight:500,display:"block",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em" }}>Label (optional)</label>
-          <input type="text" value={label} onChange={e=>setLabel(e.target.value)} placeholder="e.g. Q3 target, Year-end goal" style={inputStyle}/>
-        </div>
-        <div style={{ marginBottom:16 }}>
-          <label style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,color:DIM,fontWeight:500,display:"block",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em" }}>Revenue target ($)</label>
-          <input type="number" min="0" step="1000" value={target} onChange={e=>setTarget(e.target.value)} placeholder="e.g. 500000" style={inputStyle} autoFocus/>
-        </div>
-        <div style={{ marginBottom:periodType==="custom"?16:24 }}>
-          <label style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,color:DIM,fontWeight:500,display:"block",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.06em" }}>Period</label>
-          <div style={{ display:"flex",gap:0,border:`1px solid ${BORDER}`,borderRadius:5,overflow:"hidden" }}>
-            {PERIODS.map(({key,label:lbl},i)=>(
-              <button key={key} onClick={()=>setPeriodType(key)} style={{ flex:1,cursor:"pointer",padding:"9px 0",fontSize:11,fontWeight:500,fontFamily:"'DM Sans',sans-serif",border:"none",borderRight:i<3?`1px solid ${BORDER}`:"none",background:periodType===key?ACCENT:CARD,color:periodType===key?CARD:MID,transition:"all 0.15s" }}>{lbl}</button>
+          <label style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:MID,fontWeight:500,display:"block",marginBottom:8 }}>Period</label>
+          <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8 }}>
+            {PERIODS.map(({key,label:lbl})=>(
+              <button key={key} onClick={()=>setPeriodType(key)} style={{ cursor:"pointer",padding:"10px 0",fontSize:12,fontWeight:500,fontFamily:"'DM Sans',sans-serif",borderRadius:6,border:`1.5px solid ${periodType===key?ACCENT2:BORDER}`,background:periodType===key?`${ACCENT2}18`:CARD,color:periodType===key?ACCENT2:MID,transition:"all 0.15s" }}>{lbl}</button>
             ))}
           </div>
         </div>
         {periodType==="custom" && (
-          <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:24 }}>
+          <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16 }}>
             <div>
-              <label style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,color:DIM,fontWeight:500,display:"block",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em" }}>Start date</label>
+              <label style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:MID,fontWeight:500,display:"block",marginBottom:6 }}>Start date</label>
               <input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)} style={{ ...inputStyle,fontSize:12 }}/>
             </div>
             <div>
-              <label style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,color:DIM,fontWeight:500,display:"block",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em" }}>End date</label>
+              <label style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:MID,fontWeight:500,display:"block",marginBottom:6 }}>End date</label>
               <input type="date" value={endDate} onChange={e=>setEndDate(e.target.value)} style={{ ...inputStyle,fontSize:12 }}/>
             </div>
           </div>
         )}
+        <div style={{ marginBottom:16 }}>
+          <label style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:MID,fontWeight:500,display:"block",marginBottom:8 }}>Target revenue</label>
+          <div style={{ display:"flex",alignItems:"center",border:`1px solid ${BORDER}`,borderRadius:5,background:BG,overflow:"hidden" }}>
+            <span style={{ padding:"10px 12px",fontFamily:"'DM Mono',monospace",fontSize:14,color:DIM,borderRight:`1px solid ${BORDER}`,flexShrink:0 }}>$</span>
+            <input type="number" min="0" step="1000" value={target} onChange={e=>setTarget(e.target.value)} placeholder="0" style={{ ...inputStyle,border:"none",borderRadius:0,background:"transparent",paddingLeft:12 }} autoFocus/>
+          </div>
+        </div>
+        <div style={{ marginBottom:28 }}>
+          <label style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:MID,fontWeight:500,display:"block",marginBottom:8 }}>Label <span style={{ color:DIM,fontWeight:400 }}>(optional)</span></label>
+          <input type="text" value={label} onChange={e=>setLabel(e.target.value)} placeholder="e.g. Summer push, Q2 stretch goal..." style={inputStyle}/>
+        </div>
         <div style={{ display:"flex",gap:10,justifyContent:"flex-end" }}>
-          <button className="btn" onClick={onClose} style={{ fontSize:11 }}>Cancel</button>
+          <button className="btn" onClick={onClose} style={{ fontSize:12,padding:"9px 18px" }}>Cancel</button>
           <button className="btn act" onClick={()=>{
             if(!target||parseFloat(target)<=0) return;
             onSave({ ...goal, label:label.trim(), period_type:periodType, target_amount:parseFloat(target), start_date:startDate||null, end_date:endDate||null });
             onClose();
-          }} disabled={!target||parseFloat(target)<=0} style={{ fontSize:11,padding:"8px 20px",opacity:(!target||parseFloat(target)<=0)?0.4:1 }}>
-            {isEdit?"Update Goal":"Add Goal"}
+          }} disabled={!target||parseFloat(target)<=0} style={{ fontSize:12,padding:"9px 22px",opacity:(!target||parseFloat(target)<=0)?0.4:1 }}>
+            {isEdit?"Update goal":"Save goal"}
           </button>
         </div>
       </div>
@@ -3663,14 +3668,20 @@ function JobDetail({ job, onBack, untagged, onJumpToInbox, onAddLabor, onDeleteL
   return (
     <div style={{ padding:"32px 36px",background:BG,minHeight:"100vh" }}>
       <div style={{ marginBottom: hasSuggestedUntagged || hasAnyUntagged ? 12 : 28 }}>
-        <div style={{ display:"flex",alignItems:"flex-start",gap:12,marginBottom:8 }}>
-          <button className="btn" onClick={onBack} style={{ flexShrink:0,marginTop:3 }}>← All Jobs</button>
-          <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em",flex:1,lineHeight:1.2 }}>{job.name}</h1>
-          <span className={`chip ${win?"g":"r"}`} style={{ fontSize:12,padding:"6px 14px",flexShrink:0,marginTop:2 }}>
-            {win?"+":"–"}{$(job.profit)} · {job.marginPct}%
-          </span>
+        {/* Back link on its own row */}
+        <div style={{ marginBottom:10 }}>
+          <button className="btn" onClick={onBack}>← All Jobs</button>
         </div>
-        <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM,display:"flex",alignItems:"center",gap:6,paddingLeft:2,flexWrap:"wrap" }}>
+        {/* Title + profit on same row */}
+        <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:16,marginBottom:8 }}>
+          <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em",lineHeight:1.2 }}>{job.name}</h1>
+          <div style={{ textAlign:"right",flexShrink:0 }}>
+            <div style={{ fontFamily:"'Lora',serif",fontSize:22,fontWeight:600,color:win?ACCENT2:RED }}>{win?"+":"–"}{$(job.profit)}</div>
+            <div style={{ fontFamily:"'DM Mono',monospace",fontSize:11,color:DIM,marginTop:2 }}>{job.marginPct}% margin</div>
+          </div>
+        </div>
+        {/* Meta row: client · type · status */}
+        <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap" }}>
           {job.clientName && job.clientName !== job.name && (
             <><span>{job.clientName}</span><span style={{ color:BORDER }}>·</span></>
           )}
@@ -3988,7 +3999,7 @@ function RawData({ jobSummaries, dataSource }) {
               <tbody>
                 {liveJobs.map((j,i) => (
                   <tr key={i}>
-                    <td className="mono" style={{ fontSize:10 }} title={j.id}>{j.id.slice(0,8)}…</td>
+                    <td style={{ padding:"8px 12px" }} title={j.id}><span style={{ fontFamily:"'DM Mono',monospace",fontSize:10,color:DIM,background:BG2,padding:"2px 6px",borderRadius:4 }}>{j.id.slice(0,8)}</span></td>
                     <td style={{ color:DARK, fontWeight:500 }}>{j.name}</td>
                     <td style={{ color:MID }}>{j.clientName}</td>
                     <td><span className="tag">{j.type}</span></td>
@@ -4709,16 +4720,14 @@ function Reports({ jobSummaries }) {
               <div style={{ flex:1 }}>
                 <div style={{ fontFamily:"'Lora',serif",fontSize:15,fontWeight:500,color:DARK,marginBottom:4 }}>{r.title}</div>
                 <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,lineHeight:1.5 }}>{r.description}</div>
-              </div>
-              {topItem && (
-                <div style={{ textAlign:"right",flexShrink:0 }}>
-                  <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.08em",color:DIM,textTransform:"uppercase",marginBottom:3 }}>Top result</div>
-                  <div style={{ fontFamily:"'DM Mono',monospace",fontSize:12,fontWeight:600,color:ACCENT2 }}>{topItem.name}</div>
-                  <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,color:DIM,marginTop:2 }}>
-                    {topItem.margin != null ? `${topItem.margin}% margin` : topItem.profit != null ? $(topItem.profit) : ""}
+                {topItem && (
+                  <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:5 }}>
+                    Top result: <span style={{ color:DARK,fontWeight:500 }}>
+                      {topItem.name}{topItem.margin != null ? ` · ${topItem.margin}% margin` : topItem.profit != null ? ` · ${$(topItem.profit)}` : ""}
+                    </span>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
               <div style={{ display:"flex",gap:6,flexShrink:0 }} onClick={e => e.stopPropagation()}>
                 <ExportButtons data={data} title={r.title} insight={r.insight(data)} report={r} compact={true} />
               </div>
@@ -5512,22 +5521,22 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
               </div>
             )}
 
-            {/* Save buttons */}
-            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              <button className="btn act" onClick={saveEstimate} disabled={saving || !name.trim()}
-                style={{ padding: "10px 24px", fontSize: 12, opacity: (!name.trim()) ? 0.4 : 1 }}>
-                {saving ? "Saving..." : activeEstimateId ? "Update Estimate" : "Save Estimate"}
-              </button>
+            {/* Save buttons — neutral | neutral | primary (right-aligned) */}
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+              {dirty && <span style={{ fontSize: 11, color: AMBER, fontFamily: "'DM Sans',sans-serif" }}>Unsaved changes</span>}
+              {!dirty && activeEstimateId && <span style={{ fontSize: 11, color: ACCENT2, fontFamily: "'DM Sans',sans-serif" }}>Saved</span>}
               <button className="btn" onClick={saveAsTemplate} disabled={savingTemplate || !name.trim()}
                 style={{ padding: "10px 18px", fontSize: 12, opacity: (!name.trim()) ? 0.4 : 1 }}>
                 {savingTemplate ? "Saving..." : "Save as Template"}
               </button>
               <button className="btn" onClick={() => exportQuotePDF({ name, jobType, expectedRevenue, costLines, notes, contractorName, totalCosts, grossProfit, grossMargin })} disabled={!name.trim()}
                 style={{ padding: "10px 18px", fontSize: 12, opacity: (!name.trim()) ? 0.4 : 1 }}>
-                Export Quote PDF
+                Export PDF
               </button>
-              {dirty && <span style={{ fontSize: 11, color: AMBER, fontFamily: "'DM Sans',sans-serif" }}>Unsaved changes</span>}
-              {!dirty && activeEstimateId && <span style={{ fontSize: 11, color: ACCENT2, fontFamily: "'DM Sans',sans-serif" }}>Saved</span>}
+              <button className="btn act" onClick={saveEstimate} disabled={saving || !name.trim()}
+                style={{ padding: "10px 24px", fontSize: 12, opacity: (!name.trim()) ? 0.4 : 1 }}>
+                {saving ? "Saving..." : activeEstimateId ? "Update Estimate" : "Save Estimate"}
+              </button>
             </div>
           </div>
         </div>
@@ -6777,53 +6786,47 @@ export default function App() {
           );
         })()}
 
-        {/* QB status */}
-        {clientType === "quickbooks" && (
-          <div style={{ padding:"14px 20px", borderTop:"1px solid rgba(255,255,255,0.07)" }}>
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-              <div style={{ display:"flex", alignItems:"center", gap:7 }}>
-                {syncing
-                  ? <span className="spinner" style={{ width:10, height:10, borderWidth:1.5 }}/>
-                  : <div style={{ width:6, height:6, borderRadius:"50%", background: qbConnected ? ACCENT2 : AMBER, flexShrink:0 }}/>
-                }
-                <span style={{ fontSize:11, fontFamily:"'DM Sans',sans-serif", color: qbConnected ? ACCENT2 : AMBER }}>
-                  {syncing ? "Syncing…" : qbConnected ? "QuickBooks" : "Not connected"}
-                </span>
-              </div>
-              {qbConnected && !syncing && (
-                <span onClick={() => triggerSync(session?.user?.id)}
-                  style={{ fontSize:10, color:SIDEBAR_DIM, fontFamily:"'DM Sans',sans-serif", cursor:"pointer", textDecoration:"underline" }}>sync</span>
-              )}
-            </div>
-            {qbConnected && !syncing && (
-              <div style={{ fontSize:10, color:SIDEBAR_DIM, fontFamily:"'DM Sans',sans-serif", marginTop:5, paddingLeft:13, display:"flex", alignItems:"center", gap:8 }}>
-                <span style={{ opacity:0.7 }}>{dataSource === 'live' ? "Live data" : "Demo data"}</span>
-                <span style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:2, cursor:"pointer", opacity:0.6, transition:"opacity 0.15s" }}
-                  onClick={() => { setVendorSetupIsFirstRun(false); setShowVendorSetup(true); }}
-                  onMouseOver={e => e.currentTarget.style.opacity="1"}
-                  onMouseOut={e => e.currentTarget.style.opacity="0.6"}>
-                  {ICONS.gear}
-                </span>
-              </div>
-            )}
-            {qbConnected && !(vendorRules||[]).some(r=>r.rule_type==='tracked') && (
-              <div style={{ fontSize:10, color:AMBER, fontFamily:"'DM Sans',sans-serif", marginTop:4, paddingLeft:13 }}>
-                <span onClick={() => { setVendorSetupIsFirstRun(false); setShowVendorSetup(true); }}
-                  style={{ cursor:"pointer", textDecoration:"underline" }}>Set up vendor tracking</span>
-              </div>
-            )}
-          </div>
-        )}
-        {/* User + controls */}
-        <div style={{ padding:"12px 16px", borderTop:"1px solid rgba(255,255,255,0.07)", display:"flex", alignItems:"center", gap:8 }}>
-          <div style={{ width:28, height:28, borderRadius:"50%", background:"rgba(245,239,227,0.12)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:600, color:"#F5EFE3", flexShrink:0 }}>
+        {/* Consolidated footer: user + QB status + actions */}
+        <div style={{ padding:"12px 14px", borderTop:"1px solid rgba(255,255,255,0.07)", display:"flex", alignItems:"center", gap:8 }}>
+          {/* Avatar */}
+          <div style={{ width:28, height:28, borderRadius:"50%", background: clientType==="quickbooks" && qbConnected ? `${ACCENT2}33` : "rgba(245,239,227,0.12)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:600, color:"#F5EFE3", flexShrink:0 }}>
             {(contractorName||"U")[0].toUpperCase()}
           </div>
+          {/* Name + QB sub-label */}
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ fontSize:11, fontFamily:"'DM Sans',sans-serif", color:"#F5EFE3", fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{contractorName}</div>
+            {clientType === "quickbooks" && (
+              <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:2 }}>
+                {syncing
+                  ? <span className="spinner" style={{ width:6, height:6, borderWidth:1 }}/>
+                  : <div style={{ width:5, height:5, borderRadius:"50%", background: qbConnected ? ACCENT2 : AMBER, flexShrink:0 }}/>
+                }
+                <span style={{ fontSize:10, fontFamily:"'DM Sans',sans-serif", color: qbConnected ? ACCENT2 : AMBER }}>
+                  {syncing ? "Syncing…" : qbConnected ? (dataSource==='live' ? "QB Live" : "QB Demo") : "Not connected"}
+                </span>
+                {qbConnected && !syncing && (
+                  <span onClick={() => triggerSync(session?.user?.id)}
+                    style={{ fontSize:10, color:SIDEBAR_DIM, fontFamily:"'DM Sans',sans-serif", cursor:"pointer", textDecoration:"underline", marginLeft:2 }}>sync</span>
+                )}
+                {qbConnected && !syncing && !(vendorRules||[]).some(r=>r.rule_type==='tracked') && (
+                  <span onClick={() => { setVendorSetupIsFirstRun(false); setShowVendorSetup(true); }}
+                    style={{ fontSize:10, color:AMBER, fontFamily:"'DM Sans',sans-serif", cursor:"pointer", textDecoration:"underline", marginLeft:2 }}>setup</span>
+                )}
+              </div>
+            )}
           </div>
+          {/* Gear (QB settings) */}
+          {clientType === "quickbooks" && qbConnected && (
+            <button onClick={() => { setVendorSetupIsFirstRun(false); setShowVendorSetup(true); }}
+              title="QuickBooks settings" aria-label="QuickBooks settings"
+              style={{ width:26, height:26, borderRadius:4, border:"1px solid rgba(255,255,255,0.1)", background:"rgba(255,255,255,0.06)", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, color:SIDEBAR_DIM }}>
+              {ICONS.gear}
+            </button>
+          )}
+          {/* Help */}
           <button onClick={()=>setShowTutorial(true)} title="Help" aria-label="Open tutorial"
             style={{ width:26, height:26, borderRadius:4, border:"1px solid rgba(255,255,255,0.1)", background:"rgba(255,255,255,0.06)", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, color:SIDEBAR_DIM, fontSize:12, fontFamily:"'DM Sans',sans-serif" }}>?</button>
+          {/* Sign out */}
           <button onClick={handleSignOut} title="Sign out" aria-label="Sign out"
             style={{ width:26, height:26, borderRadius:4, border:"1px solid rgba(255,255,255,0.1)", background:"rgba(255,255,255,0.06)", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, color:SIDEBAR_DIM }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
