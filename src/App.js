@@ -878,48 +878,180 @@ function KpiModal({ type, expenseView, jobSummaries, allJobSummaries, overhead, 
 
 // ─── REVENUE GOAL MODAL ──────────────────────────────────────────────────────
 
-function RevenueGoalModal({ currentGoal, onSave, onClose }) {
-  const [target, setTarget] = useState(currentGoal?.revenue_target || "");
-  const [period, setPeriod] = useState(currentGoal?.period || "annual");
-  const inputStyle = { padding:"10px 14px", borderRadius:5, border:`1px solid ${BORDER}`, background:CARD, fontFamily:"'DM Mono',monospace", fontSize:14, color:DARK, outline:"none", boxSizing:"border-box", width:"100%" };
+function RevenueGoalModal({ goal, onSave, onClose }) {
+  const isEdit = !!(goal && goal.id);
+  const [label, setLabel] = useState(goal?.label || "");
+  const [periodType, setPeriodType] = useState(goal?.period_type || "ytd");
+  const [target, setTarget] = useState(goal?.target_amount ? String(goal.target_amount) : "");
+  const [startDate, setStartDate] = useState(goal?.start_date || "");
+  const [endDate, setEndDate] = useState(goal?.end_date || "");
+  const PERIODS = [{ key:"mtd",label:"Month" },{ key:"qtd",label:"Quarter" },{ key:"ytd",label:"Year" },{ key:"custom",label:"Custom" }];
+  const inputStyle = { padding:"10px 14px",borderRadius:5,border:`1px solid ${BORDER}`,background:CARD,fontFamily:"'DM Mono',monospace",fontSize:14,color:DARK,outline:"none",boxSizing:"border-box",width:"100%" };
 
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(44,36,22,0.45)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center" }} onClick={onClose}>
-      <div style={{ background:CARD, borderRadius:10, padding:"32px 36px", maxWidth:380, width:"100%", boxShadow:"0 12px 40px rgba(44,36,22,0.2)" }} onClick={e => e.stopPropagation()}>
-        <div style={{ fontFamily:"'Lora',serif", fontSize:20, fontWeight:600, color:DARK, marginBottom:4 }}>Revenue Goal</div>
-        <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:DIM, marginBottom:22 }}>Set a target and track your progress on the dashboard.</div>
+    <div style={{ position:"fixed",inset:0,background:"rgba(44,36,22,0.45)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center" }} onClick={onClose}>
+      <div style={{ background:CARD,borderRadius:10,padding:"32px 36px",maxWidth:420,width:"100%",boxShadow:"0 12px 40px rgba(44,36,22,0.2)" }} onClick={e=>e.stopPropagation()}>
+        <div style={{ fontFamily:"'Lora',serif",fontSize:20,fontWeight:600,color:DARK,marginBottom:4 }}>{isEdit?"Edit Goal":"Add Revenue Goal"}</div>
+        <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM,marginBottom:22 }}>Track your progress toward a revenue target.</div>
 
         <div style={{ marginBottom:16 }}>
-          <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:6, textTransform:"uppercase", letterSpacing:"0.06em" }}>Revenue Target ($)</label>
-          <input type="number" min="0" step="1000" value={target} onChange={e => setTarget(e.target.value)} placeholder="e.g. 500000" style={inputStyle} autoFocus />
+          <label style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,color:DIM,fontWeight:500,display:"block",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em" }}>Label (optional)</label>
+          <input type="text" value={label} onChange={e=>setLabel(e.target.value)} placeholder="e.g. Q3 target, Year-end goal" style={inputStyle}/>
         </div>
-
-        <div style={{ marginBottom:24 }}>
-          <label style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, fontWeight:500, display:"block", marginBottom:6, textTransform:"uppercase", letterSpacing:"0.06em" }}>Period</label>
-          <div style={{ display:"flex", gap:0, border:`1px solid ${BORDER}`, borderRadius:5, overflow:"hidden" }}>
-            {[["annual","Annual"],["quarterly","Quarterly"],["monthly","Monthly"]].map(([k,l],i) => (
-              <button key={k} onClick={() => setPeriod(k)} style={{ flex:1, cursor:"pointer", padding:"9px 0", fontSize:12, fontWeight:500, fontFamily:"'DM Sans',sans-serif", border:"none", borderRight:i<2?`1px solid ${BORDER}`:"none", background:period===k?ACCENT:CARD, color:period===k?CARD:MID, transition:"all 0.15s" }}>{l}</button>
+        <div style={{ marginBottom:16 }}>
+          <label style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,color:DIM,fontWeight:500,display:"block",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em" }}>Revenue target ($)</label>
+          <input type="number" min="0" step="1000" value={target} onChange={e=>setTarget(e.target.value)} placeholder="e.g. 500000" style={inputStyle} autoFocus/>
+        </div>
+        <div style={{ marginBottom:periodType==="custom"?16:24 }}>
+          <label style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,color:DIM,fontWeight:500,display:"block",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.06em" }}>Period</label>
+          <div style={{ display:"flex",gap:0,border:`1px solid ${BORDER}`,borderRadius:5,overflow:"hidden" }}>
+            {PERIODS.map(({key,label:lbl},i)=>(
+              <button key={key} onClick={()=>setPeriodType(key)} style={{ flex:1,cursor:"pointer",padding:"9px 0",fontSize:11,fontWeight:500,fontFamily:"'DM Sans',sans-serif",border:"none",borderRight:i<3?`1px solid ${BORDER}`:"none",background:periodType===key?ACCENT:CARD,color:periodType===key?CARD:MID,transition:"all 0.15s" }}>{lbl}</button>
             ))}
           </div>
         </div>
-
-        <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-          {currentGoal && (
-            <button className="btn" onClick={() => { onSave(null); onClose(); }} style={{ fontSize:11, color:RED, borderColor:RED }}>Remove Goal</button>
-          )}
+        {periodType==="custom" && (
+          <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:24 }}>
+            <div>
+              <label style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,color:DIM,fontWeight:500,display:"block",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em" }}>Start date</label>
+              <input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)} style={{ ...inputStyle,fontSize:12 }}/>
+            </div>
+            <div>
+              <label style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,color:DIM,fontWeight:500,display:"block",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em" }}>End date</label>
+              <input type="date" value={endDate} onChange={e=>setEndDate(e.target.value)} style={{ ...inputStyle,fontSize:12 }}/>
+            </div>
+          </div>
+        )}
+        <div style={{ display:"flex",gap:10,justifyContent:"flex-end" }}>
           <button className="btn" onClick={onClose} style={{ fontSize:11 }}>Cancel</button>
-          <button className="btn act" onClick={() => {
-            if (!target || parseFloat(target) <= 0) return;
-            onSave({ revenue_target: parseFloat(target), period, set_at: new Date().toISOString() });
+          <button className="btn act" onClick={()=>{
+            if(!target||parseFloat(target)<=0) return;
+            onSave({ ...goal, label:label.trim(), period_type:periodType, target_amount:parseFloat(target), start_date:startDate||null, end_date:endDate||null });
             onClose();
-          }} disabled={!target || parseFloat(target) <= 0} style={{ fontSize:11, padding:"8px 20px", opacity: (!target || parseFloat(target) <= 0) ? 0.4 : 1 }}>Save Goal</button>
+          }} disabled={!target||parseFloat(target)<=0} style={{ fontSize:11,padding:"8px 20px",opacity:(!target||parseFloat(target)<=0)?0.4:1 }}>
+            {isEdit?"Update Goal":"Add Goal"}
+          </button>
         </div>
       </div>
     </div>
   );
 }
 
-function Dashboard({ onJobClick, onEstimate, onJumpToInbox, onClientClick, onCompare, jobSummaries, untagged, overhead, dismissed, qbConnected, userId, clientType, dateRange, setDateRange, customStart, setCustomStart, customEnd, setCustomEnd, revenueGoal, onSetRevenueGoal }) {
+function computeGoalProgress(goal, jobSummaries) {
+  const now = MOCK_TODAY;
+  const y = now.getFullYear(), m = now.getMonth();
+  let startD, endD, elapsed = 0;
+  const pt = goal.period_type;
+  if (pt === "mtd") {
+    startD = new Date(y,m,1); endD = new Date(y,m+1,0);
+    elapsed = (now.getDate() / endD.getDate()) * 100;
+  } else if (pt === "qtd") {
+    const qs = Math.floor(m/3)*3;
+    startD = new Date(y,qs,1); endD = new Date(y,qs+3,0);
+    elapsed = ((now - startD) / (new Date(y,qs+3,1) - startD)) * 100;
+  } else if (pt === "ytd") {
+    startD = new Date(y,0,1); endD = new Date(y,11,31);
+    elapsed = ((now - startD) / (new Date(y+1,0,1) - startD)) * 100;
+  } else if (pt === "custom" && goal.start_date && goal.end_date) {
+    startD = new Date(goal.start_date); endD = new Date(goal.end_date);
+    elapsed = ((now - startD) / (endD - startD)) * 100;
+  }
+  elapsed = Math.max(0, Math.min(100, elapsed || 0));
+  const revenue = (jobSummaries||[]).filter(j => {
+    const jd = new Date(j.lastDate || j.firstDate || "");
+    if (!jd || isNaN(jd)) return false;
+    if (startD && jd < startD) return false;
+    if (endD && jd > endD) return false;
+    return true;
+  }).reduce((s,j)=>s+j.revenue, 0);
+  const pct = goal.target_amount > 0 ? Math.min((revenue / goal.target_amount) * 100, 100) : 0;
+  const pace = elapsed > 0 ? (pct >= elapsed ? "on-track" : pct >= elapsed * 0.75 ? "at-risk" : "behind") : "on-track";
+  const isExpired = endD && endD < now && goal.status === "active";
+  return { goal, revenue, pct, elapsed, pace, isExpired };
+}
+
+function RevenueGoals({ goals, jobSummaries, onAdd, onEdit, onDelete, onMarkComplete, onArchive }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [menuGoalId, setMenuGoalId] = useState(null);
+  const activeGoals = (goals||[]).filter(g => g.status === "active");
+
+  if (!goals || goals.length === 0) {
+    return (
+      <div style={{ marginBottom:20,display:"flex",alignItems:"center",gap:10 }}>
+        <button onClick={onAdd} className="btn" style={{ fontSize:11,padding:"6px 14px",borderColor:ACCENT,color:ACCENT }}>+ Revenue Goal</button>
+        <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM }}>Track your progress toward a revenue target</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card" style={{ padding:"16px 22px",marginBottom:20 }}>
+      <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:collapsed?0:14 }}>
+        <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+          <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,fontWeight:600,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase" }}>Revenue Goals</span>
+          {activeGoals.length > 0 && <span style={{ fontFamily:"'DM Mono',monospace",fontSize:10,color:DIM,opacity:0.7 }}>({activeGoals.length} active)</span>}
+        </div>
+        <div style={{ display:"flex",alignItems:"center",gap:10 }}>
+          <button onClick={onAdd} style={{ background:"none",border:"none",cursor:"pointer",fontSize:11,color:ACCENT,fontFamily:"'DM Sans',sans-serif",fontWeight:500,padding:0 }}>+ Add</button>
+          <button onClick={()=>setCollapsed(!collapsed)} style={{ background:"none",border:"none",cursor:"pointer",fontSize:11,color:DIM,padding:0,lineHeight:1 }}>{collapsed?"▼":"▲"}</button>
+        </div>
+      </div>
+      {!collapsed && (
+        <div style={{ display:"flex",flexDirection:"column" }}>
+          {goals.map((g,idx) => {
+            const { revenue, pct, elapsed, pace, isExpired } = computeGoalProgress(g, jobSummaries);
+            const isDone = g.status === "complete";
+            const isArchived = g.status === "archived";
+            const barColor = isDone ? ACCENT2 : isExpired ? RED : pace==="on-track" ? ACCENT2 : pace==="at-risk" ? AMBER : RED;
+            const paceLabel = isDone ? "Complete ✓" : isExpired ? "Missed" : pace==="on-track" ? "On track" : pace==="at-risk" ? "At risk" : "Behind";
+            const paceColor = isDone ? ACCENT2 : isExpired ? RED : pace==="on-track" ? ACCENT2 : pace==="at-risk" ? AMBER : RED;
+            const periodLabel = { mtd:"Month to date",qtd:"Quarter to date",ytd:"Year to date",custom:"Custom range" }[g.period_type] || g.period_type;
+            return (
+              <div key={g.id} style={{ padding:"12px 0",borderBottom:idx < goals.length-1 ? `1px solid ${BORDER}` : "none",opacity:isArchived?0.55:1 }}>
+                <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8 }}>
+                  <div style={{ flex:1,minWidth:0 }}>
+                    <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DARK,fontWeight:500 }}>{g.label || periodLabel}</span>
+                    {g.label && <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginLeft:6 }}>{periodLabel}</span>}
+                  </div>
+                  <div style={{ display:"flex",alignItems:"center",gap:10,flexShrink:0 }}>
+                    <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,fontWeight:500,color:paceColor }}>{paceLabel}</span>
+                    <div style={{ position:"relative" }}>
+                      <button onClick={()=>setMenuGoalId(menuGoalId===g.id?null:g.id)} style={{ background:"none",border:"none",cursor:"pointer",color:DIM,fontSize:16,padding:"0 4px",lineHeight:1 }}>⋮</button>
+                      {menuGoalId===g.id && (
+                        <div style={{ position:"absolute",right:0,top:24,background:CARD,border:`1px solid ${BORDER}`,borderRadius:5,boxShadow:"0 4px 16px rgba(44,36,22,0.12)",zIndex:200,minWidth:150 }} onClick={e=>e.stopPropagation()}>
+                          {[
+                            { label:"Edit",           fn:()=>{onEdit(g);setMenuGoalId(null);} },
+                            { label:"Mark Complete",  fn:()=>{onMarkComplete(g.id);setMenuGoalId(null);}, hide:isDone },
+                            { label:"Archive",        fn:()=>{onArchive(g.id);setMenuGoalId(null);}, hide:isArchived },
+                            { label:"Delete",         fn:()=>{onDelete(g.id);setMenuGoalId(null);}, danger:true },
+                          ].filter(i=>!i.hide).map((item,i,arr)=>(
+                            <button key={i} onClick={item.fn} style={{ display:"block",width:"100%",textAlign:"left",padding:"9px 14px",background:"none",border:"none",borderBottom:i<arr.length-1?`1px solid ${BORDER}`:"none",cursor:"pointer",fontFamily:"'DM Sans',sans-serif",fontSize:12,color:item.danger?RED:MID }}>
+                              {item.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ position:"relative",height:8,borderRadius:4,background:BG2,overflow:"hidden",marginBottom:6 }}>
+                  <div style={{ position:"absolute",left:0,top:0,bottom:0,width:`${pct}%`,borderRadius:4,background:barColor,transition:"width 0.4s ease",opacity:isArchived?0.5:1 }}/>
+                  {g.status==="active" && <div style={{ position:"absolute",left:`${Math.min(elapsed,100)}%`,top:-2,bottom:-2,width:2,background:DARK,opacity:0.2,borderRadius:1 }}/>}
+                </div>
+                <div style={{ display:"flex",justifyContent:"space-between" }}>
+                  <span style={{ fontFamily:"'DM Mono',monospace",fontSize:11,fontWeight:600,color:DARK }}>{$k(revenue)}</span>
+                  <span style={{ fontFamily:"'DM Mono',monospace",fontSize:11,color:DIM }}>{$k(g.target_amount)} target</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Dashboard({ onJobClick, onEstimate, onJumpToInbox, onClientClick, onCompare, jobSummaries, untagged, overhead, dismissed, qbConnected, userId, clientType, dateRange, setDateRange, customStart, setCustomStart, customEnd, setCustomEnd, revenueGoals, onAddGoal, onEditGoal, onDeleteGoal, onMarkCompleteGoal, onArchiveGoal }) {
   const [sort, setSort]             = useState("profit");
   const [sortDir, setSortDir]       = useState("desc");
   const [expenseView, setExpenseView] = useState("job");
@@ -1369,64 +1501,8 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, onClientClick, onCom
 
       </div>
 
-      {/* ── Revenue Goal Tracker ── */}
-      {(() => {
-        const goalAmt = revenueGoal?.revenue_target || 0;
-        const goalPeriod = revenueGoal?.period || "annual";
-        // For annual goal, use all jobs in current year; for monthly, use current month; for quarterly, use current quarter
-        const goalJobs = goalAmt > 0 ? jobSummaries.filter(j => {
-          if (!j.firstDate && !j.lastDate) return false;
-          const jd = new Date(j.lastDate || j.firstDate);
-          const y = MOCK_TODAY.getFullYear(); const m = MOCK_TODAY.getMonth();
-          if (goalPeriod === "annual") return jd.getFullYear() === y;
-          if (goalPeriod === "monthly") return jd.getFullYear() === y && jd.getMonth() === m;
-          if (goalPeriod === "quarterly") { const q = Math.floor(m/3); return jd.getFullYear() === y && Math.floor(jd.getMonth()/3) === q; }
-          return true;
-        }) : [];
-        const goalRevenue = goalJobs.reduce((s,j) => s + j.revenue, 0);
-        const pct = goalAmt > 0 ? Math.min((goalRevenue / goalAmt) * 100, 100) : 0;
-        // Pace: how far through the period are we?
-        const now = MOCK_TODAY; const y = now.getFullYear(); const m = now.getMonth();
-        let elapsed = 0;
-        if (goalPeriod === "annual") elapsed = ((now - new Date(y,0,1)) / (new Date(y+1,0,1) - new Date(y,0,1))) * 100;
-        else if (goalPeriod === "monthly") elapsed = (now.getDate() / new Date(y,m+1,0).getDate()) * 100;
-        else if (goalPeriod === "quarterly") { const qs = new Date(y,Math.floor(m/3)*3,1); const qe = new Date(y,Math.floor(m/3)*3+3,1); elapsed = ((now - qs) / (qe - qs)) * 100; }
-        const pace = elapsed > 0 ? pct >= elapsed ? "on-track" : pct >= elapsed * 0.7 ? "behind" : "off-track" : "on-track";
-        const barColor = pace === "on-track" ? ACCENT2 : pace === "behind" ? AMBER : RED;
-        const paceLabel = pace === "on-track" ? "On track" : pace === "behind" ? "Slightly behind" : "Behind pace";
-
-        return goalAmt > 0 ? (
-          <div className="card" style={{ padding:"16px 22px", marginBottom:20, display:"flex", alignItems:"center", gap:18 }}>
-            <div style={{ flex:1 }}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
-                <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:600, letterSpacing:"0.1em", color:DIM, textTransform:"uppercase" }}>
-                  Revenue Goal · {goalPeriod}
-                </div>
-                <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                  <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:500, color:barColor }}>{paceLabel}</span>
-                  <button onClick={onSetRevenueGoal} style={{ background:"none", border:"none", cursor:"pointer", fontSize:11, color:ACCENT, fontFamily:"'DM Sans',sans-serif", fontWeight:500, padding:0, textDecoration:"underline" }}>Edit</button>
-                </div>
-              </div>
-              <div style={{ position:"relative", height:10, borderRadius:5, background:BG2, overflow:"hidden" }}>
-                <div style={{ position:"absolute", left:0, top:0, bottom:0, width:`${pct}%`, borderRadius:5, background:barColor, transition:"width 0.4s ease" }} />
-                {/* Pace marker */}
-                <div style={{ position:"absolute", left:`${Math.min(elapsed,100)}%`, top:-2, bottom:-2, width:2, background:DARK, opacity:0.25, borderRadius:1 }} />
-              </div>
-              <div style={{ display:"flex", justifyContent:"space-between", marginTop:6 }}>
-                <span style={{ fontFamily:"'DM Mono',monospace", fontSize:12, fontWeight:600, color:DARK }}>{$(goalRevenue)}</span>
-                <span style={{ fontFamily:"'DM Mono',monospace", fontSize:12, color:DIM }}>{$(goalAmt)} target</span>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div style={{ marginBottom:20, display:"flex", alignItems:"center", gap:10 }}>
-            <button onClick={onSetRevenueGoal} className="btn" style={{ fontSize:11, padding:"6px 14px", borderColor:ACCENT, color:ACCENT }}>
-              Set Revenue Goal
-            </button>
-            <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:DIM }}>Track your progress toward a revenue target</span>
-          </div>
-        );
-      })()}
+      {/* ── Revenue Goals Panel ── */}
+      <RevenueGoals goals={revenueGoals} jobSummaries={jobSummaries} onAdd={onAddGoal} onEdit={onEditGoal} onDelete={onDeleteGoal} onMarkComplete={onMarkCompleteGoal} onArchive={onArchiveGoal}/>
 
       {/* ── Active Jobs table — full width ── */}
       <div className="card" style={{ padding:"22px 26px", marginBottom:28 }}>
@@ -3523,40 +3599,55 @@ function JobComparisonModal({ jobSummaries, onClose, initialJobA, initialJobB })
 }
 
 function JobDetail({ job, onBack, untagged, onJumpToInbox, onAddLabor, onDeleteLabor, onAddExpense, onDeleteExpense, onAddRevenue, onDeleteRevenue, onUpdateJobType, jobSummaries, onJobClick }) {
-  if (!job) return (
-    <div style={{ padding:"48px 36px",background:BG,minHeight:"100vh" }}>
-      <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em",marginBottom:4 }}>Job Detail</h1>
-      <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginBottom:28 }}>Select a job to see its full profitability breakdown.</p>
-      {jobSummaries && jobSummaries.length > 0 && (
-        <div className="card" style={{ padding:"18px 22px", maxWidth:520 }}>
-          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",fontWeight:500,marginBottom:12 }}>Your Jobs</div>
-          {jobSummaries.slice(0,8).map(j => {
-            const win = j.profit >= 0;
-            return (
-              <div key={j.id} onClick={() => onJobClick && onJobClick(j)}
-                style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 8px",borderBottom:`1px solid ${BORDER}`,cursor:"pointer",transition:"background 0.1s" }}
-                onMouseOver={e => e.currentTarget.style.background = BG2}
-                onMouseOut={e => e.currentTarget.style.background = "transparent"}>
-                <div>
-                  <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DARK,fontWeight:500 }}>{j.name}</div>
-                  <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:2 }}>{j.clientName || "—"} · {j.type}</div>
-                </div>
-                <div style={{ textAlign:"right" }}>
-                  <div style={{ fontFamily:"'DM Mono',monospace",fontSize:12,fontWeight:600,color:win?ACCENT2:RED }}>{win?"+":""}{$(j.profit)}</div>
-                  <div style={{ fontFamily:"'DM Mono',monospace",fontSize:10,color:DIM }}>{j.marginPct}%</div>
-                </div>
-              </div>
-            );
-          })}
-          {jobSummaries.length > 8 && (
-            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,padding:"10px 8px" }}>
-              + {jobSummaries.length - 8} more — search from the Dashboard
-            </div>
-          )}
+  const [listSearch, setListSearch] = useState("");
+
+  if (!job) {
+    const filtered = (jobSummaries || []).filter(j =>
+      !listSearch || j.name.toLowerCase().includes(listSearch.toLowerCase()) || (j.clientName||"").toLowerCase().includes(listSearch.toLowerCase())
+    );
+    return (
+      <div style={{ padding:"48px 36px",background:BG,minHeight:"100vh" }}>
+        <div style={{ display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:4 }}>
+          <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em" }}>Job Detail</h1>
+          <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM }}>{(jobSummaries||[]).length} jobs</span>
         </div>
-      )}
-    </div>
-  );
+        <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM,marginBottom:20 }}>Select a job to see its full profitability breakdown.</p>
+        {jobSummaries && jobSummaries.length > 0 && (
+          <div className="card" style={{ padding:"18px 22px" }}>
+            <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14 }}>
+              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",fontWeight:500 }}>Your Jobs</div>
+              <input type="text" value={listSearch} onChange={e=>setListSearch(e.target.value)} placeholder="Search jobs…"
+                style={{ padding:"6px 12px",borderRadius:4,border:`1px solid ${BORDER}`,background:BG,fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DARK,outline:"none",width:200 }}/>
+            </div>
+            {filtered.map(j => {
+              const win = j.profit >= 0;
+              return (
+                <div key={j.id} onClick={() => onJobClick && onJobClick(j)}
+                  style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 8px",borderBottom:`1px solid ${BORDER}`,cursor:"pointer",transition:"background 0.1s" }}
+                  onMouseOver={e => e.currentTarget.style.background = BG2}
+                  onMouseOut={e => e.currentTarget.style.background = "transparent"}>
+                  <div>
+                    <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DARK,fontWeight:500 }}>{j.name}</div>
+                    {j.clientName && j.clientName !== j.name
+                      ? <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:2 }}>{j.clientName} · {j.type}</div>
+                      : <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:11,color:DIM,marginTop:2 }}>{j.type}</div>
+                    }
+                  </div>
+                  <div style={{ textAlign:"right" }}>
+                    <div style={{ fontFamily:"'DM Mono',monospace",fontSize:12,fontWeight:600,color:win?ACCENT2:RED }}>{win?"+":""}{$(j.profit)}</div>
+                    <div style={{ fontFamily:"'DM Mono',monospace",fontSize:10,color:DIM }}>{j.marginPct}%</div>
+                  </div>
+                </div>
+              );
+            })}
+            {filtered.length === 0 && (
+              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM,padding:"16px 8px",textAlign:"center" }}>No jobs match "{listSearch}"</div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
   const win = job.profit > 0;
   const hasSuggestedUntagged = (untagged||[]).some(u => u.suggestedJob === job.id);
   const hasAnyUntagged       = (untagged||[]).length > 0;
@@ -3571,26 +3662,29 @@ function JobDetail({ job, onBack, untagged, onJumpToInbox, onAddLabor, onDeleteL
 
   return (
     <div style={{ padding:"32px 36px",background:BG,minHeight:"100vh" }}>
-      <div style={{ display:"flex",alignItems:"center",gap:14,marginBottom: hasSuggestedUntagged || hasAnyUntagged ? 12 : 28 }}>
-        <button className="btn" onClick={onBack}>← All Jobs</button>
-        <div style={{ flex:1 }}>
-          <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em" }}>{job.name}</h1>
-          <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM,marginTop:3,display:"flex",alignItems:"center",gap:4 }}>
-            {job.clientName} ·{" "}
-            <select
-              value={JOB_TYPES.includes(job.type) ? job.type : "Other"}
-              onChange={e => onUpdateJobType && onUpdateJobType(job.id, e.target.value)}
-              style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM,background:"transparent",border:"none",borderBottom:`1px dashed ${BORDER}`,cursor:"pointer",padding:"1px 2px",outline:"none" }}
-              title="Change job type"
-            >
-              {JOB_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-            {" "}· {job.status}
-          </div>
+      <div style={{ marginBottom: hasSuggestedUntagged || hasAnyUntagged ? 12 : 28 }}>
+        <div style={{ display:"flex",alignItems:"flex-start",gap:12,marginBottom:8 }}>
+          <button className="btn" onClick={onBack} style={{ flexShrink:0,marginTop:3 }}>← All Jobs</button>
+          <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em",flex:1,lineHeight:1.2 }}>{job.name}</h1>
+          <span className={`chip ${win?"g":"r"}`} style={{ fontSize:12,padding:"6px 14px",flexShrink:0,marginTop:2 }}>
+            {win?"+":"–"}{$(job.profit)} · {job.marginPct}%
+          </span>
         </div>
-        <span className={`chip ${win?"g":"r"}`} style={{ fontSize:13,padding:"7px 18px" }}>
-          {win?"+":"–"}{$(job.profit)} &nbsp; {job.marginPct}% margin
-        </span>
+        <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM,display:"flex",alignItems:"center",gap:6,paddingLeft:2,flexWrap:"wrap" }}>
+          {job.clientName && job.clientName !== job.name && (
+            <><span>{job.clientName}</span><span style={{ color:BORDER }}>·</span></>
+          )}
+          <select
+            value={JOB_TYPES.includes(job.type) ? job.type : "Other"}
+            onChange={e => onUpdateJobType && onUpdateJobType(job.id, e.target.value)}
+            style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM,background:"transparent",border:"none",borderBottom:`1px dashed ${BORDER}`,cursor:"pointer",padding:"1px 2px",outline:"none" }}
+            title="Change job type"
+          >
+            {JOB_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <span style={{ color:BORDER }}>·</span>
+          <span>{job.status}</span>
+        </div>
       </div>
 
       {/* Untagged expense warning banner */}
@@ -3607,22 +3701,44 @@ function JobDetail({ job, onBack, untagged, onJumpToInbox, onAddLabor, onDeleteL
         </div>
       )}
 
-      <div style={{ display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:14,marginBottom:24 }}>
-        {[
-          { label:"Revenue",       val:$(job.revenue),                                          color:DARK },
-          { label:"Material Cost", val:$(job.materialCost || 0),                                color:MID,   sub: job.costs > 0 ? `${Math.round(((job.materialCost||0)/job.costs)*100)}% of costs` : null },
-          { label:"Labor Cost",    val:$(job.laborCost || 0),                                   color:MID,   sub: job.costs > 0 ? `${Math.round(((job.laborCost||0)/job.costs)*100)}% of costs` : null },
-          { label:"Total Costs",   val:$(job.costs),                                            color:MID },
-          { label:"Gross Profit",  val:(win?"+":" –")+$(job.profit),                            color:win?ACCENT2:RED },
-          { label:"Margin",        val:job.marginPct+"%",                                       color:DARK,  sub: job.outstanding > 0 ? `${$(job.outstanding)} outstanding` : null, subColor: job.outstanding > 0 ? AMBER : null },
-        ].map((k,i) => (
-          <div key={i} className="kpi">
-            <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>{k.label}</div>
-            <div style={{ fontFamily:"'Lora',serif",fontSize:26,fontWeight:600,color:k.color }}>{k.val}</div>
-            {k.sub && <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,color:k.subColor||DIM,marginTop:4 }}>{k.sub}</div>}
+      {job.costs === 0 && job.revenue > 0 ? (
+        <>
+          <div style={{ display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14,marginBottom:12 }}>
+            {[
+              { label:"Revenue",      val:$(job.revenue),       color:DARK },
+              { label:"Gross Profit", val:"+"+$(job.revenue),   color:ACCENT2 },
+              { label:"Margin",       val:job.marginPct+"%",    color:DARK, sub: job.outstanding > 0 ? `${$(job.outstanding)} outstanding` : null, subColor: AMBER },
+            ].map((k,i) => (
+              <div key={i} className="kpi">
+                <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>{k.label}</div>
+                <div style={{ fontFamily:"'Lora',serif",fontSize:26,fontWeight:600,color:k.color }}>{k.val}</div>
+                {k.sub && <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,color:k.subColor||DIM,marginTop:4 }}>{k.sub}</div>}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+          <div style={{ marginBottom:24,padding:"11px 18px",borderRadius:5,border:`1px solid ${BORDER}`,background:CARD,fontSize:12,color:DIM,fontFamily:"'DM Sans',sans-serif",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12 }}>
+            <span>No costs tagged to this job yet — revenue only. Tag expenses in the Expense Inbox for accurate margin.</span>
+            {onJumpToInbox && <button className="btn" onClick={onJumpToInbox} style={{ fontSize:11,padding:"5px 12px",flexShrink:0 }}>Tag Expenses →</button>}
+          </div>
+        </>
+      ) : (
+        <div style={{ display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:14,marginBottom:24 }}>
+          {[
+            { label:"Revenue",       val:$(job.revenue),                                          color:DARK },
+            { label:"Material Cost", val:$(job.materialCost || 0),                                color:MID,   sub: job.costs > 0 ? `${Math.round(((job.materialCost||0)/job.costs)*100)}% of costs` : null },
+            { label:"Labor Cost",    val:$(job.laborCost || 0),                                   color:MID,   sub: job.costs > 0 ? `${Math.round(((job.laborCost||0)/job.costs)*100)}% of costs` : null },
+            { label:"Total Costs",   val:$(job.costs),                                            color:MID },
+            { label:"Gross Profit",  val:(win?"+":" –")+$(job.profit),                            color:win?ACCENT2:RED },
+            { label:"Margin",        val:job.marginPct+"%",                                       color:DARK,  sub: job.outstanding > 0 ? `${$(job.outstanding)} outstanding` : null, subColor: job.outstanding > 0 ? AMBER : null },
+          ].map((k,i) => (
+            <div key={i} className="kpi">
+              <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,letterSpacing:"0.1em",color:DIM,textTransform:"uppercase",marginBottom:10,fontWeight:500 }}>{k.label}</div>
+              <div style={{ fontFamily:"'Lora',serif",fontSize:26,fontWeight:600,color:k.color }}>{k.val}</div>
+              {k.sub && <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,color:k.subColor||DIM,marginTop:4 }}>{k.sub}</div>}
+            </div>
+          ))}
+        </div>
+      )}
 
       <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:18,marginBottom:24 }}>
         <div className="card" style={{ padding:"22px 26px" }}>
@@ -3776,21 +3892,29 @@ ${JSON.stringify(trend,null,2)}`;
         <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em",marginBottom:4 }}>AI Business Analyst</h1>
         <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM }}>Ask anything about your jobs, margins, or trends — in plain English.</p>
       </div>
-      {messages.length <= 1 && (
-        <div style={{ display:"flex",gap:8,flexWrap:"wrap",marginBottom:22 }}>
-          {SUGGESTIONS.map((s,i) => (
-            <button key={i} onClick={()=>send(s)} style={{ cursor:"pointer",padding:"9px 16px",borderRadius:4,fontSize:12,border:`1px solid ${BORDER}`,color:MID,background:CARD,fontFamily:"'DM Sans',sans-serif",transition:"all 0.15s",boxShadow:"0 1px 2px rgba(44,36,22,0.05)" }}
-              onMouseOver={e=>{e.currentTarget.style.borderColor=ACCENT;e.currentTarget.style.color=ACCENT;}}
-              onMouseOut={e=>{e.currentTarget.style.borderColor=BORDER;e.currentTarget.style.color=MID;}}
-            >{s}</button>
-          ))}
-        </div>
-      )}
       <div style={{ flex:1,overflowY:"auto",display:"flex",flexDirection:"column",gap:14,paddingRight:6 }}>
-        {messages.map((m,i) => (
-          <div key={i} className={m.role==="user"?"chat-bubble-user":"chat-bubble-ai"} style={{ whiteSpace:"pre-wrap" }}>{m.content}</div>
-        ))}
-        {loading && <div className="chat-bubble-ai"><div className="thinking"><span/><span/><span/></div></div>}
+        {messages.length === 1 ? (
+          <div style={{ flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"32px 0",gap:20 }}>
+            <div style={{ maxWidth:540,width:"100%",padding:"22px 26px",borderRadius:8,border:`1px solid ${BORDER}`,background:CARD,fontFamily:"'DM Sans',sans-serif",fontSize:13,color:MID,lineHeight:1.75 }}>
+              {messages[0].content}
+            </div>
+            <div style={{ display:"flex",gap:8,flexWrap:"wrap",justifyContent:"center",maxWidth:540 }}>
+              {SUGGESTIONS.map((s,i) => (
+                <button key={i} onClick={()=>send(s)} style={{ cursor:"pointer",padding:"9px 16px",borderRadius:4,fontSize:12,border:`1px solid ${BORDER}`,color:MID,background:CARD,fontFamily:"'DM Sans',sans-serif",transition:"all 0.15s",boxShadow:"0 1px 2px rgba(44,36,22,0.05)" }}
+                  onMouseOver={e=>{e.currentTarget.style.borderColor=ACCENT;e.currentTarget.style.color=ACCENT;}}
+                  onMouseOut={e=>{e.currentTarget.style.borderColor=BORDER;e.currentTarget.style.color=MID;}}
+                >{s}</button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <>
+            {messages.map((m,i) => (
+              <div key={i} className={m.role==="user"?"chat-bubble-user":"chat-bubble-ai"} style={{ whiteSpace:"pre-wrap" }}>{m.content}</div>
+            ))}
+            {loading && <div className="chat-bubble-ai"><div className="thinking"><span/><span/><span/></div></div>}
+          </>
+        )}
         <div ref={bottomRef}/>
       </div>
       <div style={{ display:"flex",gap:10,marginTop:18 }}>
@@ -3844,7 +3968,7 @@ function RawData({ jobSummaries, dataSource }) {
         </h1>
         <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:13, color:DIM, marginBottom:18 }}>
           {isLive
-            ? "Live data synced from your QuickBooks account via Supabase."
+            ? "Live data synced from your QuickBooks account."
             : "Demo data — connect QuickBooks to see your real transactions here."}
         </p>
         <div style={{ display:"flex", gap:8 }}>
@@ -3864,11 +3988,11 @@ function RawData({ jobSummaries, dataSource }) {
               <tbody>
                 {liveJobs.map((j,i) => (
                   <tr key={i}>
-                    <td className="mono" style={{ fontSize:10 }}>{j.id}</td>
+                    <td className="mono" style={{ fontSize:10 }} title={j.id}>{j.id.slice(0,8)}…</td>
                     <td style={{ color:DARK, fontWeight:500 }}>{j.name}</td>
                     <td style={{ color:MID }}>{j.clientName}</td>
                     <td><span className="tag">{j.type}</span></td>
-                    <td><span style={{ color:j.status==="Complete"?DIM:AMBER, fontSize:11, fontFamily:"'DM Sans',sans-serif" }}>{j.status}</span></td>
+                    <td><span style={{ color:j.status==="Complete"?DIM:j.status==="In Progress"?DIM:AMBER, fontSize:11, fontFamily:"'DM Sans',sans-serif" }}>{j.status}</span></td>
                   </tr>
                 ))}
               </tbody>
@@ -3913,7 +4037,7 @@ function RawData({ jobSummaries, dataSource }) {
       <div style={{ marginTop:20, padding:"16px 20px", borderRadius:5, border:`1px solid ${BORDER}`, background:CARD, fontSize:12, color:DIM, lineHeight:1.7, fontFamily:"'DM Sans',sans-serif" }}>
         <span style={{ color:ACCENT, fontWeight:500 }}>Source: </span>
         {isLive
-          ? "Live data from your QuickBooks account, stored in Supabase. Expenses tagged to jobs appear here; untagged expenses appear in the Expense Inbox."
+          ? "Live data from your QuickBooks account. Expenses tagged to jobs appear here; untagged expenses appear in the Expense Inbox."
           : "Demo data shown as fallback. Connect QuickBooks and run a sync to see your real data here."}
       </div>
     </div>
@@ -4588,7 +4712,8 @@ function Reports({ jobSummaries }) {
               </div>
               {topItem && (
                 <div style={{ textAlign:"right",flexShrink:0 }}>
-                  <div style={{ fontFamily:"'DM Mono',monospace",fontSize:13,fontWeight:600,color:ACCENT2 }}>{topItem.name}</div>
+                  <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:9,letterSpacing:"0.08em",color:DIM,textTransform:"uppercase",marginBottom:3 }}>Top result</div>
+                  <div style={{ fontFamily:"'DM Mono',monospace",fontSize:12,fontWeight:600,color:ACCENT2 }}>{topItem.name}</div>
                   <div style={{ fontFamily:"'DM Sans',sans-serif",fontSize:10,color:DIM,marginTop:2 }}>
                     {topItem.margin != null ? `${topItem.margin}% margin` : topItem.profit != null ? $(topItem.profit) : ""}
                   </div>
@@ -5398,7 +5523,7 @@ Give a short, direct assessment: Is the margin healthy? How does it compare to t
                 {savingTemplate ? "Saving..." : "Save as Template"}
               </button>
               <button className="btn" onClick={() => exportQuotePDF({ name, jobType, expectedRevenue, costLines, notes, contractorName, totalCosts, grossProfit, grossMargin })} disabled={!name.trim()}
-                style={{ padding: "10px 18px", fontSize: 12, opacity: (!name.trim()) ? 0.4 : 1, borderColor: ACCENT, color: ACCENT }}>
+                style={{ padding: "10px 18px", fontSize: 12, opacity: (!name.trim()) ? 0.4 : 1 }}>
                 Export Quote PDF
               </button>
               {dirty && <span style={{ fontSize: 11, color: AMBER, fontFamily: "'DM Sans',sans-serif" }}>Unsaved changes</span>}
@@ -6036,8 +6161,9 @@ export default function App() {
   const [laborEntries, setLaborEntries]       = useState(MOCK_LABOR_ENTRIES);
   const [manualExpenses, setManualExpenses]   = useState(MOCK_MANUAL_EXPENSES);
   const [manualRevenue, setManualRevenue]     = useState(MOCK_MANUAL_REVENUE);
-  const [revenueGoal, setRevenueGoal]         = useState(null); // { revenue_target, period, set_at }
+  const [revenueGoals, setRevenueGoals]       = useState([]);
   const [showGoalModal, setShowGoalModal]     = useState(false);
+  const [editingGoal, setEditingGoal]         = useState(null); // null = new goal, else goal object to edit
   const [showComparison, setShowComparison]   = useState(false);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [showTutorial, setShowTutorial]     = useState(false);
@@ -6124,6 +6250,34 @@ export default function App() {
     setSyncing(false);
   }
 
+  // ── Revenue goal CRUD
+  async function handleSaveGoal(goalData) {
+    if (!session?.user?.id) return;
+    if (goalData?.id) {
+      const { data } = await supabase.from("revenue_goals")
+        .update({ label:goalData.label, period_type:goalData.period_type, target_amount:goalData.target_amount, start_date:goalData.start_date, end_date:goalData.end_date })
+        .eq("id", goalData.id).select().single();
+      if (data) setRevenueGoals(prev => prev.map(g => g.id === data.id ? data : g));
+    } else {
+      const { data } = await supabase.from("revenue_goals")
+        .insert({ label:goalData.label, period_type:goalData.period_type, target_amount:goalData.target_amount, start_date:goalData.start_date, end_date:goalData.end_date, contractor_id:session.user.id, status:"active" })
+        .select().single();
+      if (data) setRevenueGoals(prev => [data, ...prev]);
+    }
+  }
+  async function handleDeleteGoal(goalId) {
+    await supabase.from("revenue_goals").delete().eq("id", goalId);
+    setRevenueGoals(prev => prev.filter(g => g.id !== goalId));
+  }
+  async function handleMarkCompleteGoal(goalId) {
+    const { data } = await supabase.from("revenue_goals").update({ status:"complete" }).eq("id", goalId).select().single();
+    if (data) setRevenueGoals(prev => prev.map(g => g.id === goalId ? data : g));
+  }
+  async function handleArchiveGoal(goalId) {
+    const { data } = await supabase.from("revenue_goals").update({ status:"archived" }).eq("id", goalId).select().single();
+    if (data) setRevenueGoals(prev => prev.map(g => g.id === goalId ? data : g));
+  }
+
   // ── On mount: check session + handle QB OAuth redirect params
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -6146,6 +6300,8 @@ export default function App() {
         const { data: p } = await supabase.from("contractors").select("*").eq("id", s.user.id).single();
         setProfile(p);
         if (p?.qb_realm_id) setQbConnected(true);
+        const { data: goals } = await supabase.from("revenue_goals").select("*").eq("contractor_id", s.user.id).order("created_at", { ascending: false });
+        if (goals) setRevenueGoals(goals);
         // If just came back from QB connect, trigger a sync
         const params2 = new URLSearchParams(window.location.search);
         if (params2.get('qb_connected') === 'true') {
@@ -6578,7 +6734,7 @@ export default function App() {
         {/* Logo */}
         <div style={{ padding:"24px 20px 20px", borderBottom:"1px solid rgba(255,255,255,0.07)" }}>
           <div style={{ fontFamily:"'Lora',serif", fontSize:18, fontWeight:500, color:"#F5EFE3", letterSpacing:"-0.01em" }}>Canopy</div>
-          <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, letterSpacing:"0.1em", color:SIDEBAR_DIM, textTransform:"uppercase", marginTop:2 }}>Business Intelligence</div>
+          <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, letterSpacing:"0.03em", color:SIDEBAR_DIM, marginTop:2 }}>Business Intelligence</div>
         </div>
         {/* Nav items */}
         <nav style={{ flex:1, padding:"12px 0" }}>
@@ -6659,81 +6815,77 @@ export default function App() {
           </div>
         )}
         {/* User + controls */}
-        <div style={{ padding:"14px 20px", borderTop:"1px solid rgba(255,255,255,0.07)", display:"flex", alignItems:"center", gap:8 }}>
+        <div style={{ padding:"12px 16px", borderTop:"1px solid rgba(255,255,255,0.07)", display:"flex", alignItems:"center", gap:8 }}>
           <div style={{ width:28, height:28, borderRadius:"50%", background:"rgba(245,239,227,0.12)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:600, color:"#F5EFE3", flexShrink:0 }}>
             {(contractorName||"U")[0].toUpperCase()}
           </div>
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ fontSize:11, fontFamily:"'DM Sans',sans-serif", color:"#F5EFE3", fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{contractorName}</div>
           </div>
-          <button className="help-btn" onClick={()=>setShowTutorial(true)} title="Open tutorial" aria-label="Open tutorial" style={{ width:26, height:26, fontSize:11, flexShrink:0, background:"rgba(255,255,255,0.07)", borderColor:"rgba(255,255,255,0.12)", color:SIDEBAR_TEXT }}>?</button>
-          <button onClick={handleSignOut} aria-label="Sign out" style={{ background:"none", border:"none", cursor:"pointer", fontSize:10, color:SIDEBAR_DIM, fontFamily:"'DM Sans',sans-serif", padding:0, flexShrink:0 }}>Out</button>
+          <button onClick={()=>setShowTutorial(true)} title="Help" aria-label="Open tutorial"
+            style={{ width:26, height:26, borderRadius:4, border:"1px solid rgba(255,255,255,0.1)", background:"rgba(255,255,255,0.06)", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, color:SIDEBAR_DIM, fontSize:12, fontFamily:"'DM Sans',sans-serif" }}>?</button>
+          <button onClick={handleSignOut} title="Sign out" aria-label="Sign out"
+            style={{ width:26, height:26, borderRadius:4, border:"1px solid rgba(255,255,255,0.1)", background:"rgba(255,255,255,0.06)", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, color:SIDEBAR_DIM }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          </button>
         </div>
       </div>
 
-      {/* ── Right content wrapper ── */}
+      {/* Right content wrapper */}
       <div style={{ flex:1, display:"flex", flexDirection:"column", minWidth:0, position:"relative" }}>
 
-      {/* ── App-level toast ── */}
       {appToast && (
-        <div style={{ position:"fixed", bottom:32, left:"50%", transform:"translateX(-50%)", zIndex:900, background:DARK, color:"#F5EFE3", fontFamily:"'DM Sans',sans-serif", fontSize:13, fontWeight:500, padding:"11px 22px", borderRadius:7, boxShadow:"0 6px 24px rgba(44,36,22,0.22)", border:`1.5px solid ${appToast.color}`, display:"flex", alignItems:"center", gap:10, animation:"slideIn 0.2s ease", pointerEvents:"none" }}>
+        <div style={{ position:"fixed", bottom:32, left:"50%", transform:"translateX(-50%)", zIndex:900, background:DARK, color:"#F5EFE3", fontFamily:"'DM Sans',sans-serif", fontSize:13, fontWeight:500, padding:"11px 22px", borderRadius:7, boxShadow:"0 6px 24px rgba(44,36,22,0.22)", border:`1.5px solid ${appToast.color}`, display:"flex", alignItems:"center", gap:10, pointerEvents:"none" }}>
           <span style={{ width:8, height:8, borderRadius:"50%", background:appToast.color, flexShrink:0 }}/>
           {appToast.msg}
         </div>
       )}
 
-      {/* ── QB error banner ── */}
       {qbError && (
         <div style={{ background:"rgba(140,64,64,0.06)", borderBottom:`1px solid rgba(140,64,64,0.2)`, padding:"11px 36px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <div style={{ fontSize:13, color:RED, fontFamily:"'DM Sans',sans-serif" }}>
             <span style={{ fontWeight:500 }}>QuickBooks connection failed</span>
             <span style={{ color:MID, marginLeft:8 }}>— {qbError.replace(/_/g,' ')}. Please try connecting again.</span>
           </div>
-          <button onClick={()=>setQbError(null)} style={{ background:"none", border:"none", cursor:"pointer", color:DIM, fontSize:16, padding:"0 4px" }}>×</button>
+          <button onClick={()=>setQbError(null)} style={{ background:"none", border:"none", cursor:"pointer", color:DIM, fontSize:16, padding:"0 4px" }}>x</button>
         </div>
       )}
 
-      {/* ── QB success / syncing banner ── */}
       {qbConnected && dataSource === 'mock' && (
         <div style={{ background: syncError ? "rgba(180,60,60,0.06)" : "rgba(92,122,90,0.06)", borderBottom:`1px solid ${syncError ? "rgba(180,60,60,0.25)" : "rgba(92,122,90,0.25)"}`, padding:"11px 36px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            {syncing
-              ? <span className="spinner"/>
-              : <div style={{ width:6, height:6, borderRadius:"50%", background: syncError ? RED : ACCENT2 }}/>
-            }
+            {syncing ? <span className="spinner"/> : <div style={{ width:6, height:6, borderRadius:"50%", background: syncError ? RED : ACCENT2 }}/>}
             <div style={{ fontSize:13, color: syncError ? RED : ACCENT2, fontFamily:"'DM Sans',sans-serif", fontWeight:500 }}>
-              {syncing
-                ? "Syncing your QuickBooks data — this may take a minute for large accounts…"
-                : syncError
-                  ? syncError
-                  : "QuickBooks connected — click to load your real data"}
+              {syncing ? "Syncing your QuickBooks data…" : syncError ? syncError : "QuickBooks connected — click to load your real data"}
             </div>
           </div>
           {!syncing && (
             <button className="btn act" style={{ fontSize:11 }} onClick={() => triggerSync(session.user.id)}>
-              {syncError ? "Retry Sync →" : "Sync Now →"}
+              {syncError ? "Retry Sync" : "Sync Now"}
             </button>
           )}
         </div>
       )}
 
-      {/* ── Post-sync nudge banner ── */}
       {syncNudge && (
-        <div style={{ background:"rgba(92,122,90,0.06)",borderBottom:`1px solid rgba(92,122,90,0.25)`,padding:"11px 36px",display:"flex",alignItems:"center",justifyContent:"space-between" }}>
-          <div style={{ fontSize:13,color:ACCENT2,fontFamily:"'DM Sans',sans-serif",fontWeight:500 }}>
-            Sync complete — {syncNudge.auto > 0 ? `${syncNudge.auto} auto-matched` : ""}{syncNudge.auto > 0 && (syncNudge.suggested > 0 || syncNudge.needs_attention > 0) ? ", " : ""}{syncNudge.suggested > 0 ? `${syncNudge.suggested} need confirmation` : ""}{syncNudge.suggested > 0 && syncNudge.needs_attention > 0 ? ", " : ""}{syncNudge.needs_attention > 0 ? `${syncNudge.needs_attention} need attention` : ""}
+        <div style={{ background:CARD,borderBottom:`1px solid ${BORDER}`,padding:"7px 36px",display:"flex",alignItems:"center",gap:10 }}>
+          <div style={{ width:6,height:6,borderRadius:"50%",background:ACCENT2,flexShrink:0 }}/>
+          <div style={{ fontSize:12,color:MID,fontFamily:"'DM Sans',sans-serif",flex:1 }}>
+            Sync complete —{" "}
+            {syncNudge.auto > 0 ? `${syncNudge.auto} auto-matched` : ""}
+            {syncNudge.auto > 0 && (syncNudge.suggested > 0 || syncNudge.needs_attention > 0) ? ", " : ""}
+            {syncNudge.suggested > 0 ? `${syncNudge.suggested} need confirmation` : ""}
+            {syncNudge.suggested > 0 && syncNudge.needs_attention > 0 ? ", " : ""}
+            {syncNudge.needs_attention > 0 ? `${syncNudge.needs_attention} need attention` : ""}
+            {" · "}<span onClick={()=>{setTab("inbox");setSyncNudge(null);}} style={{ cursor:"pointer",color:ACCENT,textDecoration:"underline",fontWeight:500 }}>Review</span>
           </div>
-          <div style={{ display:"flex",gap:8,alignItems:"center" }}>
-            <button className="btn act" style={{ fontSize:11 }} onClick={()=>{setTab("inbox");setSyncNudge(null);}}>Review Now →</button>
-            <button onClick={()=>setSyncNudge(null)} style={{ background:"none",border:"none",cursor:"pointer",color:DIM,fontSize:16,padding:"0 4px" }}>×</button>
-          </div>
+          <button onClick={()=>setSyncNudge(null)} style={{ background:"none",border:"none",cursor:"pointer",color:DIM,fontSize:14,padding:"0 4px",flexShrink:0 }}>x</button>
         </div>
       )}
 
-      {/* ── Content ── */}
       <div style={{ flex:1 }}>
-        {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} onEstimate={()=>setTab("estimator")} onJumpToInbox={()=>setTab("inbox")} onClientClick={()=>setTab("clients")} onCompare={()=>setShowComparison(true)} jobSummaries={jobSummaries} untagged={[...untagged, ...(suggested||[])]} overhead={overhead} dismissed={dismissed} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} revenueGoal={revenueGoal} onSetRevenueGoal={()=>setShowGoalModal(true)}/>}
-        {showGoalModal && <RevenueGoalModal currentGoal={revenueGoal} onSave={setRevenueGoal} onClose={()=>setShowGoalModal(false)}/>}
+        {tab==="dashboard" && <Dashboard onJobClick={handleJobClick} onEstimate={()=>setTab("estimator")} onJumpToInbox={()=>setTab("inbox")} onClientClick={()=>setTab("clients")} onCompare={()=>setShowComparison(true)} jobSummaries={jobSummaries} untagged={[...untagged, ...(suggested||[])]} overhead={overhead} dismissed={dismissed} qbConnected={qbConnected} userId={session?.user?.id} clientType={clientType} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} revenueGoals={revenueGoals} onAddGoal={()=>{setEditingGoal(null);setShowGoalModal(true);}} onEditGoal={g=>{setEditingGoal(g);setShowGoalModal(true);}} onDeleteGoal={handleDeleteGoal} onMarkCompleteGoal={handleMarkCompleteGoal} onArchiveGoal={handleArchiveGoal}/>}
+        {showGoalModal && <RevenueGoalModal goal={editingGoal} onSave={handleSaveGoal} onClose={()=>setShowGoalModal(false)}/>}
         {showComparison && <JobComparisonModal jobSummaries={jobSummaries} onClose={()=>setShowComparison(false)}/>}
         {tab==="inbox"     && <SyncReview autoMatched={autoMatched} suggested={suggested} untagged={untagged} allTagged={allTagged} overhead={overhead} dismissed={dismissed} jobSummaries={jobSummaries} vendorRules={vendorRules} onConfirmSuggestion={handleConfirmSuggestion} onTag={handleTag} onMarkOverhead={handleMarkOverhead} onDismiss={handleDismiss} onRestore={handleRestore} onRetag={handleRetag} onUndoAutoMatch={handleUndoAutoMatch} onSaveVendorRule={handleSaveVendorRule} onAddExpense={handleAddExpense} dateRange={dateRange} setDateRange={setDateRange} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd}/>}
         {tab==="detail"    && <JobDetail job={selectedJob} onBack={()=>setTab("dashboard")} untagged={untagged} onJumpToInbox={clientType==="quickbooks"?()=>setTab("inbox"):null} onAddLabor={handleAddLabor} onDeleteLabor={handleDeleteLabor} onAddExpense={handleAddExpense} onDeleteExpense={handleDeleteExpense} onAddRevenue={handleAddRevenue} onDeleteRevenue={handleDeleteRevenue} onUpdateJobType={handleUpdateJobType} jobSummaries={jobSummaries} onJobClick={handleJobClick}/>}
@@ -6744,7 +6896,6 @@ export default function App() {
         {tab==="raw"       && <RawData jobSummaries={jobSummaries} dataSource={dataSource}/>}
       </div>
 
-      {/* ── Persistent footer disclaimer ── */}
       <div style={{ borderTop:`1px solid ${BORDER}`, padding:"14px 36px", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8, background:CARD }}>
         <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, lineHeight:1.6, display:"flex", alignItems:"center", gap:6 }}>
           <span style={{ width:4, height:4, borderRadius:"50%", background:BORDER, flexShrink:0 }}/>
@@ -6756,7 +6907,7 @@ export default function App() {
         </div>
       </div>
 
-      </div>{/* ── end right content wrapper ── */}
+      </div>
     </div>
   );
 }
