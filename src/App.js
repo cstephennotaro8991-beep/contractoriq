@@ -6158,6 +6158,400 @@ function useContractorData(userId, mockJobSummaries, mockUntagged) {
   };
 }
 
+// ─── UPLOAD DATA ──────────────────────────────────────────────────────────────
+
+async function loadXLSX() {
+  if (window.XLSX) return window.XLSX;
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload = () => resolve(window.XLSX);
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+async function parseUploadFile(file) {
+  try {
+    const XLSX = await loadXLSX();
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+    function sheetRows(name) {
+      const ws = wb.Sheets[name];
+      if (!ws) return [];
+      return XLSX.utils.sheet_to_json(ws, { defval: '' });
+    }
+    const jobRows = sheetRows('Jobs');
+    const revRows = sheetRows('Revenue');
+    const expRows = sheetRows('Expenses');
+    const errors = [];
+
+    const jobs = [];
+    jobRows.forEach(row => {
+      const name = String(row['Job Name*'] || row['Job Name'] || '').trim();
+      if (!name) return;
+      jobs.push({
+        name,
+        clientName: String(row['Client Name'] || '').trim(),
+        jobType: String(row['Job Type'] || 'General').trim(),
+        status: String(row['Status'] || 'In Progress').trim(),
+        startDate: row['Start Date'] ? String(row['Start Date']).slice(0, 10) : null,
+        endDate: row['End Date'] ? String(row['End Date']).slice(0, 10) : null,
+      });
+    });
+
+    const jobNames = new Set(jobs.map(j => j.name.toLowerCase()));
+    if (jobs.length === 0) errors.push('No jobs found in the Jobs tab.');
+
+    const revenue = [];
+    revRows.forEach((row, i) => {
+      const jobName = String(row['Job Name*'] || row['Job Name'] || '').trim();
+      if (!jobName) return;
+      const rawAmt = row['Amount*'] || row['Amount'] || 0;
+      const amount = parseFloat(String(rawAmt).replace(/[$,]/g, ''));
+      if (isNaN(amount) || amount <= 0) { errors.push(`Revenue row ${i + 2}: invalid amount "${rawAmt}"`); return; }
+      const matched = jobNames.has(jobName.toLowerCase());
+      if (!matched) errors.push(`Revenue row ${i + 2}: job "${jobName}" not found in Jobs tab`);
+      revenue.push({
+        jobName, matched,
+        description: String(row['Description'] || '').trim(),
+        amount,
+        date: String(row['Date*'] || row['Date'] || '').trim().slice(0, 10),
+        docNumber: String(row['Invoice/Doc#'] || '').trim(),
+      });
+    });
+
+    const expenses = [];
+    expRows.forEach((row, i) => {
+      const jobName = String(row['Job Name*'] || row['Job Name'] || '').trim();
+      if (!jobName) return;
+      const rawAmt = row['Amount*'] || row['Amount'] || 0;
+      const amount = parseFloat(String(rawAmt).replace(/[$,]/g, ''));
+      if (isNaN(amount) || amount <= 0) { errors.push(`Expense row ${i + 2}: invalid amount "${rawAmt}"`); return; }
+      const matched = jobNames.has(jobName.toLowerCase());
+      if (!matched) errors.push(`Expense row ${i + 2}: job "${jobName}" not found in Jobs tab`);
+      expenses.push({
+        jobName, matched,
+        vendor: String(row['Vendor'] || '').trim(),
+        description: String(row['Description*'] || row['Description'] || '').trim(),
+        amount,
+        date: String(row['Date*'] || row['Date'] || '').trim().slice(0, 10),
+        category: String(row['Category*'] || row['Category'] || 'Other').trim(),
+      });
+    });
+
+    return { jobs, revenue, expenses, errors };
+  } catch (err) {
+    return { jobs: [], revenue: [], expenses: [], errors: [`Parse error: ${err.message}`] };
+  }
+}
+
+function UploadData({ userId, onDataRefresh }) {
+  const [step, setStep] = useState('idle'); // idle | preview | importing | success
+  const [parsedData, setParsedData] = useState(null);
+  const [fileName, setFileName] = useState('');
+  const [batches, setBatches] = useState([]);
+  const [loadingBatches, setLoadingBatches] = useState(false);
+  const [deletingBatch, setDeletingBatch] = useState(null);
+  const [importError, setImportError] = useState('');
+  const [dragOver, setDragOver] = useState(false);
+  const [parsing, setParsing] = useState(false);
+  const fileInputRef = useRef(null);
+
+  useEffect(() => { if (userId) loadBatches(); }, [userId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function loadBatches() {
+    setLoadingBatches(true);
+    const { data } = await supabase.from('upload_batches')
+      .select('*').eq('contractor_id', userId).order('uploaded_at', { ascending: false });
+    setBatches(data || []);
+    setLoadingBatches(false);
+  }
+
+  async function handleFile(file) {
+    if (!file || !file.name.endsWith('.xlsx')) { alert('Please select an .xlsx file.'); return; }
+    setFileName(file.name);
+    setParsing(true);
+    const result = await parseUploadFile(file);
+    setParsedData(result);
+    setParsing(false);
+    setStep('preview');
+  }
+
+  async function handleImport() {
+    if (!parsedData || !userId) return;
+    setStep('importing');
+    setImportError('');
+    try {
+      const validJobs = parsedData.jobs;
+      const validRev = parsedData.revenue.filter(r => r.matched);
+      const validExp = parsedData.expenses.filter(e => e.matched);
+
+      const { data: batch, error: batchErr } = await supabase.from('upload_batches').insert({
+        contractor_id: userId, filename: fileName,
+        job_count: validJobs.length, revenue_count: validRev.length,
+        expense_count: validExp.length, template_version: 'v1',
+      }).select().single();
+      if (batchErr) throw new Error(batchErr.message);
+
+      const batchId = batch.id;
+      const ts = Date.now();
+      const jobIdMap = {};
+
+      const jobRows = validJobs.map((j, i) => {
+        const jobId = `${userId}_manual_${ts}_${i}`;
+        jobIdMap[j.name.toLowerCase()] = jobId;
+        return { id: jobId, contractor_id: userId, name: j.name, client_name: j.clientName,
+          job_type: j.jobType, status: j.status, source: 'manual', upload_batch_id: batchId };
+      });
+      const { error: jobsErr } = await supabase.from('jobs').insert(jobRows);
+      if (jobsErr) throw new Error(jobsErr.message);
+
+      const revRows = validRev.map((r, i) => ({
+        id: `${userId}_uprev_${ts}_${i}`, contractor_id: userId,
+        job_id: jobIdMap[r.jobName.toLowerCase()], type: 'revenue',
+        amount: r.amount, txn_date: r.date || null,
+        description: r.description || null, doc_number: r.docNumber || null,
+      }));
+      if (revRows.length) {
+        const { error: revErr } = await supabase.from('transactions').insert(revRows);
+        if (revErr) throw new Error(revErr.message);
+      }
+
+      const expRows = validExp.map((e, i) => ({
+        id: `${userId}_upexp_${ts}_${i}`, contractor_id: userId,
+        job_id: jobIdMap[e.jobName.toLowerCase()], type: 'expense',
+        amount: e.amount, txn_date: e.date || null,
+        vendor: e.vendor || null, description: e.description || null,
+      }));
+      if (expRows.length) {
+        const { error: expErr } = await supabase.from('transactions').insert(expRows);
+        if (expErr) throw new Error(expErr.message);
+      }
+
+      setStep('success');
+      loadBatches();
+      if (onDataRefresh) onDataRefresh();
+    } catch (err) {
+      setImportError(err.message);
+      setStep('preview');
+    }
+  }
+
+  async function handleDeleteBatch(batchId) {
+    if (!window.confirm('Delete this upload? All jobs, revenue, and expenses from this batch will be removed.')) return;
+    setDeletingBatch(batchId);
+    const { data: batchJobs } = await supabase.from('jobs').select('id').eq('upload_batch_id', batchId);
+    const jobIds = (batchJobs || []).map(j => j.id);
+    if (jobIds.length) await supabase.from('transactions').delete().in('job_id', jobIds);
+    await supabase.from('upload_batches').delete().eq('id', batchId);
+    setDeletingBatch(null);
+    loadBatches();
+    if (onDataRefresh) onDataRefresh();
+  }
+
+  async function downloadTemplate() {
+    const XLSX = await loadXLSX();
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ['Canopy Upload Template v1'], [''],
+      ['1. Fill in the Jobs tab first. Revenue & Expenses must reference a job name from that tab.'],
+      ['2. Columns marked * are required.'],
+      ['3. Amount: numbers only — no $ or commas (e.g. 4200, not $4,200)'],
+      ['4. Date format: YYYY-MM-DD (e.g. 2024-03-15)'],
+      ['5. Job names are matched case-insensitively across tabs.'],
+      ['6. Delete example rows before uploading.'],
+    ]), 'Instructions');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ['Job Name*', 'Client Name', 'Job Type', 'Status', 'Start Date', 'End Date'],
+      ['Example: Kitchen Remodel', 'Johnson Family', 'Remodel', 'Complete', '2024-01-05', '2024-02-15'],
+    ]), 'Jobs');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ['Job Name*', 'Description', 'Amount*', 'Date*', 'Invoice/Doc#'],
+      ['Example: Kitchen Remodel', 'Final payment', '48500', '2024-02-15', 'INV-001'],
+    ]), 'Revenue');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ['Job Name*', 'Vendor', 'Description*', 'Amount*', 'Date*', 'Category*'],
+      ['Example: Kitchen Remodel', 'Home Depot', 'Lumber and materials', '4200', '2024-01-10', 'Materials'],
+    ]), 'Expenses');
+    XLSX.writeFile(wb, 'canopy-upload-template.xlsx');
+  }
+
+  const hasErrors = (parsedData?.errors?.length || 0) > 0;
+  const validJobCount = parsedData?.jobs?.length || 0;
+  const validRevCount = parsedData?.revenue?.filter(r => r.matched).length || 0;
+  const validExpCount = parsedData?.expenses?.filter(e => e.matched).length || 0;
+
+  return (
+    <div style={{ padding: "32px 36px", maxWidth: 800 }}>
+      {/* Header */}
+      <div style={{ marginBottom: 28 }}>
+        <h1 style={{ fontFamily: "'Lora',serif", fontSize: 22, fontWeight: 600, color: DARK, marginBottom: 6 }}>Upload Data</h1>
+        <p style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: MID, lineHeight: 1.6, maxWidth: 540, marginBottom: 0 }}>
+          Import jobs, revenue, and expenses from outside QuickBooks using the Canopy template. Uploaded data appears alongside your QuickBooks data throughout the app.
+        </p>
+        <button className="btn" onClick={downloadTemplate} style={{ marginTop: 14, display: "inline-flex", alignItems: "center", gap: 7 }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download Template
+        </button>
+      </div>
+
+      {/* Upload zone */}
+      <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 8, padding: 28, marginBottom: 24 }}>
+
+        {/* Idle — file picker */}
+        {step === 'idle' && (
+          <>
+            {parsing ? (
+              <div style={{ textAlign: "center", padding: "28px 0" }}>
+                <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: DIM }}>Parsing {fileName}…</div>
+              </div>
+            ) : (
+              <>
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
+                  style={{ border: `2px dashed ${dragOver ? ACCENT2 : BORDER}`, borderRadius: 8, padding: "36px 24px", textAlign: "center", cursor: "pointer", transition: "border-color 0.15s", background: dragOver ? `${ACCENT2}08` : "transparent" }}
+                >
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={DIM} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 10 }}><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><polyline points="7 9 12 4 17 9"/><line x1="12" y1="4" x2="12" y2="16"/></svg>
+                  <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: MID, marginBottom: 4 }}>
+                    Drag &amp; drop your .xlsx file here, or{" "}
+                    <span style={{ color: ACCENT, textDecoration: "underline" }}>browse</span>
+                  </div>
+                  <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, color: DIM }}>
+                    Excel files only (.xlsx) · Use the Canopy template above
+                  </div>
+                </div>
+                <input ref={fileInputRef} type="file" accept=".xlsx" style={{ display: "none" }}
+                  onChange={e => { const f = e.target.files[0]; if (f) handleFile(f); e.target.value = ''; }}/>
+              </>
+            )}
+          </>
+        )}
+
+        {/* Preview */}
+        {step === 'preview' && parsedData && (
+          <>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 18 }}>
+              <div>
+                <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, fontWeight: 600, color: DARK, marginBottom: 3 }}>{fileName}</div>
+                <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 11, color: DIM }}>
+                  {validJobCount} job{validJobCount !== 1 ? 's' : ''} · {validRevCount} revenue row{validRevCount !== 1 ? 's' : ''} · {validExpCount} expense row{validExpCount !== 1 ? 's' : ''}
+                </div>
+              </div>
+              <button className="btn" onClick={() => { setStep('idle'); setParsedData(null); setFileName(''); }}>← Different file</button>
+            </div>
+
+            {hasErrors && (
+              <div style={{ background: `${RED}0D`, border: `1px solid ${RED}33`, borderRadius: 6, padding: "12px 16px", marginBottom: 16 }}>
+                <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, fontWeight: 600, color: RED, marginBottom: 5 }}>
+                  {parsedData.errors.length} issue{parsedData.errors.length !== 1 ? 's' : ''} found
+                </div>
+                {parsedData.errors.map((e, i) => (
+                  <div key={i} style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, color: RED, lineHeight: 1.8 }}>· {e}</div>
+                ))}
+                <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, color: MID, marginTop: 8 }}>
+                  Rows with errors will be skipped. Valid rows will still be imported.
+                </div>
+              </div>
+            )}
+
+            {parsedData.jobs.length > 0 && (
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 10, fontWeight: 700, color: DIM, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Jobs to import</div>
+                <div style={{ border: `1px solid ${BORDER}`, borderRadius: 6, overflow: "hidden" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "'DM Sans',sans-serif", fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ background: BG2 }}>
+                        <th style={{ padding: "7px 12px", textAlign: "left", color: DIM, fontWeight: 500 }}>Job Name</th>
+                        <th style={{ padding: "7px 12px", textAlign: "left", color: DIM, fontWeight: 500 }}>Client</th>
+                        <th style={{ padding: "7px 12px", textAlign: "left", color: DIM, fontWeight: 500 }}>Type</th>
+                        <th style={{ padding: "7px 12px", textAlign: "left", color: DIM, fontWeight: 500 }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {parsedData.jobs.map((j, i) => (
+                        <tr key={i} style={{ borderTop: `1px solid ${BORDER}` }}>
+                          <td style={{ padding: "7px 12px", color: DARK }}>{j.name}</td>
+                          <td style={{ padding: "7px 12px", color: MID }}>{j.clientName || '—'}</td>
+                          <td style={{ padding: "7px 12px", color: MID }}>{j.jobType}</td>
+                          <td style={{ padding: "7px 12px", color: MID }}>{j.status}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {importError && (
+              <div style={{ background: `${RED}0D`, border: `1px solid ${RED}33`, borderRadius: 6, padding: "10px 14px", marginBottom: 14, fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: RED }}>
+                Import failed: {importError}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button className="btn" onClick={() => { setStep('idle'); setParsedData(null); setFileName(''); }}>Cancel</button>
+              <button className="btn act" onClick={handleImport} disabled={validJobCount === 0}>
+                Import {validJobCount} Job{validJobCount !== 1 ? 's' : ''}
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* Importing */}
+        {step === 'importing' && (
+          <div style={{ textAlign: "center", padding: "28px 0" }}>
+            <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: MID }}>Importing data…</div>
+          </div>
+        )}
+
+        {/* Success */}
+        {step === 'success' && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <div style={{ width: 18, height: 18, borderRadius: "50%", background: ACCENT2, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "#fff", flexShrink: 0 }}>✓</div>
+                <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, fontWeight: 600, color: DARK }}>Import complete</span>
+              </div>
+              <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: MID, paddingLeft: 26 }}>
+                {parsedData?.jobs?.length || 0} job{(parsedData?.jobs?.length || 0) !== 1 ? 's' : ''} added — visible in Dashboard and Job Detail.
+              </div>
+            </div>
+            <button className="btn" onClick={() => { setStep('idle'); setParsedData(null); setFileName(''); }}>Upload another</button>
+          </div>
+        )}
+      </div>
+
+      {/* Upload history */}
+      <div>
+        <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 10, fontWeight: 700, color: DIM, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>Upload History</div>
+        {loadingBatches && <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: DIM }}>Loading…</div>}
+        {!loadingBatches && batches.length === 0 && (
+          <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: DIM }}>No uploads yet.</div>
+        )}
+        {batches.map(b => (
+          <div key={b.id} style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "13px 18px", marginBottom: 8, display: "flex", alignItems: "center", gap: 16 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, fontWeight: 500, color: DARK, marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.filename}</div>
+              <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 11, color: DIM }}>
+                {b.job_count} job{b.job_count !== 1 ? 's' : ''} · {b.revenue_count} revenue · {b.expense_count} expense{b.expense_count !== 1 ? 's' : ''}
+                <span style={{ marginLeft: 10 }}>· {new Date(b.uploaded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+              </div>
+            </div>
+            <button className="btn" onClick={() => handleDeleteBatch(b.id)} disabled={deletingBatch === b.id}
+              style={{ color: RED, borderColor: `${RED}44`, fontSize: 11, padding: "5px 12px", flexShrink: 0 }}>
+              {deletingBatch === b.id ? 'Deleting…' : 'Delete batch'}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -6683,6 +7077,7 @@ export default function App() {
     chat:      IC(<><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></>),
     raw:       IC(<><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></>),
     gear:      IC(<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68 1.65 1.65 0 0 0 10 3.17V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></>),
+    upload:    IC(<><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><polyline points="7 9 12 4 17 9"/><line x1="12" y1="4" x2="12" y2="16"/></>),
   };
 
   const TABS = [
@@ -6694,6 +7089,7 @@ export default function App() {
     { key:"reports",   label:"Reports",           icon:ICONS.reports },
     { key:"chat",      label:"AI Analyst",        icon:ICONS.chat },
     ...(clientType === "quickbooks" ? [{ key:"raw", label:"Raw Data",             icon:ICONS.raw }] : []),
+    { key:"upload",   label:"Upload Data",        icon:ICONS.upload },
   ];
 
   return (
@@ -6897,6 +7293,7 @@ export default function App() {
         {tab==="reports"   && <Reports jobSummaries={jobSummaries}/>}
         {tab==="chat"      && <AIChat jobSummaries={jobSummaries}/>}
         {tab==="raw"       && <RawData jobSummaries={jobSummaries} dataSource={dataSource}/>}
+        {tab==="upload"    && <UploadData userId={session?.user?.id} onDataRefresh={refreshData}/>}
       </div>
 
       <div style={{ borderTop:`1px solid ${BORDER}`, padding:"14px 36px", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8, background:CARD }}>
