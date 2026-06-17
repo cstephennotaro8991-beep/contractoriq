@@ -6171,6 +6171,15 @@ async function loadXLSX() {
   });
 }
 
+function toISODate(val) {
+  if (!val && val !== 0) return null;
+  if (val instanceof Date) return isNaN(val) ? null : val.toISOString().slice(0, 10);
+  const s = String(val).trim();
+  if (!s) return null;
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+}
+
 async function parseUploadFile(file) {
   try {
     const XLSX = await loadXLSX();
@@ -6195,8 +6204,8 @@ async function parseUploadFile(file) {
         clientName: String(row['Client Name'] || '').trim(),
         jobType: String(row['Job Type'] || 'General').trim(),
         status: String(row['Status'] || 'In Progress').trim(),
-        startDate: row['Start Date'] ? String(row['Start Date']).slice(0, 10) : null,
-        endDate: row['End Date'] ? String(row['End Date']).slice(0, 10) : null,
+        startDate: toISODate(row['Start Date']),
+        endDate: toISODate(row['End Date']),
       });
     });
 
@@ -6216,7 +6225,7 @@ async function parseUploadFile(file) {
         jobName, matched,
         description: String(row['Description'] || '').trim(),
         amount,
-        date: String(row['Date*'] || row['Date'] || '').trim().slice(0, 10),
+        date: toISODate(row['Date*'] || row['Date']),
         docNumber: String(row['Invoice/Doc#'] || '').trim(),
       });
     });
@@ -6235,7 +6244,7 @@ async function parseUploadFile(file) {
         vendor: String(row['Vendor'] || '').trim(),
         description: String(row['Description*'] || row['Description'] || '').trim(),
         amount,
-        date: String(row['Date*'] || row['Date'] || '').trim().slice(0, 10),
+        date: toISODate(row['Date*'] || row['Date']),
         category: String(row['Category*'] || row['Category'] || 'Other').trim(),
       });
     });
