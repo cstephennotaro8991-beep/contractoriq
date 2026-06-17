@@ -343,6 +343,20 @@ const JOB_OPTIONS = QB_CUSTOMERS.filter(c => c.Job).map(j => ({
   client: QB_CUSTOMERS.find(c => c.Id === j.ParentRef?.value)?.DisplayName || "",
 }));
 
+// ─── RESPONSIVE HOOK ─────────────────────────────────────────────────────────
+
+function useIsMobile(breakpoint = 768) {
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== 'undefined' && window.innerWidth < breakpoint
+  );
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < breakpoint);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return isMobile;
+}
+
 // ─── STYLES ──────────────────────────────────────────────────────────────────
 
 const css = `
@@ -428,6 +442,18 @@ const css = `
   .si { display:flex;align-items:center;gap:10px;padding:11px 20px;cursor:pointer;font-size:13px;font-family:'DM Sans',sans-serif;border-left:2px solid transparent;transition:all 0.15s; }
   .si:hover { background:rgba(245,239,227,0.06); }
   .si.active { background:rgba(245,239,227,0.1);border-left-color:${ACCENT2}; }
+  .mob-scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .mob-nav { display:none; }
+  @media (max-width:768px) {
+    .mob-nav { display:flex; position:fixed; bottom:0; left:0; right:0; z-index:200; background:${SIDEBAR_BG}; border-top:1px solid rgba(255,255,255,0.08); padding:6px 0 env(safe-area-inset-bottom,6px); overflow-x:auto; }
+    .mob-nav-item { flex:1; min-width:52px; display:flex; flex-direction:column; align-items:center; gap:3px; padding:6px 4px; cursor:pointer; color:${SIDEBAR_DIM}; font-family:'DM Sans',sans-serif; font-size:9px; letter-spacing:0.02em; border:none; background:none; transition:color 0.15s; white-space:nowrap; }
+    .mob-nav-item.active { color:${ACCENT2}; }
+    .mob-nav-item svg { opacity:0.7; }
+    .mob-nav-item.active svg { opacity:1; }
+    .kpi { padding:14px 16px !important; }
+    .btn { min-height:36px; }
+    .inbox-row { padding:14px 16px !important; }
+  }
 `;
 
 // ─── CHART TOOLTIP ────────────────────────────────────────────────────────────
@@ -1057,6 +1083,7 @@ function RevenueGoals({ goals, jobSummaries, onAdd, onEdit, onDelete, onMarkComp
 }
 
 function Dashboard({ onJobClick, onEstimate, onJumpToInbox, onClientClick, onCompare, jobSummaries, untagged, overhead, dismissed, qbConnected, userId, clientType, dateRange, setDateRange, customStart, setCustomStart, customEnd, setCustomEnd, revenueGoals, onAddGoal, onEditGoal, onDeleteGoal, onMarkCompleteGoal, onArchiveGoal }) {
+  const isMobile = useIsMobile();
   const [sort, setSort]             = useState("profit");
   const [sortDir, setSortDir]       = useState("desc");
   const [expenseView, setExpenseView] = useState("job");
@@ -1217,7 +1244,7 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, onClientClick, onCom
   const hasSearchResults = searchResults.jobs.length > 0 || searchResults.clients.length > 0;
 
   return (
-    <div style={{ padding:"32px 36px", background:BG, minHeight:"100vh" }}>
+    <div style={{ padding: isMobile ? "16px 16px 80px" : "32px 36px", background:BG, minHeight:"100vh" }}>
 
       {/* Page title + search + date slicer */}
       <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:28,gap:20 }}>
@@ -1408,7 +1435,7 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, onClientClick, onCom
       )}
 
       {/* ── KPI Hero Cards ── */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:18, marginBottom:28 }}>
+      <div style={{ display:"grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr", gap: isMobile ? 12 : 18, marginBottom:28 }}>
 
         {/* PROFIT */}
         <div className="pls card" onClick={()=>setActiveKpi('profit')}
@@ -1527,7 +1554,8 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, onClientClick, onCom
           </div>
         ) : (
           <>
-            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12, fontFamily:"'DM Sans',sans-serif" }}>
+            <div className="mob-scroll">
+            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12, fontFamily:"'DM Sans',sans-serif", minWidth: 520 }}>
               <thead>
                 <tr style={{ borderBottom:`2px solid ${BORDER}` }}>
                   {[
@@ -1589,6 +1617,7 @@ function Dashboard({ onJobClick, onEstimate, onJumpToInbox, onClientClick, onCom
                 })()}
               </tbody>
             </table>
+            </div>{/* end mob-scroll */}
             {sorted.length > 10 && (
               <div style={{ marginTop:12, textAlign:"center" }}>
                 {jobTableRows < sorted.length ? (
@@ -3604,6 +3633,7 @@ function JobComparisonModal({ jobSummaries, onClose, initialJobA, initialJobB })
 }
 
 function JobDetail({ job, onBack, untagged, onJumpToInbox, onAddLabor, onDeleteLabor, onAddExpense, onDeleteExpense, onAddRevenue, onDeleteRevenue, onUpdateJobType, jobSummaries, onJobClick }) {
+  const isMobile = useIsMobile();
   const [listSearch, setListSearch] = useState("");
 
   if (!job) {
@@ -3611,7 +3641,7 @@ function JobDetail({ job, onBack, untagged, onJumpToInbox, onAddLabor, onDeleteL
       !listSearch || j.name.toLowerCase().includes(listSearch.toLowerCase()) || (j.clientName||"").toLowerCase().includes(listSearch.toLowerCase())
     );
     return (
-      <div style={{ padding:"48px 36px",background:BG,minHeight:"100vh" }}>
+      <div style={{ padding: isMobile ? "16px 16px 80px" : "48px 36px",background:BG,minHeight:"100vh" }}>
         <div style={{ display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:4 }}>
           <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em" }}>Job Detail</h1>
           <span style={{ fontFamily:"'DM Sans',sans-serif",fontSize:12,color:DIM }}>{(jobSummaries||[]).length} jobs</span>
@@ -3666,7 +3696,7 @@ function JobDetail({ job, onBack, untagged, onJumpToInbox, onAddLabor, onDeleteL
   const allLines = [...invoiceLines,...costLines].sort((a,b) => a.date.localeCompare(b.date));
 
   return (
-    <div style={{ padding:"32px 36px",background:BG,minHeight:"100vh" }}>
+    <div style={{ padding: isMobile ? "16px 16px 80px" : "32px 36px",background:BG,minHeight:"100vh" }}>
       <div style={{ marginBottom: hasSuggestedUntagged || hasAnyUntagged ? 12 : 28 }}>
         {/* Back link on its own row */}
         <div style={{ marginBottom:10 }}>
@@ -3714,7 +3744,7 @@ function JobDetail({ job, onBack, untagged, onJumpToInbox, onAddLabor, onDeleteL
 
       {job.costs === 0 && job.revenue > 0 ? (
         <>
-          <div style={{ display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14,marginBottom:12 }}>
+          <div style={{ display:"grid",gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3,1fr)",gap:14,marginBottom:12 }}>
             {[
               { label:"Revenue",      val:$(job.revenue),       color:DARK },
               { label:"Gross Profit", val:"+"+$(job.revenue),   color:ACCENT2 },
@@ -3733,7 +3763,7 @@ function JobDetail({ job, onBack, untagged, onJumpToInbox, onAddLabor, onDeleteL
           </div>
         </>
       ) : (
-        <div style={{ display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:14,marginBottom:24 }}>
+        <div style={{ display:"grid",gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(6,1fr)",gap:14,marginBottom:24 }}>
           {[
             { label:"Revenue",       val:$(job.revenue),                                          color:DARK },
             { label:"Material Cost", val:$(job.materialCost || 0),                                color:MID,   sub: job.costs > 0 ? `${Math.round(((job.materialCost||0)/job.costs)*100)}% of costs` : null },
@@ -3829,6 +3859,7 @@ function JobDetail({ job, onBack, untagged, onJumpToInbox, onAddLabor, onDeleteL
 // ─── TAB: AI CHAT ─────────────────────────────────────────────────────────────
 
 function AIChat({ jobSummaries, trendData }) {
+  const isMobile = useIsMobile();
   // Build dynamic trend from job summaries if not passed in
   const trend = trendData || (() => {
     const monthMap = {};
@@ -3898,7 +3929,7 @@ ${JSON.stringify(trend,null,2)}`;
   }
 
   return (
-    <div style={{ display:"flex",flexDirection:"column",height:"calc(100vh - 56px)",padding:"0 36px 28px",background:BG }}>
+    <div style={{ display:"flex",flexDirection:"column",height: isMobile ? "100dvh" : "calc(100vh - 56px)",padding: isMobile ? "0 16px 90px" : "0 36px 28px",background:BG }}>
       <div style={{ paddingTop:28,paddingBottom:18,borderBottom:`1px solid ${BORDER}`,marginBottom:22 }}>
         <h1 style={{ fontFamily:"'Lora',serif",fontSize:24,fontWeight:600,color:DARK,letterSpacing:"-0.02em",marginBottom:4 }}>AI Business Analyst</h1>
         <p style={{ fontFamily:"'DM Sans',sans-serif",fontSize:13,color:DIM }}>Ask anything about your jobs, margins, or trends — in plain English.</p>
@@ -6564,6 +6595,7 @@ function UploadData({ userId, onDataRefresh }) {
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
 
 export default function App() {
+  const isMobile = useIsMobile();
   const [session, setSession]           = useState(null);
   const [profile, setProfile]           = useState(null);
   const [authLoading, setAuthLoading]   = useState(true);
@@ -7143,8 +7175,8 @@ export default function App() {
         </div>
       )}
 
-      {/* ── Sidebar ── */}
-      <div style={{ width:220, flexShrink:0, background:SIDEBAR_BG, height:"100vh", position:"sticky", top:0, display:"flex", flexDirection:"column", overflowY:"auto", zIndex:100 }}>
+      {/* ── Sidebar — hidden on mobile, replaced by bottom nav ── */}
+      <div style={{ width:220, flexShrink:0, background:SIDEBAR_BG, height:"100vh", position:"sticky", top:0, display: isMobile ? "none" : "flex", flexDirection:"column", overflowY:"auto", zIndex:100 }}>
         {/* Logo */}
         <div style={{ padding:"24px 20px 20px", borderBottom:"1px solid rgba(255,255,255,0.07)" }}>
           <div style={{ fontFamily:"'Lora',serif", fontSize:18, fontWeight:500, color:"#F5EFE3", letterSpacing:"-0.01em" }}>Canopy</div>
@@ -7305,16 +7337,28 @@ export default function App() {
         {tab==="upload"    && <UploadData userId={session?.user?.id} onDataRefresh={refreshData}/>}
       </div>
 
-      <div style={{ borderTop:`1px solid ${BORDER}`, padding:"14px 36px", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8, background:CARD }}>
-        <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, lineHeight:1.6, display:"flex", alignItems:"center", gap:6 }}>
-          <span style={{ width:4, height:4, borderRadius:"50%", background:BORDER, flexShrink:0 }}/>
-          Figures sourced from QuickBooks Online. Not financial advice.
-          <span style={{ color:ACCENT, cursor:"pointer" }} onClick={() => setShowDisclaimer(true)}>Full notice</span>
+      {!isMobile && (
+        <div style={{ borderTop:`1px solid ${BORDER}`, padding:"14px 36px", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8, background:CARD }}>
+          <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM, lineHeight:1.6, display:"flex", alignItems:"center", gap:6 }}>
+            <span style={{ width:4, height:4, borderRadius:"50%", background:BORDER, flexShrink:0 }}/>
+            Figures sourced from QuickBooks Online. Not financial advice.
+            <span style={{ color:ACCENT, cursor:"pointer" }} onClick={() => setShowDisclaimer(true)}>Full notice</span>
+          </div>
+          <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM }}>
+            <a href="mailto:support@canopybi.com" style={{ color:DIM, textDecoration:"none" }}>support@canopybi.com</a>
+          </div>
         </div>
-        <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:DIM }}>
-          <a href="mailto:support@canopybi.com" style={{ color:DIM, textDecoration:"none" }}>support@canopybi.com</a>
-        </div>
-      </div>
+      )}
+
+      {/* ── Mobile bottom nav ── */}
+      <nav className="mob-nav" aria-label="Main navigation">
+        {TABS.map(t => (
+          <button key={t.key} className={`mob-nav-item${tab===t.key?" active":""}`} onClick={() => setTab(t.key)}>
+            {t.icon}
+            <span>{t.label.split(" ")[0]}</span>
+          </button>
+        ))}
+      </nav>
 
       </div>
     </div>
